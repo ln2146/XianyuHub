@@ -16,6 +16,8 @@ def _env(tmp_path, monkeypatch):
     monkeypatch.setenv("APP_SECRET_KEY", "test-secret-key-0123456789abcdef-xyz")
     monkeypatch.setenv("RUN_WORKERS_IN_API", "false")
     monkeypatch.setenv("REDIS_URL", "")
+    monkeypatch.setenv("GUARD_JITTER_MS_MAX", "0")
+    monkeypatch.setenv("GUARD_JITTER_MS_MIN", "0")
     get_settings.cache_clear()
     get_vault.cache_clear()
     bus.clear()
