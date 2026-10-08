@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app import bootstrap
 from app.api.router import api_router
 from app.core.config import get_settings
 from app.core.db import create_all, dispose_engine, init_engine
@@ -24,8 +25,12 @@ async def lifespan(app: FastAPI):
     init_engine()
     await create_all()
     await ensure_admin()
+    await bootstrap.setup_runtime()
+    if bootstrap.workers_enabled():
+        await bootstrap.start_workers()
     yield
     await bus.drain()
+    await bootstrap.shutdown()
     await dispose_engine()
 
 

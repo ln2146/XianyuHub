@@ -1,6 +1,7 @@
 """Cookie 工具：解析、合并 Set-Cookie、登录态判断。"""
 
 from collections.abc import Iterable
+from urllib.parse import quote
 
 LOGIN_REQUIRED_COOKIES = ("unb", "cookie2", "_m_h5_tk")
 
@@ -19,8 +20,13 @@ def parse_cookie_str(raw: str) -> dict[str, str]:
     return cookies
 
 
+def _header_safe(value: str) -> str:
+    """HTTP 头只允许 ASCII：非 ASCII 字符做百分号编码（与浏览器行为一致）。"""
+    return value if value.isascii() else quote(value, safe="!#$%&'()*+-./:<=>?@[]^_`{|}~")
+
+
 def dump_cookie_str(cookies: dict[str, str]) -> str:
-    return "; ".join(f"{k}={v}" for k, v in cookies.items())
+    return "; ".join(f"{k}={_header_safe(v)}" for k, v in cookies.items())
 
 
 def parse_set_cookie(headers: Iterable[str]) -> dict[str, str]:

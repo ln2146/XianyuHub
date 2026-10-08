@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from pathlib import Path
 
-from sqlalchemy import DateTime, Integer, MetaData
+from sqlalchemy import DateTime, Integer, MetaData, event
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -47,7 +47,18 @@ def init_engine(url: str | None = None) -> AsyncEngine:
         db_path = url.split(":///", 1)[-1]
         if db_path and db_path != ":memory:":
             Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-    _engine = create_async_engine(url, future=True, pool_pre_ping=not url.startswith("sqlite"))
+    if url.startswith("sqlite"):
+        _engine = create_async_engine(url, future=True, connect_args={"timeout": 30})
+
+        @event.listens_for(_engine.sync_engine, "connect")
+        def _sqlite_pragmas(dbapi_conn, _):  # noqa: ANN001
+            cur = dbapi_conn.cursor()
+            cur.execute("PRAGMA journal_mode=WAL")
+            cur.execute("PRAGMA busy_timeout=30000")
+            cur.execute("PRAGMA foreign_keys=ON")
+            cur.close()
+    else:
+        _engine = create_async_engine(url, future=True, pool_pre_ping=True, pool_size=10, max_overflow=20)
     _sessionmaker = async_sessionmaker(_engine, expire_on_commit=False)
     return _engine
 

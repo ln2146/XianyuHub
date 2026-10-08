@@ -11,7 +11,7 @@ from urllib.parse import quote
 
 import httpx
 
-from app.goofish.protocol.cookies import is_logged_in, merge_cookies, parse_set_cookie
+from app.goofish.protocol.cookies import dump_cookie_str, is_logged_in, merge_cookies, parse_set_cookie
 from app.goofish.protocol.mtop import DEFAULT_UA, MtopClient
 from app.goofish.protocol.sign import gen_cna
 
@@ -91,7 +91,7 @@ class QrLoginClient:
     @staticmethod
     def _headers(sess: QrSession, extra: dict[str, str] | None) -> dict[str, str]:
         h = {
-            "Cookie": "; ".join(f"{k}={v}" for k, v in sess.cookies.items()),
+            "Cookie": dump_cookie_str(sess.cookies),
             "Referer": f"{PASSPORT}/mini_login.htm",
             "Origin": PASSPORT,
         }
@@ -192,7 +192,7 @@ async def has_login_renew(cookies: dict[str, str], *, proxy: str | None = None) 
             params={"appName": "xianyu", "fromSite": "77"},
             data={"hid": cookies.get("unb", ""), "ltl": "true", "appName": "xianyu", "appEntrance": "web"},
             headers={
-                "Cookie": "; ".join(f"{k}={v}" for k, v in cookies.items()),
+                "Cookie": dump_cookie_str(cookies),
                 "Referer": f"{PASSPORT}/mini_login.htm",
                 "Origin": PASSPORT,
                 "Content-Type": "application/x-www-form-urlencoded",
