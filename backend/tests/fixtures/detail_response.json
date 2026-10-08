@@ -1,0 +1,13 @@
+{
+  "ret": ["SUCCESS::调用成功"],
+  "data": {
+    "itemDO": {
+      "itemId": 900000000001, "title": "自用 MacBook Air M1 8+256", "desc": "自用一年，电池 92%，无拆修，有原盒。",
+      "soldPrice": "3200", "originalPrice": "7999", "wantCnt": 12, "browseCnt": 356, "gmtCreate": 1759900000000,
+      "imageInfos": [{"url": "https://img.example.com/1.jpg"}, {"url": "https://img.example.com/2.jpg"}],
+      "itemStatusStr": "在售"
+    },
+    "sellerDO": {"sellerId": 2200001, "nick": "数码小王", "publishCity": "上海",
+                 "zhimaLevelInfo": {"levelName": "信用极好"}, "userRegDay": 1460, "hasSoldNumInteger": 23}
+  }
+}

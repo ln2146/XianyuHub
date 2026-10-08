@@ -64,7 +64,5 @@ async def ensure_admin() -> None:
             if settings.is_production:
                 raise RuntimeError("首次启动必须设置 ADMIN_PASSWORD")
             password = secrets.token_urlsafe(12)
-            logger.warning(
-                "已创建管理员 {}，随机初始密码：{}（请登录后立即修改）", settings.admin_username, password
-            )
+            logger.warning("已创建管理员 {}，随机初始密码：{}（请登录后立即修改）", settings.admin_username, password)
         await create_user(session, settings.admin_username, password, Role.ADMIN)

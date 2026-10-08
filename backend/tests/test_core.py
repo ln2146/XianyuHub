@@ -60,9 +60,7 @@ async def test_login_lockout(client):
 
 
 async def test_user_management_and_rbac(admin_client, client):
-    r = await admin_client.post(
-        "/api/v1/users", json={"username": "kefu", "password": "kefu-pass-1", "role": "member"}
-    )
+    r = await admin_client.post("/api/v1/users", json={"username": "kefu", "password": "kefu-pass-1", "role": "member"})
     assert r.status_code == 201
     users = (await admin_client.get("/api/v1/users")).json()
     assert {u["username"] for u in users} == {"admin", "kefu"}

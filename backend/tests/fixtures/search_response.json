@@ -1,0 +1,26 @@
+{
+  "api": "mtop.taobao.idlemtopsearch.pc.search",
+  "ret": ["SUCCESS::调用成功"],
+  "data": {
+    "resultInfo": {"hasNextPage": true},
+    "resultList": [
+      {"data": {"item": {"main": {
+        "targetUrl": "fleamarket://item?id=900000000001",
+        "exContent": {
+          "itemId": "900000000001", "title": "自用 MacBook Air M1 8+256 电池 92%",
+          "price": [{"text": "¥"}, {"text": "3200"}], "oriPrice": "¥7999", "area": "上海",
+          "userNickName": "数码小王", "picUrl": "https://img.example.com/1.jpg",
+          "fishTags": {"r1": {"tagList": [{"data": {"content": "验货宝"}}]}}
+        },
+        "clickParam": {"args": {"publishTime": "1759900000000", "wantNum": "12", "tag": "freeship", "seller_id": "2200001"}}
+      }}}},
+      {"data": {"item": {"main": {
+        "targetUrl": "",
+        "exContent": {"itemId": "900000000002", "title": "MacBook Air M2", "price": [{"text": "当前价"}, {"text": "¥1.2万"}],
+                      "area": "北京", "userNickName": "某商家", "picUrl": ""},
+        "clickParam": {"args": {"publishTime": "", "wantNum": "3"}}
+      }}}},
+      {"data": {"item": {"main": {"exContent": {}, "clickParam": {"args": {}}}}}}
+    ]
+  }
+}
