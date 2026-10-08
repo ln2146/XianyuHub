@@ -11,6 +11,7 @@ ADMIN_PASSWORD = "admin-pass-123"
 
 @pytest.fixture(autouse=True)
 def _env(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
     monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path / 'test.db'}")
     monkeypatch.setenv("ADMIN_USERNAME", "admin")
     monkeypatch.setenv("ADMIN_PASSWORD", ADMIN_PASSWORD)

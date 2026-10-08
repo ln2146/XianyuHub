@@ -49,7 +49,7 @@ def policies() -> dict[Action, ActionPolicy]:
         Action.ORDER_QUERY: ActionPolicy(rate=6, burst=2),
         Action.CONSIGN: ActionPolicy(rate=10, burst=2, write=True),
         Action.UPLOAD: ActionPolicy(rate=10, burst=3, write=True),
-        Action.CATEGORY: ActionPolicy(rate=6),
+        Action.CATEGORY: ActionPolicy(rate=6, burst=3),
         Action.PUBLISH: ActionPolicy(rate=s.guard_publish_per_5min, per=300, write=True, exclusive=True, max_wait=600),
         Action.EDIT_ITEM: ActionPolicy(rate=1, write=True, exclusive=True),
         Action.POLISH: ActionPolicy(rate=1, write=True),

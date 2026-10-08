@@ -8,5 +8,6 @@ from app.domains.buyer.models import (  # noqa: F401
     SellerProfileCache,
     TaskResult,
 )
+from app.domains.goods.models import MyItem, PublishDraftRecord  # noqa: F401
 from app.domains.system.models import AuditLog, User  # noqa: F401
 from app.notify.models import NotificationChannel  # noqa: F401

@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
 
     # ---------- 存储 ----------
+    data_dir: Path = BASE_DIR / "data"  # 上传图片等本地文件
     database_url: str = f"sqlite+aiosqlite:///{BASE_DIR / 'data' / 'xianyuhub.db'}"
     redis_url: str = ""  # 为空时使用进程内实现（单机模式）
 

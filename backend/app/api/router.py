@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.domains.account.router import router as account_router
 from app.domains.buyer.router import router as buyer_router
+from app.domains.goods.router import router as goods_router
 from app.domains.system.router import router as system_router
 from app.notify.router import router as notify_router
 
@@ -10,3 +11,4 @@ api_router.include_router(system_router)
 api_router.include_router(notify_router)
 api_router.include_router(account_router)
 api_router.include_router(buyer_router)
+api_router.include_router(goods_router)

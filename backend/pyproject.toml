@@ -22,6 +22,7 @@ dependencies = [
   "redis>=5.0",
   "croniter>=2.0",
   "anthropic>=0.70",
+  "python-multipart>=0.0.32",
 ]
 
 [project.optional-dependencies]
