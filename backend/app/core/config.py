@@ -30,14 +30,16 @@ class Settings(BaseSettings):
     redis_url: str = ""  # 为空时使用进程内实现（单机模式）
 
     # ---------- 大模型 ----------
-    llm_default_provider: str = "openai_compatible"  # anthropic / openai_compatible
+    llm_default_provider: str = "anthropic"  # anthropic / openai_compatible
     llm_api_key: str = ""
-    llm_base_url: str = ""
-    llm_model_vision: str = ""
-    llm_model_chat: str = ""
-    llm_model_fast: str = ""
-    llm_timeout_seconds: float = 60.0
+    llm_base_url: str = ""  # anthropic 留空即官方地址；openai_compatible 必填
+    llm_model_vision: str = "claude-opus-5-5"  # 多模态判定、商品文案
+    llm_model_chat: str = "claude-opus-5-5"  # 客服回复
+    llm_model_fast: str = "claude-opus-5-5"  # 意图分类、粗筛（可按成本改成更便宜的模型）
+    llm_anthropic_fallbacks: bool = True  # 拒答时服务端自动回退（仅官方 Claude API）
+    llm_timeout_seconds: float = 90.0
     llm_max_images: int = 4
+    llm_daily_token_budget: int = 0  # 0 表示不限制；超出后降级为仅规则
 
     # ---------- 风控 ----------
     guard_search_per_min: float = 6
