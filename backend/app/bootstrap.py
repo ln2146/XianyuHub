@@ -9,6 +9,7 @@ from loguru import logger
 
 from app.core.config import get_settings
 from app.domains.account import service as account_service
+from app.domains.buyer import scheduling as buyer_scheduling
 from app.runtime import close_runtime, get_runtime, init_runtime
 from app.workers import scheduler
 
@@ -22,6 +23,7 @@ async def setup_runtime(transport=None) -> None:
 
 async def start_workers() -> None:
     scheduler.add_interval_job("account.keepalive", account_service.keepalive_all, seconds=30 * 60, jitter=300)
+    await buyer_scheduling.register_all()
     scheduler.start()
     logger.info("后台任务已启动")
 
