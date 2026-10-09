@@ -195,6 +195,7 @@ docker compose -f docker-compose.yml -f docker-compose.split.yml up -d --build
 | `APP_SECRET_KEY` | — | JWT 签名密钥，生产环境必须设置且不少于 32 位 |
 | `CREDENTIAL_MASTER_KEY` | — | 32 字节 base64，加密 Cookie / 卡密，**丢失后无法解密，请备份** |
 | `ADMIN_PASSWORD` | — | 首次启动创建管理员；生产环境不提供默认密码 |
+| `LOCAL_AUTH` | `true` | 本机免登录：本机浏览器直接访问时跳过登录页；局域网 / 公网 / 经反向代理访问仍需密码，生产环境始终关闭 |
 | `DATABASE_URL` | SQLite | 生产建议 PostgreSQL |
 | `REDIS_URL` | 空 | 为空时使用进程内限流 |
 | `PROCESS_ROLE` | `all` | `all` 单进程；`api` / `worker` 分离部署（需要 Redis） |

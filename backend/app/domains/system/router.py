@@ -1,13 +1,14 @@
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, Response, status
+from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
+from app.core.config import get_settings
 from app.core.deps import AdminUser, CurrentUser, SessionDep
 from app.core.pagination import set_total
-from app.core.security import create_access_token, hash_password, verify_password
+from app.core.security import create_access_token, hash_password, is_local_request, verify_password
 from app.domains.system import service
 from app.domains.system.audit import record_audit
 from app.domains.system.models import AuditLog, Role, User
@@ -75,6 +76,22 @@ async def login(body: LoginIn, session: SessionDep) -> TokenOut:
         user = await service.authenticate(session, body.username, body.password)
     except service.AuthError as e:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(e)) from e
+    return TokenOut(access_token=create_access_token(user.id, user.role), user=UserOut.model_validate(user))
+
+
+@router.post("/auth/local", response_model=TokenOut)
+async def local_login(request: Request, session: SessionDep) -> TokenOut:
+    """本机免登录：本机直接访问时以管理员身份签发令牌；其他情况一律 404，前端回到账号密码登录。"""
+    settings = get_settings()
+    if not settings.local_auth or settings.is_production or not is_local_request(request):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "本机免登录不可用，请使用账号密码登录")
+    user = (
+        await session.execute(
+            select(User).where(User.role == Role.ADMIN, User.is_active.is_(True)).order_by(User.id).limit(1)
+        )
+    ).scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "没有可用的管理员账号")
     return TokenOut(access_token=create_access_token(user.id, user.role), user=UserOut.model_validate(user))
 
 

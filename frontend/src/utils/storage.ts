@@ -25,3 +25,5 @@ export function removeItem(key: string): void {
 
 export const TOKEN_KEY = 'xh_token'
 export const USER_KEY = 'xh_user'
+/** 本机免登录签发的会话（界面隐藏退出登录 / 修改密码） */
+export const LOCAL_KEY = 'xh_local'

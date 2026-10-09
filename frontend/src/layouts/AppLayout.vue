@@ -81,7 +81,13 @@ function onCommand(cmd: string) {
           <el-tooltip :content="realtime.connected ? '实时推送已连接' : '实时推送未连接，正在重试'">
             <span class="dot" :class="{ on: realtime.connected }" />
           </el-tooltip>
-          <el-dropdown trigger="click" @command="onCommand">
+          <el-tooltip v-if="auth.localMode" content="本机访问免登录；从其他设备访问时仍需要账号密码">
+            <span class="user">
+              <el-avatar :size="28" class="avatar">{{ (auth.user?.username || '?').slice(0, 1).toUpperCase() }}</el-avatar>
+              <el-tag v-if="!isMobile" size="small" effect="plain" round>本机模式</el-tag>
+            </span>
+          </el-tooltip>
+          <el-dropdown v-else trigger="click" @command="onCommand">
             <span class="user">
               <el-avatar :size="28" class="avatar">{{ (auth.user?.username || '?').slice(0, 1).toUpperCase() }}</el-avatar>
               <span v-if="!isMobile" class="uname">{{ auth.user?.username }}</span>

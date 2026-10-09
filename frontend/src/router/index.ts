@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
+import { createRouter, createWebHistory, type RouteLocationNormalized, type RouteRecordRaw } from 'vue-router'
 import { getItem, TOKEN_KEY } from '@/utils/storage'
 import { useAuthStore } from '@/stores/auth'
 import AppLayout from '@/layouts/AppLayout.vue'
@@ -43,9 +43,18 @@ const routes: RouteRecordRaw[] = [
 
 const router = createRouter({ history: createWebHistory(), routes })
 
-router.beforeEach((to) => {
+/** 登录页的 redirect 参数：只接受站内路径 */
+function afterLogin(to: RouteLocationNormalized) {
+  const r = typeof to.query.redirect === 'string' ? to.query.redirect : ''
+  return r.startsWith('/') && !r.startsWith('//') && !r.startsWith('/login') ? r : '/dashboard'
+}
+
+router.beforeEach(async (to) => {
+  // 没有令牌时：本机直接访问则免登录进入，否则走账号密码登录
+  const authed = !!getItem(TOKEN_KEY) || (await useAuthStore().tryLocalLogin())
+  if (to.path === '/login') return authed ? afterLogin(to) : true
   if (to.meta.public) return true
-  if (!getItem(TOKEN_KEY)) return { path: '/login', query: { redirect: to.fullPath } }
+  if (!authed) return { path: '/login', query: { redirect: to.fullPath } }
   if (to.meta.adminOnly && !useAuthStore().isAdmin) return '/dashboard'
   return true
 })

@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     credential_master_key: str = ""
     admin_username: str = "admin"
     admin_password: str = ""
+    # 本机免登录：只对“本机直接访问”生效（来源 IP、Host、Origin 都是本机，且未经反向代理）；
+    # 生产环境（APP_ENV=production）始终关闭，局域网 / 公网访问仍需账号密码
+    local_auth: bool = True
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
 
     # ---------- 存储 ----------
