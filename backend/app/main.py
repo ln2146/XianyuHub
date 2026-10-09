@@ -11,6 +11,7 @@ from app.core.config import get_settings
 from app.core.db import create_all, dispose_engine, init_engine
 from app.core.events import bus
 from app.core.logging import setup_logging
+from app.domains.message.router import ws_router
 from app.domains.system.service import ensure_admin
 
 
@@ -45,6 +46,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.include_router(api_router)
+    app.include_router(ws_router)
 
     @app.get("/healthz", tags=["system"])
     async def healthz() -> dict[str, str]:
