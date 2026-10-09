@@ -91,18 +91,79 @@ body {
   color: var(--xh-muted);
   font-size: 12px;
   line-height: 1.5;
-  margin-top: 2px;
+  margin-top: 4px;
 }
 
+/* 现代化卡片规范 */
 .el-card {
-  border-radius: 10px;
-  border-color: var(--xh-border);
+  border-radius: 12px;
+  border-color: #e2e8f0;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.03), 0 1px 2px -1px rgba(0, 0, 0, 0.02);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.el-card.is-hover-shadow:hover {
+  box-shadow: 0 10px 18px -3px rgba(0, 0, 0, 0.06), 0 4px 6px -2px rgba(0, 0, 0, 0.03);
+}
+
+/* 现代化表格外观 */
+.el-table {
+  --el-table-header-bg-color: #f8fafc;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.el-table th.el-table__cell {
+  background-color: #f8fafc !important;
+  color: #475569;
+  font-weight: 600;
+  font-size: 13px;
+  padding: 10px 0;
+}
+.el-table td.el-table__cell {
+  padding: 10px 0;
+}
+.el-table--enable-row-hover .el-table__body tr:hover > td.el-table__cell {
+  background-color: #f8fafc !important;
+}
+
+/* 控件圆角与质感 */
+.el-button {
+  border-radius: 8px;
+  font-weight: 500;
+  transition: all 0.15s ease;
+}
+.el-button--primary {
+  box-shadow: 0 1px 2px 0 rgba(16, 185, 129, 0.15);
+}
+.el-input__wrapper,
+.el-select__wrapper {
+  border-radius: 8px !important;
+  transition: all 0.15s ease;
+}
+.el-tag {
+  border-radius: 6px;
+  font-weight: 500;
+}
+
+/* 精致轻量滚动条 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
 
 .json-box {
   background: #f6f8fa;
   border: 1px solid var(--xh-border);
-  border-radius: 6px;
+  border-radius: 8px;
   padding: 12px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;

@@ -221,27 +221,45 @@ async function queryMarket() {
   <div class="page">
     <div class="page-head">
       <div>
-        <h2>商品中心 · 商品</h2>
+        <h2>商品中心 · 商品管理</h2>
         <div class="sub">同步在售商品，为每个商品配置底价、议价阶梯和客服知识库（AI 回复时使用，底价不会透露给买家）</div>
+      </div>
+      <div class="toolbar">
+        <el-button type="primary" :icon="Plus" @click="router.push('/goods/publish')">发布新商品</el-button>
+        <el-button :icon="Refresh" :loading="loading" round @click="load">刷新</el-button>
       </div>
     </div>
 
     <el-card shadow="never" class="filters">
       <div class="toolbar">
-        <el-select v-model="filter.account_id" clearable placeholder="全部账号" class="w180" @change="load">
+        <el-select v-model="filter.account_id" clearable placeholder="全部闲鱼账号" class="w180" @change="load">
           <el-option v-for="a in accounts.list" :key="a.id" :value="a.id" :label="a.remark || a.nickname || a.unb" />
         </el-select>
-        <el-button type="primary" :icon="Refresh" :loading="syncing" :disabled="!filter.account_id" @click="sync">同步商品</el-button>
-        <el-select v-model="filter.status" clearable placeholder="全部状态" class="w120" @change="load">
+        <el-button type="primary" plain :icon="Refresh" :loading="syncing" :disabled="!filter.account_id" @click="sync">
+          同步在售宝贝
+        </el-button>
+        <el-select v-model="filter.status" clearable placeholder="全部商品状态" class="w130" @change="load">
           <el-option v-for="(v, k) in goodsStatusMap" :key="k" :value="k" :label="v.label" />
         </el-select>
-        <el-input v-model="filter.q" placeholder="搜索标题" clearable class="w180" :prefix-icon="Search" @keyup.enter="load" @clear="load" />
+        <el-input v-model="filter.q" placeholder="搜索标题关键字" clearable class="w200" :prefix-icon="Search" @keyup.enter="load" @clear="load" />
       </div>
     </el-card>
 
     <el-card shadow="never">
       <div class="table-wrap">
-        <el-table v-loading="loading" :data="items" empty-text="暂无商品，选择账号后点击「同步商品」">
+        <el-table v-loading="loading" :data="items">
+          <template #empty>
+            <div class="goods-empty-box">
+              <el-empty description="暂无商品，选择账号后点击「同步在售宝贝」或新建发布">
+                <div class="empty-btn-group">
+                  <el-button v-if="filter.account_id" type="primary" :icon="Refresh" :loading="syncing" @click="sync">
+                    同步账号商品
+                  </el-button>
+                  <el-button :icon="Plus" @click="router.push('/goods/publish')">发布新商品</el-button>
+                </div>
+              </el-empty>
+            </div>
+          </template>
           <el-table-column label="商品" min-width="280">
             <template #default="{ row }">
               <div class="goods">
@@ -465,6 +483,17 @@ async function queryMarket() {
 }
 .mk-body {
   min-height: 100px;
+}
+.goods-empty-box {
+  padding: 40px 0;
+  display: flex;
+  justify-content: center;
+}
+.empty-btn-group {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 12px;
 }
 @media (max-width: 768px) {
   .w120,

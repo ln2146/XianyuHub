@@ -169,72 +169,119 @@ async function openDetail(o: Order) {
   <div class="page">
     <div class="page-head">
       <div>
-        <h2>订单发货 · 订单</h2>
-        <div class="sub">买家付款后按「自动发货」里的设置发货（需在账号设置中开启）。风控暂停 / 发货失败的订单需人工处理。</div>
+        <h2>订单发货 · 订单管理</h2>
+        <div class="sub">买家付款后系统自动按设置发货并确认发货；风控暂停、未关联或发货失败订单在此集中处理</div>
+      </div>
+      <div class="toolbar">
+        <el-button :icon="Refresh" :loading="loading" round @click="load(page)">刷新列表</el-button>
       </div>
     </div>
 
-    <el-card shadow="never" class="filters">
+    <el-card shadow="never" class="filters-card">
       <div class="toolbar">
-        <el-select v-model="filter.account_id" clearable placeholder="全部账号" class="w180" @change="load()">
+        <el-select v-model="filter.account_id" clearable placeholder="全部闲鱼账号" class="w180" @change="load()">
           <el-option v-for="a in accounts.list" :key="a.id" :value="a.id" :label="a.remark || a.nickname || a.unb" />
         </el-select>
-        <el-button type="primary" :icon="Refresh" :loading="syncing" :disabled="!filter.account_id" @click="sync">同步订单</el-button>
-        <el-select v-model="filter.status" clearable placeholder="全部状态" class="w140" @change="load()">
+        <el-button type="primary" :icon="Refresh" :loading="syncing" :disabled="!filter.account_id" @click="sync">
+          同步最新订单
+        </el-button>
+        <el-select v-model="filter.status" clearable placeholder="全部订单状态" class="w150" @change="load()">
           <el-option :value="NEEDS_ACTION_STATUSES" label="⚠️ 需要我处理" />
           <el-option v-for="(v, k) in orderStatusMap" :key="k" :value="k" :label="v.label" />
         </el-select>
-        <el-input v-model="filter.q" placeholder="订单号 / 商品 / 买家" clearable class="w200" :prefix-icon="Search" @keyup.enter="load()" @clear="load()" />
-        <el-button :icon="Refresh" :loading="loading" @click="load(page)">刷新</el-button>
+        <el-input v-model="filter.q" placeholder="搜索订单号 / 商品 / 买家" clearable class="w220" :prefix-icon="Search" @keyup.enter="load()" @clear="load()" />
       </div>
     </el-card>
 
-    <el-card shadow="never">
+    <el-card shadow="never" class="table-card">
       <div class="table-wrap">
-        <el-table v-loading="loading" :data="orders" empty-text="暂无订单" @row-dblclick="(r: Order) => openDetail(r)">
-          <el-table-column label="订单" min-width="200">
+        <el-table v-loading="loading" :data="orders" @row-dblclick="(r: Order) => openDetail(r)">
+          <template #empty>
+            <div class="orders-empty-box">
+              <el-empty description="暂无符合条件的订单记录">
+                <el-button v-if="filter.account_id" :icon="Refresh" :loading="syncing" type="primary" @click="sync">
+                  立即同步此账号订单
+                </el-button>
+              </el-empty>
+            </div>
+          </template>
+
+          <el-table-column label="订单信息" min-width="210">
             <template #default="{ row }">
-              <el-link type="primary" @click="openDetail(row as Order)">{{ row.order_id }}</el-link>
-              <div class="muted small">{{ accounts.nameOf(row.account_id) }} · {{ fmtTime(row.created_at) }}</div>
+              <div class="order-id-row">
+                <el-link type="primary" class="font-semibold mono" @click="openDetail(row as Order)">
+                  {{ row.order_id }}
+                </el-link>
+              </div>
+              <div class="muted smaller mt-xs">
+                <span>{{ accounts.nameOf(row.account_id) }}</span>
+                <span class="dot-sep">·</span>
+                <span>{{ fmtTime(row.created_at) }}</span>
+              </div>
             </template>
           </el-table-column>
-          <el-table-column label="商品" min-width="200">
+
+          <el-table-column label="交易商品" min-width="220">
             <template #default="{ row }">
-              <div class="ellipsis">{{ row.item_title || row.item_id || '-' }}</div>
-              <div v-if="row.spec_value" class="muted small">{{ row.spec_name || '规格' }}：{{ row.spec_value }}</div>
+              <div class="ellipsis font-semibold" :title="row.item_title">{{ row.item_title || row.item_id || '-' }}</div>
+              <div v-if="row.spec_value" class="muted smaller">
+                <el-tag size="small" type="info" effect="plain" class="mt-xs">
+                  {{ row.spec_name || '规格' }}: {{ row.spec_value }}
+                </el-tag>
+              </div>
             </template>
           </el-table-column>
-          <el-table-column label="买家" min-width="110">
-            <template #default="{ row }">{{ row.buyer_nick || row.buyer_id || '-' }}</template>
-          </el-table-column>
-          <el-table-column label="金额" width="110">
+
+          <el-table-column label="买家" min-width="120">
             <template #default="{ row }">
-              <span class="price">{{ fmtMoney(row.amount) }}</span>
-              <span v-if="row.quantity > 1" class="muted small"> ×{{ row.quantity }}</span>
-              <el-tag v-if="row.is_bargain" size="small" effect="plain" class="ml">议价</el-tag>
+              <div class="buyer-cell">
+                <div class="buyer-avatar">{{ (row.buyer_nick || row.buyer_id || '买')[0] }}</div>
+                <div class="buyer-nick ellipsis">{{ row.buyer_nick || row.buyer_id || '-' }}</div>
+              </div>
             </template>
           </el-table-column>
-          <el-table-column label="状态" width="130">
+
+          <el-table-column label="实付金额" width="130">
+            <template #default="{ row }">
+              <div class="price-wrap">
+                <span class="price-val">{{ fmtMoney(row.amount) }}</span>
+                <span v-if="row.quantity > 1" class="muted smaller"> ×{{ row.quantity }}</span>
+              </div>
+              <el-tag v-if="row.is_bargain" size="small" effect="plain" type="warning" class="mt-xs">
+                议价成交
+              </el-tag>
+            </template>
+          </el-table-column>
+
+          <el-table-column label="订单状态" width="140">
             <template #default="{ row }">
               <StatusTag :value="row.status" :map="orderStatusMap" />
               <el-tooltip v-if="row.fail_reason" :content="row.fail_reason">
-                <div class="small err ellipsis">{{ row.fail_reason }}</div>
+                <div class="smaller err ellipsis mt-xs">⚠️ {{ row.fail_reason }}</div>
               </el-tooltip>
             </template>
           </el-table-column>
-          <el-table-column label="付款 / 发货" width="150">
+
+          <el-table-column label="付款 / 发货时间" width="160">
             <template #default="{ row }">
-              <div class="small">{{ fmtTime(row.paid_at) }}</div>
-              <div class="small muted">{{ fmtTime(row.delivered_at) }}</div>
+              <div class="smaller"><span class="muted">付:</span> {{ fmtTime(row.paid_at) || '-' }}</div>
+              <div class="smaller mt-xs"><span class="muted">发:</span> {{ fmtTime(row.delivered_at) || '-' }}</div>
             </template>
           </el-table-column>
-          <el-table-column label="操作" :width="isMobile ? 100 : 200" :fixed="isMobile ? undefined : 'right'">
+
+          <el-table-column label="操作" :width="isMobile ? 100 : 210" :fixed="isMobile ? undefined : 'right'">
             <template #default="{ row }">
               <div class="ops">
                 <el-button size="small" @click="openDetail(row as Order)">详情</el-button>
-                <el-button v-if="needsLink(row as Order)" size="small" type="warning" plain @click="goLink(row as Order)">去关联</el-button>
-                <el-button v-if="canDeliver(row as Order)" size="small" type="primary" :loading="busy[`d-${row.id}`]" @click="deliver(row as Order)">手动发货</el-button>
-                <el-button v-if="row.status === 'risk_hold'" size="small" type="warning" plain :loading="busy[`h-${row.id}`]" @click="toManual(row as Order)">转人工</el-button>
+                <el-button v-if="needsLink(row as Order)" size="small" type="warning" plain @click="goLink(row as Order)">
+                  去关联
+                </el-button>
+                <el-button v-if="canDeliver(row as Order)" size="small" type="primary" :loading="busy[`d-${row.id}`]" @click="deliver(row as Order)">
+                  手动发货
+                </el-button>
+                <el-button v-if="row.status === 'risk_hold'" size="small" type="warning" plain :loading="busy[`h-${row.id}`]" @click="toManual(row as Order)">
+                  转人工
+                </el-button>
               </div>
             </template>
           </el-table-column>
@@ -299,27 +346,73 @@ async function openDetail(o: Order) {
 </template>
 
 <style scoped>
-.filters :deep(.el-card__body) {
-  padding: 12px;
+.filters-card :deep(.el-card__body) {
+  padding: 14px 16px;
 }
-.w140 {
-  width: 140px;
+.filters-card {
+  border-radius: 10px;
+  border-color: var(--xh-border);
+}
+.table-card {
+  border-radius: 10px;
+  border-color: var(--xh-border);
+}
+.w150 {
+  width: 150px;
 }
 .w180 {
   width: 180px;
 }
-.w200 {
-  width: 200px;
+.w220 {
+  width: 220px;
 }
-.price {
-  color: #f56c6c;
-  font-weight: 600;
+.order-id-row {
+  display: flex;
+  align-items: center;
 }
-.ml {
-  margin-left: 4px;
+.dot-sep {
+  margin: 0 4px;
+}
+.buyer-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.buyer-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #eff6ff;
+  color: #3b82f6;
+  border: 1px solid #dbeafe;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.buyer-nick {
+  font-size: 13px;
+  color: #1e293b;
+}
+.price-wrap {
+  display: flex;
+  align-items: baseline;
+}
+.price-val {
+  color: #e11d48;
+  font-weight: 700;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
 }
 .err {
-  color: var(--el-color-danger);
+  color: #e11d48;
+}
+.orders-empty-box {
+  padding: 40px 0;
+  display: flex;
+  justify-content: center;
 }
 .ops {
   display: flex;
@@ -328,6 +421,15 @@ async function openDetail(o: Order) {
 }
 .ops .el-button + .el-button {
   margin-left: 0;
+}
+.font-semibold {
+  font-weight: 600;
+}
+.smaller {
+  font-size: 11px;
+}
+.mt-xs {
+  margin-top: 3px;
 }
 .mt {
   margin-top: 12px;
@@ -343,18 +445,20 @@ h4 {
 }
 .preview {
   margin-top: 6px;
-  background: #f7f8fa;
+  background: #f8fafc;
+  border: 1px solid #f1f5f9;
   border-radius: 6px;
-  padding: 6px 8px;
-  font-size: 13px;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, monospace;
   white-space: pre-wrap;
   word-break: break-all;
 }
 @media (max-width: 768px) {
-  .w140,
+  .w150,
   .w180,
-  .w200 {
-    width: calc(50% - 4px);
+  .w220 {
+    width: 100%;
   }
 }
 </style>

@@ -420,54 +420,132 @@ const lowStock = (p: PoolOut) => p.kind === 'pool' && p.stock.available <= p.low
       <el-button :icon="Refresh" @click="refreshAll">刷新</el-button>
     </div>
 
-    <el-alert type="info" :closable="false" class="steps-tip">
-      <template #title>三步开启自动发货</template>
-      <ol class="steps">
-        <li><b>发货内容</b>：写好要发给买家的东西（网盘链接、卡密等）</li>
-        <li><b>商品关联</b>：指定哪个商品发哪份内容</li>
-        <li>到 <router-link to="/accounts">账号中心</router-link> → 设置，打开「自动发货」开关</li>
-      </ol>
-    </el-alert>
+    <!-- 自动发货极简 3 步向导卡片 -->
+    <div class="delivery-steps-card">
+      <div class="steps-card-header">
+        <div class="steps-title">
+          <span class="spark-emoji">⚡</span>
+          <span>自动发货 · 快速上手向导</span>
+        </div>
+        <span class="steps-desc">买家付款后，系统在闲鱼聊天自动发送卡密/网盘并确认发货</span>
+      </div>
+      <div class="delivery-steps-grid">
+        <div class="delivery-step-item" :class="{ current: tab === 'pools' }" @click="tab = 'pools'">
+          <div class="step-num-badge">01</div>
+          <div class="step-content">
+            <div class="step-label">配置发货内容</div>
+            <div class="step-detail">卡密库存 / 百度网盘 / 教程文档</div>
+          </div>
+          <el-button size="small" type="primary" plain class="step-action-btn" @click.stop="openPoolCreate">
+            + 新建
+          </el-button>
+        </div>
 
-    <el-card shadow="never">
-      <el-tabs v-model="tab">
+        <div class="step-arrow-divider">→</div>
+
+        <div class="delivery-step-item" :class="{ current: tab === 'bindings' }" @click="tab = 'bindings'">
+          <div class="step-num-badge">02</div>
+          <div class="step-content">
+            <div class="step-label">绑定对应商品</div>
+            <div class="step-detail">指定哪个商品发哪份内容与买家留言</div>
+          </div>
+          <el-button size="small" type="primary" plain class="step-action-btn" @click.stop="openBindingCreate">
+            + 关联
+          </el-button>
+        </div>
+
+        <div class="step-arrow-divider">→</div>
+
+        <div class="delivery-step-item" @click="router.push('/accounts')">
+          <div class="step-num-badge">03</div>
+          <div class="step-content">
+            <div class="step-label">开启自动发货</div>
+            <div class="step-detail">在账号设置中打开开关，开启 7x24 自动发货</div>
+          </div>
+          <el-button size="small" type="success" plain class="step-action-btn" @click.stop="router.push('/accounts')">
+            去设置 &gt;
+          </el-button>
+        </div>
+      </div>
+    </div>
+
+    <el-card shadow="never" class="content-card">
+      <el-tabs v-model="tab" class="delivery-tabs">
         <!-- 发货内容 -->
-        <el-tab-pane label="① 发货内容" name="pools">
+        <el-tab-pane label="① 发货内容库" name="pools">
           <div class="tab-bar">
             <el-button type="primary" :icon="Plus" @click="openPoolCreate">新建发货内容</el-button>
+            <span class="muted small">支持固定网盘文本、单卡单发卡密库、自有系统 API 接口三种发货方式</span>
           </div>
           <div class="table-wrap">
-            <el-table v-loading="poolsLoading" :data="pools" empty-text="还没有发货内容，点击「新建发货内容」开始">
-              <el-table-column label="名称" prop="name" min-width="140" />
-              <el-table-column label="类型" width="110">
+            <el-table v-loading="poolsLoading" :data="pools">
+              <template #empty>
+                <div class="tab-empty-box">
+                  <el-empty description="还没有配置发货内容，点击下方按钮开始创建">
+                    <el-button type="primary" :icon="Plus" @click="openPoolCreate">新建发货内容</el-button>
+                  </el-empty>
+                </div>
+              </template>
+              <el-table-column label="名称" prop="name" min-width="150">
                 <template #default="{ row }">
-                  <el-tag size="small" :type="kindMap[row.kind as PoolKind]?.type">{{ kindMap[row.kind as PoolKind]?.label || row.kind }}</el-tag>
+                  <span class="font-semibold">{{ row.name }}</span>
                 </template>
               </el-table-column>
-              <el-table-column label="内容 / 剩余库存" min-width="220">
+              <el-table-column label="发货类型" width="120">
+                <template #default="{ row }">
+                  <el-tag size="small" :type="kindMap[row.kind as PoolKind]?.type" effect="light">
+                    {{ kindMap[row.kind as PoolKind]?.label || row.kind }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="内容 / 剩余库存" min-width="240">
                 <template #default="{ row }">
                   <template v-if="row.kind === 'pool'">
-                    <span :class="{ low: lowStock(row as PoolOut) }">可用 {{ row.stock.available }}</span>
-                    <span class="muted small"> · 锁定 {{ row.stock.locked }} · 已用 {{ row.stock.used }}</span>
-                    <el-tag v-if="lowStock(row as PoolOut)" size="small" type="danger" effect="plain" class="ml">库存不足</el-tag>
+                    <div class="stock-cell">
+                      <span class="stock-badge" :class="lowStock(row as PoolOut) ? 'low' : 'ok'">
+                        可用 {{ row.stock.available }} 件
+                      </span>
+                      <span class="muted smaller">已锁定 {{ row.stock.locked }} · 已售出 {{ row.stock.used }}</span>
+                      <el-tag v-if="lowStock(row as PoolOut)" size="small" type="danger" effect="dark" class="ml-s">
+                        库存预警
+                      </el-tag>
+                    </div>
                   </template>
-                  <span v-else-if="row.kind === 'text'" class="muted mono small">{{ row.text_preview || '-' }}</span>
-                  <span v-else class="muted mono small ellipsis">{{ row.api_config.url || '-' }}</span>
+                  <span v-else-if="row.kind === 'text'" class="muted mono small ellipsis-text" :title="row.text_preview">
+                    📄 {{ row.text_preview || '已加密固定内容' }}
+                  </span>
+                  <span v-else class="muted mono small ellipsis-text" :title="row.api_config?.url">
+                    🔌 {{ row.api_config?.url || '自定义 API 接口' }}
+                  </span>
                 </template>
               </el-table-column>
-              <el-table-column label="库存预警" width="90">
-                <template #default="{ row }">{{ row.kind === 'pool' ? `≤ ${row.low_stock_threshold}` : '-' }}</template>
-              </el-table-column>
-              <el-table-column label="启用" width="70">
+              <el-table-column label="库存预警阈值" width="120">
                 <template #default="{ row }">
-                  <el-switch :model-value="row.enabled" size="small" @change="(v: string | number | boolean) => togglePool(row as PoolOut, !!v)" />
+                  <span v-if="row.kind === 'pool'" class="small mono">≤ {{ row.low_stock_threshold }} 件</span>
+                  <span v-else class="muted small">-</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="状态" width="100">
+                <template #default="{ row }">
+                  <el-switch
+                    :model-value="row.enabled"
+                    size="small"
+                    inline-prompt
+                    active-text="启用"
+                    inactive-text="关"
+                    @change="(v: string | number | boolean) => togglePool(row as PoolOut, !!v)"
+                  />
                 </template>
               </el-table-column>
               <el-table-column label="操作" :width="isMobile ? 120 : 260" :fixed="isMobile ? undefined : 'right'">
                 <template #default="{ row }">
                   <div class="ops">
-                    <el-button v-if="row.kind === 'pool'" size="small" type="primary" plain @click="openImport(row as PoolOut)">导入卡密</el-button>
-                    <el-button v-if="row.kind === 'pool'" size="small" @click="openCards(row as PoolOut)">查看卡密</el-button>
+                    <el-button v-if="row.kind === 'pool'" size="small" type="primary" plain @click="openImport(row as PoolOut)">
+                      导入卡密
+                    </el-button>
+                    <el-button v-if="row.kind === 'pool'" size="small" @click="openCards(row as PoolOut)">
+                      查看卡密
+                    </el-button>
                     <el-button size="small" @click="openPoolEdit(row as PoolOut)">编辑</el-button>
                     <el-button size="small" type="danger" plain @click="removePool(row as PoolOut)">删除</el-button>
                   </div>
@@ -480,37 +558,58 @@ const lowStock = (p: PoolOut) => p.kind === 'pool' && p.stock.available <= p.low
         <!-- 商品关联 -->
         <el-tab-pane label="② 商品关联" name="bindings">
           <div class="tab-bar">
-            <el-button type="primary" :icon="Plus" @click="openBindingCreate">关联商品</el-button>
-            <span class="muted small">只有关联了发货内容的商品，买家付款后才会自动发货</span>
+            <el-button type="primary" :icon="Plus" @click="openBindingCreate">关联闲鱼商品</el-button>
+            <span class="muted small">只有关联了发货内容的商品，买家付款后系统才会触发自动发货</span>
           </div>
           <div class="table-wrap">
-            <el-table v-loading="bindingsLoading" :data="bindings" empty-text="还没有关联商品，点击「关联商品」指定哪个商品发哪份内容">
-              <el-table-column label="商品" min-width="200">
+            <el-table v-loading="bindingsLoading" :data="bindings">
+              <template #empty>
+                <div class="tab-empty-box">
+                  <el-empty description="还没有关联商品，指定哪个闲鱼商品付款后发哪份内容">
+                    <el-button type="primary" :icon="Plus" @click="openBindingCreate">关联闲鱼商品</el-button>
+                  </el-empty>
+                </div>
+              </template>
+              <el-table-column label="对应闲鱼商品" min-width="220">
                 <template #default="{ row }">
-                  <div class="ellipsis">{{ goodsTitle(row.item_id) || '商品' }}</div>
-                  <div class="muted small mono">{{ row.item_id }}</div>
+                  <div class="ellipsis font-semibold">{{ goodsTitle(row.item_id) || '商品' }}</div>
+                  <div class="muted smaller mono">ID: {{ row.item_id }}</div>
                 </template>
               </el-table-column>
-              <el-table-column label="规格" width="110">
-                <template #default="{ row }">{{ row.spec_value || '全部规格' }}</template>
+              <el-table-column label="商品规格" width="120">
+                <template #default="{ row }">
+                  <el-tag size="small" effect="plain">{{ row.spec_value || '全部规格通用' }}</el-tag>
+                </template>
               </el-table-column>
-              <el-table-column label="发货内容" min-width="120">
-                <template #default="{ row }">{{ poolName(row.pool_id) }}</template>
+              <el-table-column label="发放内容库" min-width="140">
+                <template #default="{ row }">
+                  <span class="badge-pool-name">📦 {{ poolName(row.pool_id) }}</span>
+                </template>
               </el-table-column>
-              <el-table-column label="账号" min-width="110">
-                <template #default="{ row }">{{ row.account_id ? accounts.nameOf(row.account_id) : '全部账号' }}</template>
+              <el-table-column label="限定账号" min-width="120">
+                <template #default="{ row }">
+                  <span class="small">{{ row.account_id ? accounts.nameOf(row.account_id) : '全部账号通用' }}</span>
+                </template>
               </el-table-column>
-              <el-table-column label="发给买家的话" min-width="200" prop="template" show-overflow-tooltip />
-              <el-table-column label="延迟" width="80">
-                <template #default="{ row }">{{ row.delay_seconds ? `${row.delay_seconds} 秒` : '立即' }}</template>
+              <el-table-column label="给买家的留言模板" min-width="200" prop="template" show-overflow-tooltip>
+                <template #default="{ row }">
+                  <span class="muted small">{{ row.template || '使用默认留言（发货内容）' }}</span>
+                </template>
               </el-table-column>
-              <el-table-column label="每人限购/24h" width="110">
-                <template #default="{ row }">{{ row.max_per_buyer || '不限' }}</template>
+              <el-table-column label="发货延迟" width="90">
+                <template #default="{ row }">
+                  <span class="small">{{ row.delay_seconds ? `${row.delay_seconds} 秒` : '即时发送' }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column label="防刷限购" width="110">
+                <template #default="{ row }">
+                  <span class="small">{{ row.max_per_buyer ? `≤ ${row.max_per_buyer} 次/24h` : '不限' }}</span>
+                </template>
               </el-table-column>
               <el-table-column label="操作" width="130" :fixed="isMobile ? undefined : 'right'">
                 <template #default="{ row }">
                   <el-button size="small" link type="primary" @click="openBindingEdit(row as BindingOut)">编辑</el-button>
-                  <el-button size="small" link type="danger" @click="removeBinding(row as BindingOut)">删除</el-button>
+                  <el-button size="small" link type="danger" @click="removeBinding(row as BindingOut)">解除关联</el-button>
                 </template>
               </el-table-column>
             </el-table>
@@ -518,17 +617,22 @@ const lowStock = (p: PoolOut) => p.kind === 'pool' && p.stock.available <= p.low
         </el-tab-pane>
 
         <!-- 黑名单 -->
-        <el-tab-pane label="买家黑名单" name="blacklist">
-          <div class="muted small mb">黑名单中的买家下单后不会自动发货，订单转为人工处理。</div>
+        <el-tab-pane label="③ 买家黑名单" name="blacklist">
+          <div class="muted small mb">黑名单中的买家下单后系统不会自动发货，订单自动转为人工处理。</div>
           <div class="toolbar mb">
             <el-input v-model="blForm.buyer_id" placeholder="买家 ID" class="w200" />
-            <el-input v-model="blForm.reason" placeholder="原因（可选）" class="w240" />
+            <el-input v-model="blForm.reason" placeholder="原因备注（可选）" class="w240" />
             <el-button type="primary" :loading="blForm.saving" @click="addBl">加入黑名单</el-button>
           </div>
           <div class="table-wrap">
-            <el-table v-loading="blLoading" :data="blacklist" empty-text="黑名单为空">
+            <el-table v-loading="blLoading" :data="blacklist">
+              <template #empty>
+                <div class="tab-empty-box">
+                  <el-empty description="当前黑名单为空，恶意跑单买家可在此加入拦截" />
+                </div>
+              </template>
               <el-table-column label="买家 ID" prop="buyer_id" min-width="160" />
-              <el-table-column label="原因" prop="reason" min-width="200">
+              <el-table-column label="拦截原因" prop="reason" min-width="200">
                 <template #default="{ row }">{{ row.reason || '-' }}</template>
               </el-table-column>
               <el-table-column label="加入时间" width="160">
@@ -681,20 +785,162 @@ const lowStock = (p: PoolOut) => p.kind === 'pool' && p.stock.available <= p.low
 </template>
 
 <style scoped>
+.delivery-steps-card {
+  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+  border: 1px solid var(--xh-border);
+  border-radius: 12px;
+  padding: 16px 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+}
+.steps-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.steps-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #1e293b;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.spark-emoji {
+  font-size: 18px;
+}
+.steps-desc {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.delivery-steps-grid {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr auto 1fr;
+  align-items: center;
+  gap: 12px;
+}
+.delivery-step-item {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.delivery-step-item:hover {
+  transform: translateY(-1px);
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.04);
+}
+.delivery-step-item.current {
+  border-color: #10b981;
+  background: #f0fdf4;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.08);
+}
+.step-num-badge {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: #f1f5f9;
+  color: #475569;
+  font-weight: 700;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+}
+.delivery-step-item.current .step-num-badge {
+  background: #10b981;
+  color: #ffffff;
+}
+.step-content {
+  flex: 1;
+  min-width: 0;
+}
+.step-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e293b;
+}
+.step-detail {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.step-action-btn {
+  font-size: 11px;
+  padding: 4px 8px;
+}
+.step-arrow-divider {
+  color: #cbd5e1;
+  font-size: 18px;
+  font-weight: 600;
+  user-select: none;
+}
+
+.content-card {
+  border-radius: 12px;
+  border-color: var(--xh-border);
+}
 .tab-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
-.steps-tip {
-  margin-bottom: 12px;
+.tab-empty-box {
+  padding: 36px 0;
+  display: flex;
+  justify-content: center;
 }
-.steps {
-  margin: 4px 0 0;
-  padding-left: 20px;
-  line-height: 1.9;
+.stock-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.stock-badge {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+}
+.stock-badge.ok {
+  background: #ecfdf5;
+  color: #059669;
+  border: 1px solid #a7f3d0;
+}
+.stock-badge.low {
+  background: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+}
+.badge-pool-name {
+  background: #f1f5f9;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #334155;
+}
+.ellipsis-text {
+  max-width: 320px;
+  display: inline-block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .ops {
   display: flex;
@@ -704,11 +950,10 @@ const lowStock = (p: PoolOut) => p.kind === 'pool' && p.stock.available <= p.low
 .ops .el-button + .el-button {
   margin-left: 0;
 }
-.low {
-  color: var(--el-color-danger);
+.font-semibold {
   font-weight: 600;
 }
-.ml {
+.ml-s {
   margin-left: 6px;
 }
 .mb {
@@ -738,5 +983,13 @@ const lowStock = (p: PoolOut) => p.kind === 'pool' && p.stock.available <= p.low
 .mono :deep(textarea) {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
+}
+@media (max-width: 900px) {
+  .delivery-steps-grid {
+    grid-template-columns: 1fr;
+  }
+  .step-arrow-divider {
+    display: none;
+  }
 }
 </style>
