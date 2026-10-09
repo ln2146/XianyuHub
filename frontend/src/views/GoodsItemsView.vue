@@ -4,7 +4,15 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete, Plus, Refresh, Search } from '@element-plus/icons-vue'
 import { getMarket, listItems, offlineItem, polishItem, syncItems, updateItem, type MarketView, type MyItem } from '@/api/goods'
-import { listBindings, listPools, type BindingOut, type PoolOut } from '@/api/order'
+import {
+  createBinding,
+  deleteBinding,
+  listBindings,
+  listPools,
+  updateBinding,
+  type BindingOut,
+  type PoolOut,
+} from '@/api/order'
 import MarketPanel from '@/components/MarketPanel.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import { useAccountsStore } from '@/stores/accounts'
@@ -70,8 +78,90 @@ function deliveryOf(it: MyItem): { names: string[] } | null {
   return { names: [...new Set(matched.map((b) => poolNameById.value.get(b.pool_id) || `#${b.pool_id}`))] }
 }
 
-function goDelivery(it: MyItem) {
-  router.push({ path: '/orders/cards', query: { tab: 'bindings', item_id: it.item_id } })
+const poolKindMap: Record<string, string> = {
+  text: '固定内容 (网盘/说明)',
+  pool: '卡密库存 (每单一条)',
+  api: '接口取货 (第三方API)',
+}
+
+const quickDelivery = reactive({
+  open: false,
+  saving: false,
+  unbinding: false,
+  item: null as MyItem | null,
+  currentBinding: null as BindingOut | null,
+  pool_id: null as number | null,
+  applyToAll: true,
+  template: '',
+})
+
+function openQuickDelivery(it: MyItem) {
+  const matched = (bindingsByItem.value.get(it.item_id) || []).find(
+    (b) => b.account_id === null || b.account_id === it.account_id,
+  )
+  Object.assign(quickDelivery, {
+    open: true,
+    saving: false,
+    unbinding: false,
+    item: it,
+    currentBinding: matched || null,
+    pool_id: matched?.pool_id ?? (pools.value[0]?.id || null),
+    applyToAll: matched ? matched.account_id === null : true,
+    template: matched?.template || '您好，订单已发货，内容如下：\n{content}\n如有问题请随时联系～',
+  })
+}
+
+async function saveQuickDelivery() {
+  if (!quickDelivery.item || !quickDelivery.pool_id) {
+    ElMessage.warning('请选择要关联的发货内容库')
+    return
+  }
+  const it = quickDelivery.item
+  quickDelivery.saving = true
+  try {
+    const body = {
+      pool_id: quickDelivery.pool_id,
+      account_id: quickDelivery.applyToAll ? null : it.account_id,
+      item_id: it.item_id,
+      spec_value: null,
+      template: quickDelivery.template.trim(),
+      delay_seconds: 0,
+      max_per_buyer: 0,
+    }
+    if (quickDelivery.currentBinding) {
+      await updateBinding(quickDelivery.currentBinding.id, body)
+      ElMessage.success('已更新发货内容关联')
+    } else {
+      await createBinding(body)
+      ElMessage.success('已成功关联发货内容库')
+    }
+    quickDelivery.open = false
+    await loadDelivery()
+  } catch {
+    /* 拦截器已提示 */
+  } finally {
+    quickDelivery.saving = false
+  }
+}
+
+async function unbindQuickDelivery() {
+  if (!quickDelivery.currentBinding) return
+  await ElMessageBox.confirm('确定解除该商品的发货库关联吗？解除后该商品付款将不再自动发货。', '解除关联', { type: 'warning' })
+  quickDelivery.unbinding = true
+  try {
+    await deleteBinding(quickDelivery.currentBinding.id)
+    ElMessage.success('已解除发货库关联')
+    quickDelivery.open = false
+    await loadDelivery()
+  } catch {
+    /* 拦截器已提示 */
+  } finally {
+    quickDelivery.unbinding = false
+  }
+}
+
+function goDeliveryCards(it?: MyItem | null) {
+  router.push({ path: '/orders/cards', query: { tab: 'bindings', item_id: it?.item_id || undefined } })
 }
 
 async function sync() {
@@ -299,12 +389,12 @@ async function queryMarket() {
             <template #default="{ row }">
               <template v-if="deliveryOf(row as MyItem)">
                 <el-tooltip v-if="deliveryOf(row as MyItem)!.names.length" content="点击修改发货内容" placement="top">
-                  <el-tag size="small" type="success" effect="plain" class="clickable ellipsis-tag" @click="goDelivery(row as MyItem)">
+                  <el-tag size="small" type="success" effect="plain" class="clickable ellipsis-tag" @click="openQuickDelivery(row as MyItem)">
                     {{ deliveryOf(row as MyItem)!.names.join('、') }}
                   </el-tag>
                 </el-tooltip>
-                <el-button v-else-if="row.is_virtual" size="small" type="warning" plain @click="goDelivery(row as MyItem)">去设置</el-button>
-                <el-button v-else size="small" link type="primary" @click="goDelivery(row as MyItem)">设置</el-button>
+                <el-button v-else-if="row.is_virtual" size="small" type="warning" plain @click="openQuickDelivery(row as MyItem)">去设置</el-button>
+                <el-button v-else size="small" link type="primary" @click="openQuickDelivery(row as MyItem)">设置</el-button>
               </template>
               <span v-else class="muted small">-</span>
             </template>
@@ -390,6 +480,108 @@ async function queryMarket() {
         <el-empty v-else-if="!market.loading" description="查询失败或无数据" :image-size="50" />
       </div>
       <div class="form-tip">行情来自实时搜索（会消耗一次搜索频率）。最后同步：{{ fmtTime(market.item?.synced_at) }}</div>
+    </el-dialog>
+
+    <!-- 就地自动发货关联弹窗 -->
+    <el-dialog
+      v-model="quickDelivery.open"
+      title="商品自动发货关联设置"
+      width="540px"
+      destroy-on-close
+      class="quick-delivery-dialog"
+    >
+      <div v-if="quickDelivery.item" class="quick-delivery-body">
+        <div class="quick-item-card">
+          <el-image :src="quickDelivery.item.image_url" fit="cover" class="quick-thumb">
+            <template #error>
+              <div class="thumb-err">无图</div>
+            </template>
+          </el-image>
+          <div class="quick-item-info">
+            <div class="quick-item-title">{{ quickDelivery.item.title }}</div>
+            <div class="quick-item-sub">
+              <span class="price-val">{{ fmtMoney(quickDelivery.item.price) }}</span>
+              <span class="dot-sep">·</span>
+              <span class="muted small">{{ accounts.nameOf(quickDelivery.item.account_id) }}</span>
+            </div>
+          </div>
+        </div>
+
+        <el-alert
+          type="info"
+          :closable="false"
+          show-icon
+          class="mt"
+          title="买家付款后，系统将自动从所选内容库取货（卡密库存自动去重扣减或发送网盘链接），并在闲鱼自动确认发货。"
+        />
+
+        <el-form label-position="top" class="mt">
+          <el-form-item label="关联发货内容库（固定网盘 / 卡密库存 / API）" required>
+            <el-select v-model="quickDelivery.pool_id" placeholder="请选择发货内容库" class="w-full">
+              <el-option
+                v-for="p in pools"
+                :key="p.id"
+                :value="p.id"
+                :label="`${p.name} · ${poolKindMap[p.kind] || p.kind} ${p.kind === 'pool' ? `(余${p.stock?.available ?? 0})` : ''}`"
+              />
+            </el-select>
+            <div v-if="!pools.length" class="smaller err mt-xs">
+              暂无可用的发货内容库，
+              <el-link type="primary" class="smaller" @click="goDeliveryCards()">前往自动发货管理新建内容库 &gt;</el-link>
+            </div>
+          </el-form-item>
+
+          <el-form-item label="生效范围">
+            <el-radio-group v-model="quickDelivery.applyToAll">
+              <el-radio :value="true">全部闲鱼账号通用（推荐）</el-radio>
+              <el-radio :value="false">仅当前账号（{{ accounts.nameOf(quickDelivery.item.account_id) }}）有效</el-radio>
+            </el-radio-group>
+          </el-form-item>
+
+          <el-collapse class="template-collapse">
+            <el-collapse-item title="自定义发货留言模版（可选）" name="tpl">
+              <el-input
+                v-model="quickDelivery.template"
+                type="textarea"
+                :rows="3"
+                placeholder="您好，订单已发货，内容如下：&#10;{content}&#10;如有问题请随时联系～"
+              />
+              <div class="muted smaller mt-xs">说明：{content} 会被自动替换为实际卡密或网盘说明。</div>
+            </el-collapse-item>
+          </el-collapse>
+        </el-form>
+      </div>
+
+      <template #footer>
+        <div class="bind-dialog-footer">
+          <div>
+            <el-button
+              v-if="quickDelivery.currentBinding"
+              type="danger"
+              plain
+              size="small"
+              :loading="quickDelivery.unbinding"
+              @click="unbindQuickDelivery"
+            >
+              解除当前关联
+            </el-button>
+            <el-link type="info" class="smaller ml-xs" @click="goDeliveryCards(quickDelivery.item)">
+              前往完整发货库 &gt;
+            </el-link>
+          </div>
+          <div class="footer-btns">
+            <el-button @click="quickDelivery.open = false">取消</el-button>
+            <el-button
+              type="primary"
+              :loading="quickDelivery.saving"
+              :disabled="!quickDelivery.pool_id"
+              @click="saveQuickDelivery"
+            >
+              保存关联
+            </el-button>
+          </div>
+        </div>
+      </template>
     </el-dialog>
   </div>
 </template>
@@ -495,10 +687,97 @@ async function queryMarket() {
   justify-content: center;
   margin-top: 12px;
 }
+
+/* 快捷关联发货弹窗样式 */
+.quick-item-card {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.quick-thumb {
+  width: 48px;
+  height: 48px;
+  border-radius: 6px;
+  flex-shrink: 0;
+  background: #f1f5f9;
+}
+.quick-item-info {
+  min-width: 0;
+  flex: 1;
+}
+.quick-item-title {
+  font-weight: 600;
+  font-size: 13px;
+  color: #1e293b;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.quick-item-sub {
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+}
+.price-val {
+  color: #e11d48;
+  font-weight: 700;
+  font-size: 14px;
+}
+.dot-sep {
+  margin: 0 6px;
+  color: #94a3b8;
+}
+.template-collapse {
+  margin-top: 10px;
+  border: none;
+}
+.template-collapse :deep(.el-collapse-item__header) {
+  font-size: 12px;
+  color: var(--xh-muted);
+}
+.bind-dialog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+.footer-btns {
+  display: flex;
+  gap: 8px;
+}
+.w-full {
+  width: 100%;
+}
+.ml-xs {
+  margin-left: 6px;
+}
+.smaller {
+  font-size: 11px;
+}
+.err {
+  color: #e11d48;
+}
+.mt-xs {
+  margin-top: 4px;
+}
+.mt {
+  margin-top: 12px;
+}
 @media (max-width: 768px) {
   .w120,
   .w180 {
     width: calc(50% - 4px);
+  }
+  .bind-dialog-footer {
+    flex-direction: column-reverse;
+    gap: 12px;
+    align-items: flex-end;
   }
 }
 </style>

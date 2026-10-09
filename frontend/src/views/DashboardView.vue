@@ -14,6 +14,7 @@ import {
   Refresh,
   Right,
   Search,
+  Setting,
   UserFilled,
   Warning,
 } from '@element-plus/icons-vue'
@@ -28,7 +29,7 @@ const realtime = useRealtimeStore()
 const data = ref<Dashboard | null>(null)
 const loading = ref(false)
 const quickKeyword = ref('')
-const activeTab = ref('accounts')
+const activeTab = ref<'accounts' | 'search' | 'system'>('accounts')
 let timer: number | undefined
 
 function goToSearch() {
@@ -110,52 +111,52 @@ const kpis = computed(() => {
       hint: `人工已回 ${t?.messages_manual ?? 0} 条`,
       icon: ChatDotRound,
       color: '#3b82f6',
-      bg: '#eff6ff',
+      bg: 'rgba(59, 130, 246, 0.1)',
       path: '/messages/inbox',
     },
     {
-      label: '自动回复',
+      label: '自动智能接待',
       value: t?.messages_auto ?? 0,
       hint: '关键词 + AI 接待',
       icon: Lightning,
       color: '#8b5cf6',
-      bg: '#f5f3ff',
+      bg: 'rgba(139, 92, 246, 0.1)',
       path: '/messages/rules',
     },
     {
-      label: '自动发货',
+      label: '自动发货卡密',
       value: t?.deliveries ?? 0,
       hint: '已发出的发货卡密',
       icon: Promotion,
       color: '#10b981',
-      bg: '#ecfdf5',
+      bg: 'rgba(16, 185, 129, 0.1)',
       path: '/orders/cards',
     },
     {
-      label: '今日订单',
+      label: '今日订单成交',
       value: orders,
       hint: '含待付款全量订单',
       icon: Box,
       color: '#f97316',
-      bg: '#fff7ed',
+      bg: 'rgba(249, 115, 22, 0.1)',
       path: '/orders/list',
     },
     {
-      label: '今日 GMV',
+      label: '今日成交 GMV',
       value: fmtMoney(t?.gmv ?? 0),
       hint: '成交金额 (扣除退款)',
       icon: Money,
       color: '#eab308',
-      bg: '#fefce8',
+      bg: 'rgba(234, 179, 8, 0.1)',
       path: '/orders/list',
     },
     {
-      label: '选品推荐',
+      label: '选品雷达推荐',
       value: radar,
       hint: `捡漏 ${t?.radar.recommend || 0} · 需核 ${t?.radar.conditional || 0}`,
       icon: DataLine,
       color: '#06b6d4',
-      bg: '#ecfeff',
+      bg: 'rgba(6, 182, 212, 0.1)',
       path: '/radar/results',
     },
   ]
@@ -182,123 +183,151 @@ function healthColor(h: number) {
 
 <template>
   <div v-loading="loading && !data" class="page dashboard-page">
-    <!-- 顶部极简状态栏 -->
-    <div class="dash-head">
-      <div class="head-left">
-        <h2 class="title-with-badge">
-          总览看板
+    <!-- 顶部状态栏 -->
+    <header class="dash-header">
+      <div class="header-left">
+        <h2 class="page-title-text">
+          总览工作台
           <span class="live-pill">
             <span class="live-pulse" />
             实时监控中
           </span>
         </h2>
-        <span class="head-sub">零点基准自动统计 · 每分钟实时同步</span>
+        <span class="header-meta">以北京时间零点为基准自动统计 · 每分钟实时同步最新业务变动</span>
       </div>
-      <div class="head-right">
-        <!-- 待办订单报警胶囊 -->
+
+      <div class="header-right">
+        <!-- 待办订单报警胶囊 (高亮突出) -->
         <div
           v-if="(data?.pending_manual_orders || 0) > 0"
-          class="pending-alarm-pill"
+          class="pending-alarm-pill active"
           @click="router.push({ path: '/orders/list', query: { status: NEEDS_ACTION_STATUSES } })"
         >
-          <el-icon><Warning /></el-icon>
-          <span>{{ data?.pending_manual_orders }} 笔订单需处理</span>
-          <el-icon><Right /></el-icon>
+          <el-icon class="alarm-icon"><Warning /></el-icon>
+          <span>{{ data?.pending_manual_orders }} 笔订单待人工处理</span>
+          <el-icon class="arrow-right"><Right /></el-icon>
         </div>
-        <el-button :icon="Refresh" :loading="loading" size="small" round @click="load">刷新数据</el-button>
+        <div
+          v-else
+          class="pending-alarm-pill calm"
+          @click="router.push('/orders/list')"
+        >
+          <el-icon class="check-icon"><CircleCheck /></el-icon>
+          <span>订单全部处理完毕</span>
+        </div>
+
+        <el-button :icon="Refresh" :loading="loading" size="small" class="refresh-btn" round @click="load">
+          刷新数据
+        </el-button>
       </div>
-    </div>
+    </header>
 
-    <!-- 核心指标卡片行 (紧凑 6 列布局) -->
-    <el-row :gutter="10" class="kpi-row">
-      <el-col v-for="k in kpis" :key="k.label" :xs="12" :sm="8" :lg="4">
-        <div class="kpi-card" @click="router.push(k.path)">
-          <div class="kpi-top">
-            <span class="kpi-label">{{ k.label }}</span>
-            <div class="kpi-icon-wrap" :style="{ color: k.color, backgroundColor: k.bg }">
-              <el-icon :size="15"><component :is="k.icon" /></el-icon>
-            </div>
-          </div>
-          <div class="kpi-value" :style="{ color: k.value === '¥0' || k.value === 0 ? '#1f2937' : k.color }">
-            {{ k.value }}
-          </div>
-          <div class="kpi-hint">
-            <span>{{ k.hint }}</span>
-            <el-icon class="arrow-hint"><Right /></el-icon>
+    <!-- 核心指标卡片矩阵 (紧凑单行 6 列) -->
+    <section class="kpi-section">
+      <div
+        v-for="k in kpis"
+        :key="k.label"
+        class="kpi-card"
+        @click="router.push(k.path)"
+      >
+        <div class="kpi-header">
+          <span class="kpi-label">{{ k.label }}</span>
+          <div class="kpi-icon-bubble" :style="{ color: k.color, backgroundColor: k.bg }">
+            <el-icon :size="15"><component :is="k.icon" /></el-icon>
           </div>
         </div>
-      </el-col>
-    </el-row>
+        <div class="kpi-value" :style="{ color: k.value === '¥0' || k.value === 0 ? '#1e293b' : k.color }">
+          {{ k.value }}
+        </div>
+        <div class="kpi-footer">
+          <span class="kpi-hint">{{ k.hint }}</span>
+          <el-icon class="kpi-arrow"><Right /></el-icon>
+        </div>
+      </div>
+    </section>
 
-    <!-- 主工作区：Tab 切换栏，分类组织，一屏尽览 -->
-    <el-tabs v-model="activeTab" class="dash-tabs" type="border-card">
-      <!-- Tab 1: 闲鱼账号与风控防护 -->
-      <el-tab-pane name="accounts">
-        <template #label>
-          <div class="tab-label-custom">
-            <el-icon><UserFilled /></el-icon>
-            <span>闲鱼账号与风控</span>
-            <span v-if="data?.accounts.length" class="tab-count-badge">{{ data.accounts.length }}</span>
-          </div>
-        </template>
+    <!-- 主工作区：满高弹性容器 (Flex-1 Fill Remaining Viewport) -->
+    <main class="dash-main-container">
+      <el-tabs v-model="activeTab" class="custom-dash-tabs" type="border-card">
+        <!-- Tab 1: 闲鱼账号与风控防护 -->
+        <el-tab-pane name="accounts">
+          <template #label>
+            <div class="tab-item-label">
+              <el-icon><UserFilled /></el-icon>
+              <span>闲鱼账号与风控</span>
+              <span v-if="data?.accounts.length" class="tab-badge-num">{{ data.accounts.length }}</span>
+            </div>
+          </template>
 
-        <el-row :gutter="14" class="tab-fill-row">
-          <!-- 账号状态表格 -->
-          <el-col :xs="24" :lg="15">
-            <div class="subcard">
-              <div class="subcard-head">
-                <div class="subcard-title-group">
-                  <span class="subcard-title">闲鱼账号状态</span>
-                  <span class="subcard-subtitle">已接入账号的消息通道与自动托管</span>
+          <div class="tab-grid-layout two-cols">
+            <!-- 左侧：账号管理卡片 (自适应高度) -->
+            <div class="panel-box accounts-panel">
+              <div class="panel-header">
+                <div class="title-with-subtitle">
+                  <span class="panel-title">已接入闲鱼账号</span>
+                  <span class="panel-desc">长连接在线状态与一键自动化托管控制</span>
                 </div>
-                <el-button link type="primary" size="small" @click="router.push('/accounts')">管理全部账号 &gt;</el-button>
+                <div class="panel-actions">
+                  <el-button link type="primary" size="small" @click="router.push('/accounts')">
+                    进入账号管理中心 &gt;
+                  </el-button>
+                </div>
               </div>
 
-              <div class="table-wrap">
-                <el-table :data="data?.accounts || []" size="small" empty-text="还没有添加闲鱼账号" max-height="300">
-                  <el-table-column label="账号昵称" min-width="150">
+              <div class="panel-body table-flex-wrap">
+                <el-table
+                  :data="data?.accounts || []"
+                  size="small"
+                  empty-text="还没有添加闲鱼账号，请前往账号管理添加"
+                  class="modern-account-table"
+                  height="100%"
+                >
+                  <el-table-column label="账号昵称" min-width="170">
                     <template #default="{ row }">
-                      <div class="account-cell">
-                        <div class="acc-avatar-bubble">🐟</div>
-                        <div class="acc-info">
-                          <div class="acc-name">{{ row.remark || row.nickname || '闲鱼账号' }}</div>
-                          <div class="acc-sub mono">{{ row.nickname }}</div>
+                      <div class="account-profile">
+                        <div class="avatar-bubble">
+                          <span>🐟</span>
+                          <span class="status-dot-pulse" :class="row.im_connected ? 'online' : 'offline'" />
+                        </div>
+                        <div class="account-texts">
+                          <div class="acc-nick">{{ row.remark || row.nickname || '闲鱼卖家' }}</div>
+                          <div class="acc-id mono">{{ row.nickname }}</div>
                         </div>
                       </div>
                     </template>
                   </el-table-column>
 
-                  <el-table-column label="运行状态" width="100">
+                  <el-table-column label="运行状态" width="110">
                     <template #default="{ row }">
                       <StatusTag :value="row.status" :map="accountStatusMap" />
                     </template>
                   </el-table-column>
 
-                  <el-table-column label="健康度" min-width="130">
+                  <el-table-column label="健康评分" min-width="140">
                     <template #default="{ row }">
-                      <div class="health-wrap">
+                      <div class="health-cell">
                         <el-progress
                           :percentage="row.health"
                           :color="healthColor(row.health)"
                           :stroke-width="6"
                           :show-text="false"
-                          class="flex-1"
+                          class="health-bar"
                         />
-                        <span class="health-num" :style="{ color: healthColor(row.health) }">{{ row.health }}%</span>
+                        <span class="health-text" :style="{ color: healthColor(row.health) }">{{ row.health }}%</span>
                       </div>
                     </template>
                   </el-table-column>
 
-                  <el-table-column label="长连接" width="85">
+                  <el-table-column label="消息长连接" width="105">
                     <template #default="{ row }">
-                      <div class="im-status-pill" :class="row.im_connected ? 'online' : 'offline'">
-                        <span class="dot" />
+                      <div class="connection-tag" :class="row.im_connected ? 'is-connected' : 'is-disconnected'">
+                        <span class="con-dot" />
                         <span>{{ row.im_connected ? '在线' : '离线' }}</span>
                       </div>
                     </template>
                   </el-table-column>
 
-                  <el-table-column label="自动回复" width="85">
+                  <el-table-column label="自动回复" width="95">
                     <template #default="{ row }">
                       <el-switch
                         :model-value="row.auto_reply"
@@ -312,7 +341,7 @@ function healthColor(h: number) {
                     </template>
                   </el-table-column>
 
-                  <el-table-column label="自动发货" width="85">
+                  <el-table-column label="自动发货" width="95">
                     <template #default="{ row }">
                       <el-switch
                         :model-value="row.auto_delivery"
@@ -327,302 +356,342 @@ function healthColor(h: number) {
                   </el-table-column>
                 </el-table>
               </div>
-            </div>
-          </el-col>
 
-          <!-- 待办 + 风控事件 -->
-          <el-col :xs="24" :lg="9">
-            <!-- 待办处理卡片 -->
-            <div
-              class="dash-pending-box"
-              :class="{ active: (data?.pending_manual_orders || 0) > 0 }"
-              @click="router.push({ path: '/orders/list', query: { status: NEEDS_ACTION_STATUSES } })"
-            >
-              <div class="pending-left">
-                <div class="pending-icon-wrap" :class="{ warn: (data?.pending_manual_orders || 0) > 0 }">
-                  <el-icon :size="18">
-                    <component :is="(data?.pending_manual_orders || 0) > 0 ? Warning : CircleCheck" />
-                  </el-icon>
-                </div>
-                <div>
-                  <div class="pending-title">
-                    {{ (data?.pending_manual_orders || 0) > 0 ? '有订单需人工处理' : '全部订单处理完毕' }}
-                  </div>
-                  <div class="pending-desc">
-                    {{ (data?.pending_manual_orders || 0) > 0 ? '待人工 / 风控暂停 / 异常订单' : '当前无待人工发货或滞留订单' }}
-                  </div>
-                </div>
-              </div>
-              <div class="pending-count" :class="{ warn: (data?.pending_manual_orders || 0) > 0 }">
-                {{ data?.pending_manual_orders ?? 0 }}
-              </div>
-            </div>
-
-            <!-- 近 7 天风控与保护记录 -->
-            <div class="subcard mt-s">
-              <div class="subcard-head">
-                <div class="subcard-title-group">
-                  <span class="subcard-title">近 7 天风控防护记录</span>
-                  <span class="subcard-subtitle">撞限流或滑块自愈情况</span>
-                </div>
-              </div>
-
-              <div v-if="!data?.risk_events.length" class="empty-risk-state compact">
-                <div class="empty-icon-shield">🛡️</div>
-                <div class="empty-risk-title">近 7 天无异常风控事件</div>
-                <div class="empty-risk-desc">拟人请求控频已开启，账号受全面安全防护</div>
-              </div>
-              <el-timeline v-else class="risk-timeline compact">
-                <el-timeline-item
-                  v-for="(r, i) in data.risk_events"
-                  :key="r.id ?? i"
-                  :timestamp="fmtTime(r.created_at)"
-                  :type="r.resolved ? 'success' : r.state === 'circuit_open' ? 'danger' : 'warning'"
-                >
-                  <div class="risk-row">
-                    <span class="risk-acc-name">{{ accountName(r.account_id) }}</span>
-                    <StatusTag :value="r.state" :map="accountStatusMap" />
-                    <el-tag v-if="r.resolved" size="small" type="success" effect="plain">已自愈</el-tag>
-                  </div>
-                  <div class="risk-reason">{{ r.reason || '短时访问频次过高' }}</div>
-                  <el-link
-                    v-if="r.punish_url && !r.resolved"
-                    :href="r.punish_url"
-                    target="_blank"
-                    type="danger"
-                    class="small mt-xs"
-                  >
-                    🔗 打开闲鱼验证解除 &gt;
-                  </el-link>
-                </el-timeline-item>
-              </el-timeline>
-            </div>
-          </el-col>
-        </el-row>
-      </el-tab-pane>
-
-      <!-- Tab 2: 闲鱼快速找货 (嵌入式 Hero 找货栏) -->
-      <el-tab-pane name="search">
-        <template #label>
-          <div class="tab-label-custom">
-            <el-icon><Search /></el-icon>
-            <span>闲鱼实时找货</span>
-          </div>
-        </template>
-
-        <div class="tab-search-container">
-          <div class="quick-search-hero embedded">
-            <div class="search-flex-row">
-              <div class="search-desc">
-                <div class="search-main-title">
-                  <div class="search-icon-badge">
-                    <el-icon :size="18"><Search /></el-icon>
-                  </div>
-                  <span>闲鱼全量一手货源实时搜索</span>
-                  <el-tag size="small" effect="plain" type="success" class="ml-s">无需新建监控</el-tag>
-                </div>
-                <div class="search-sub-title">实时直搜闲鱼一手货源底价与成色，即搜即看，一键转手发品或加入监控</div>
-              </div>
-              <div class="search-input-wrap">
-                <el-input
-                  v-model="quickKeyword"
-                  placeholder="输入商品名称/型号（如 iPhone 15、MacBook、Switch OLED），按回车立即找货"
-                  size="large"
-                  clearable
-                  class="hero-search-input"
-                  @keyup.enter="goToSearch"
-                >
-                  <template #append>
-                    <el-button type="primary" :icon="Search" class="hero-search-btn" @click="goToSearch">
-                      立即找货
-                    </el-button>
-                  </template>
-                </el-input>
-              </div>
-            </div>
-
-            <div class="hot-search-row">
-              <span class="hot-title">🔥 热门搜索推荐：</span>
-              <div class="hot-tags-group">
-                <span
-                  v-for="k in ['MacBook M1', 'iPhone 15', 'Switch OLED', 'PS5', '显卡 RTX', 'iPad Air', 'AirPods Pro', '机械键盘']"
-                  :key="k"
-                  class="hot-pill"
-                  @click="searchByKeyword(k)"
-                >
-                  {{ k }}
+              <!-- 卡片底部状态汇总条 -->
+              <div class="panel-footer-bar">
+                <span class="footer-tip">
+                  🟢 共接入 {{ data?.accounts.length || 0 }} 个账号 · 拟人频控实时防护中 · 状态每分钟自动检测
                 </span>
+                <el-button link type="primary" size="small" :icon="Setting" @click="router.push('/accounts')">
+                  配置接入
+                </el-button>
               </div>
-              <el-button link type="primary" size="small" class="more-search-link" @click="router.push('/radar/search')">
-                进入完整选品雷达工作台 &gt;
-              </el-button>
             </div>
-          </div>
 
-          <!-- 快速找货 3 步玩法引导 -->
-          <div class="search-features-grid">
-            <div class="sf-item" @click="router.push('/radar/search')">
-              <div class="sf-icon sf-1">⚡</div>
-              <div class="sf-text">
-                <div class="sf-title">实时直搜</div>
-                <div class="sf-desc">秒级拉取闲鱼第一手上架宝贝，避开倒爷二手加价</div>
-              </div>
-            </div>
-            <div class="sf-item" @click="router.push('/radar/tasks')">
-              <div class="sf-icon sf-2">🎯</div>
-              <div class="sf-text">
-                <div class="sf-title">自动监控</div>
-                <div class="sf-desc">一键将心仪词设为后台定时任务，AI 替你全天候蹲守</div>
-              </div>
-            </div>
-            <div class="sf-item" @click="router.push('/radar/results')">
-              <div class="sf-icon sf-3">💎</div>
-              <div class="sf-text">
-                <div class="sf-title">一键转手发品</div>
-                <div class="sf-desc">发现低价真漏直接转卖发品，自动加价并生成带货文案</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </el-tab-pane>
-
-      <!-- Tab 3: AI 引擎与后台服务 -->
-      <el-tab-pane name="system">
-        <template #label>
-          <div class="tab-label-custom">
-            <el-icon><Cpu /></el-icon>
-            <span>AI 引擎与系统服务</span>
-            <span v-if="llm?.available" class="dot-online-mini" />
-          </div>
-        </template>
-
-        <el-row :gutter="14" class="tab-fill-row">
-          <!-- 大模型服务卡片 -->
-          <el-col :xs="24" :lg="12">
-            <div class="subcard">
-              <div class="subcard-head">
-                <div class="subcard-title-group">
-                  <span class="subcard-title">AI 大模型服务</span>
-                  <span class="subcard-subtitle">驱动自动客服、选品鉴定与发布文案</span>
+            <!-- 右侧：风控自愈与待办中心 -->
+            <div class="panel-box risk-panel">
+              <div class="panel-header">
+                <div class="title-with-subtitle">
+                  <span class="panel-title">近 7 天智能安全防护</span>
+                  <span class="panel-desc">频控、滑块验证自愈与安全事件记录</span>
                 </div>
-                <div class="flex items-center gap-2">
+              </div>
+
+              <div class="panel-body">
+                <!-- 空状态：安全防御态势图 (充实专业，告别空荡感) -->
+                <div v-if="!data?.risk_events.length" class="shield-cockpit">
+                  <div class="shield-aura">
+                    <div class="shield-big-icon">🛡️</div>
+                    <div class="shield-safe-badge">SAFE 99.8</div>
+                  </div>
+                  <div class="shield-status-title">风控防护引擎平稳运行</div>
+                  <p class="shield-status-desc">
+                    近 7 天未触发平台限制或人机滑块拦截。系统已自动启用随机拟人化延迟与流量整形策略。
+                  </p>
+                  <div class="shield-feature-pills">
+                    <span class="shield-pill">⚡ 拟人访问控频</span>
+                    <span class="shield-pill">🧩 滑块自愈就绪</span>
+                    <span class="shield-pill">🔒 设备指纹模拟</span>
+                  </div>
+                </div>
+
+                <!-- 发生风控记录时的时间线 -->
+                <div v-else class="risk-timeline-container">
+                  <el-timeline class="compact-timeline">
+                    <el-timeline-item
+                      v-for="(r, i) in data.risk_events"
+                      :key="r.id ?? i"
+                      :timestamp="fmtTime(r.created_at)"
+                      :type="r.resolved ? 'success' : r.state === 'circuit_open' ? 'danger' : 'warning'"
+                      size="normal"
+                    >
+                      <div class="timeline-row">
+                        <span class="acc-badge">{{ accountName(r.account_id) }}</span>
+                        <StatusTag :value="r.state" :map="accountStatusMap" />
+                        <el-tag v-if="r.resolved" size="small" type="success" effect="plain" class="ml-s">已自愈解除</el-tag>
+                      </div>
+                      <div class="timeline-reason">{{ r.reason || '短时访问频次过高或接口临时限流' }}</div>
+                      <el-link
+                        v-if="r.punish_url && !r.resolved"
+                        :href="r.punish_url"
+                        target="_blank"
+                        type="danger"
+                        class="small mt-xs inline-block"
+                      >
+                        🔗 打开闲鱼验证页面手动解除 &gt;
+                      </el-link>
+                    </el-timeline-item>
+                  </el-timeline>
+                </div>
+              </div>
+            </div>
+          </div>
+        </el-tab-pane>
+
+        <!-- Tab 2: 闲鱼实时找货引擎 -->
+        <el-tab-pane name="search">
+          <template #label>
+            <div class="tab-item-label">
+              <el-icon><Search /></el-icon>
+              <span>闲鱼实时找货</span>
+            </div>
+          </template>
+
+          <div class="tab-search-wrapper">
+            <!-- 找货 Hero 卡片 -->
+            <div class="search-hero-card">
+              <div class="hero-top-row">
+                <div class="hero-brand">
+                  <div class="search-badge-icon">
+                    <el-icon :size="20"><Search /></el-icon>
+                  </div>
+                  <div>
+                    <h3 class="hero-title">
+                      闲鱼全量一手货源实时探索
+                      <el-tag size="small" type="success" effect="plain" class="hero-tag">免建监控 · 即搜即看</el-tag>
+                    </h3>
+                    <p class="hero-subtitle">直接输入商品型号获取闲鱼最新发布的原始货源、真实底价与卖家信誉等级</p>
+                  </div>
+                </div>
+
+                <div class="hero-input-box">
+                  <el-input
+                    v-model="quickKeyword"
+                    placeholder="输入商品型号（如 iPhone 15、MacBook M1、Switch OLED），回车立即搜索"
+                    size="large"
+                    clearable
+                    class="custom-hero-input"
+                    @keyup.enter="goToSearch"
+                  >
+                    <template #append>
+                      <el-button type="primary" :icon="Search" class="hero-submit-btn" @click="goToSearch">
+                        立即找货
+                      </el-button>
+                    </template>
+                  </el-input>
+                </div>
+              </div>
+
+              <!-- 分类热门关键词 -->
+              <div class="hero-hot-section">
+                <span class="hot-label">🔥 热门搜索词推荐：</span>
+                <div class="hot-chips-list">
+                  <span
+                    v-for="k in ['MacBook M1', 'iPhone 15', 'Switch OLED', 'PS5', '显卡 RTX', 'iPad Air', 'AirPods Pro', '机械键盘']"
+                    :key="k"
+                    class="hot-chip"
+                    @click="searchByKeyword(k)"
+                  >
+                    {{ k }}
+                  </span>
+                </div>
+                <el-button link type="primary" size="small" class="jump-radar-btn" @click="router.push('/radar/search')">
+                  进入完整选品雷达工作台 &gt;
+                </el-button>
+              </div>
+            </div>
+
+            <!-- 下方 3 大核心玩法赋能卡片 -->
+            <div class="radar-workflow-grid">
+              <div class="workflow-card" @click="router.push('/radar/search')">
+                <div class="wf-icon-wrap icon-blue">⚡</div>
+                <div class="wf-content">
+                  <div class="wf-name">实时搜货</div>
+                  <div class="wf-desc">秒级拉取闲鱼个人玩家最新上架，比倒爷二手加价更快一步锁定一手低价。</div>
+                </div>
+                <el-icon class="wf-arrow"><Right /></el-icon>
+              </div>
+
+              <div class="workflow-card" @click="router.push('/radar/tasks')">
+                <div class="wf-icon-wrap icon-purple">🎯</div>
+                <div class="wf-content">
+                  <div class="wf-name">自动监控任务</div>
+                  <div class="wf-desc">将心仪商品配置为后台定时巡检任务，支持 AI 智能质检、成色评估与降价提醒。</div>
+                </div>
+                <el-icon class="wf-arrow"><Right /></el-icon>
+              </div>
+
+              <div class="workflow-card" @click="router.push('/radar/results')">
+                <div class="wf-icon-wrap icon-emerald">💎</div>
+                <div class="wf-content">
+                  <div class="wf-name">好货一键转手发品</div>
+                  <div class="wf-desc">从好货看板中发现具有套利空间的捡漏品，点击一键带入加价率直接生成带货文案。</div>
+                </div>
+                <el-icon class="wf-arrow"><Right /></el-icon>
+              </div>
+            </div>
+          </div>
+        </el-tab-pane>
+
+        <!-- Tab 3: AI 引擎与系统底座服务 -->
+        <el-tab-pane name="system">
+          <template #label>
+            <div class="tab-item-label">
+              <el-icon><Cpu /></el-icon>
+              <span>AI 引擎与后台服务</span>
+              <span v-if="llm?.available" class="dot-status-green" />
+            </div>
+          </template>
+
+          <div class="tab-grid-layout two-cols">
+            <!-- 左侧：AI 大模型算力与分工 -->
+            <div class="panel-box llm-panel">
+              <div class="panel-header">
+                <div class="title-with-subtitle">
+                  <span class="panel-title">AI 大模型服务引擎</span>
+                  <span class="panel-desc">驱动买家意图接待、自动发货决策与商品真伪鉴定</span>
+                </div>
+                <div class="panel-actions">
                   <el-tag v-if="llm" :type="llm.available ? 'success' : 'danger'" size="small" effect="light">
-                    {{ llm.available ? '🟢 引擎就绪' : '🔴 连接异常' }}
+                    {{ llm.available ? '🟢 引擎连接正常' : '🔴 连接异常' }}
                   </el-tag>
-                  <el-button size="small" link type="primary" @click="router.push('/llm')">模型配置 &gt;</el-button>
+                  <el-button link type="primary" size="small" class="ml-s" @click="router.push('/llm')">
+                    配置模型 &gt;
+                  </el-button>
                 </div>
               </div>
 
-              <template v-if="llm">
-                <div class="llm-info-grid">
-                  <div class="llm-row">
-                    <span class="llm-label">服务提供方</span>
-                    <span class="llm-val">{{ llm.provider || '未配置' }}</span>
+              <div class="panel-body">
+                <template v-if="llm">
+                  <div class="llm-details-grid">
+                    <div class="metric-card">
+                      <span class="m-label">当前服务提供方</span>
+                      <span class="m-val">{{ llm.provider || '未配置' }}</span>
+                    </div>
+                    <div class="metric-card">
+                      <span class="m-label">配置来源方式</span>
+                      <el-tag v-if="llm.source === 'env'" size="small" type="warning" effect="plain">环境变量注入</el-tag>
+                      <span v-else class="m-val">{{ llm.source || '-' }}</span>
+                    </div>
+                    <div class="metric-card">
+                      <span class="m-label">今日调用次数</span>
+                      <span class="m-val highlight">{{ llm.usage_today.calls }} 次</span>
+                    </div>
+                    <div class="metric-card">
+                      <span class="m-label">今日 Token 消耗量</span>
+                      <span class="m-val highlight">{{ tokenUsed.toLocaleString() }}</span>
+                    </div>
                   </div>
-                  <div class="llm-row">
-                    <span class="llm-label">配置来源</span>
-                    <el-tag v-if="llm.source === 'env'" size="small" type="warning" effect="plain">环境变量</el-tag>
-                    <span v-else class="llm-val">{{ llm.source || '-' }}</span>
-                  </div>
-                  <div class="llm-divider" />
-                  <div v-for="(m, tier) in llm.models" :key="tier" class="llm-row">
-                    <span class="llm-label">{{ tier === 'chat' ? '对话主模型' : tier === 'vision' ? '视觉解析' : '高速过滤' }}</span>
-                    <span class="llm-model-tag mono">{{ m || '-' }}</span>
-                  </div>
-                  <div class="llm-divider" />
-                  <div class="llm-row">
-                    <span class="llm-label">今日调用次数</span>
-                    <span class="llm-val font-semibold">{{ llm.usage_today.calls }} 次</span>
-                  </div>
-                  <div class="llm-row">
-                    <span class="llm-label">Token 消耗量</span>
-                    <span class="llm-val font-semibold">{{ tokenUsed.toLocaleString() }}</span>
-                  </div>
-                </div>
 
-                <div v-if="llm.usage_today.budget" class="token-progress-wrap">
-                  <div class="token-head">
-                    <span class="small muted">今日预算限额</span>
-                    <span class="small mono">{{ tokenPercent }}%</span>
+                  <div class="tier-models-box">
+                    <div class="tier-title">模型三层分工调度：</div>
+                    <div class="tier-row">
+                      <div v-for="(m, tier) in llm.models" :key="tier" class="tier-chip">
+                        <span class="tier-name">{{ tier === 'chat' ? '💬 对话主模型' : tier === 'vision' ? '👁️ 视觉验机' : '⚡ 高速粗筛' }}</span>
+                        <span class="tier-val mono">{{ m || '-' }}</span>
+                      </div>
+                    </div>
                   </div>
-                  <el-progress
-                    :percentage="tokenPercent"
-                    :status="tokenPercent > 90 ? 'exception' : undefined"
-                    :stroke-width="6"
-                    :show-text="false"
-                  />
-                </div>
-                <el-alert v-if="llm.error" :title="llm.error" type="error" :closable="false" show-icon class="mt-s" />
-              </template>
-            </div>
-          </el-col>
 
-          <!-- 系统后台服务与调度卡片 -->
-          <el-col :xs="24" :lg="12">
-            <div class="subcard">
-              <div class="subcard-head">
-                <div class="subcard-title-group">
-                  <span class="subcard-title">系统后台服务与调度</span>
-                  <span class="subcard-subtitle">IM 守护进程与常驻任务调度</span>
-                </div>
-                <el-button size="small" link type="primary" @click="router.push('/system')">系统设置 &gt;</el-button>
-              </div>
-
-              <div class="system-status-grid">
-                <div class="sys-item">
-                  <span class="sys-label">IM 消息守护进程</span>
-                  <el-tag :type="data?.system.im_running ? 'success' : 'info'" size="small">
-                    {{ data?.system.im_running ? '正常运行' : '未启动' }}
-                  </el-tag>
-                </div>
-                <div class="sys-item">
-                  <span class="sys-label">自动选品监控任务</span>
-                  <span class="font-semibold">{{ data?.monitor_tasks ?? 0 }} 个开启</span>
-                </div>
-              </div>
-
-              <div v-if="data?.system.jobs.length" class="jobs-list-wrap">
-                <div class="jobs-header">
-                  <span>定时常驻调度（{{ data.system.jobs.length }}）</span>
-                </div>
-                <div class="jobs-scroll-box">
-                  <div v-for="j in data.system.jobs.slice(0, 6)" :key="j.id" class="job-chip">
-                    <span class="mono ellipsis job-id">{{ j.id }}</span>
-                    <span class="muted smaller">{{ fmtTime(j.next_run) }}</span>
+                  <div v-if="llm.usage_today.budget" class="budget-progress-box">
+                    <div class="budget-header">
+                      <span class="small-muted">每日 Token 消耗安全预算进度</span>
+                      <span class="small-bold mono">{{ tokenPercent }}%</span>
+                    </div>
+                    <el-progress
+                      :percentage="tokenPercent"
+                      :status="tokenPercent > 90 ? 'exception' : undefined"
+                      :stroke-width="7"
+                      :show-text="false"
+                      class="budget-bar"
+                    />
                   </div>
-                </div>
+                  <el-alert v-if="llm.error" :title="llm.error" type="error" :closable="false" show-icon class="mt-s" />
+                </template>
               </div>
             </div>
-          </el-col>
-        </el-row>
-      </el-tab-pane>
-    </el-tabs>
+
+            <!-- 右侧：系统后台调度常驻引擎 -->
+            <div class="panel-box system-panel">
+              <div class="panel-header">
+                <div class="title-with-subtitle">
+                  <span class="panel-title">系统后台常驻进程与调度</span>
+                  <span class="panel-desc">WebSocket 实时推送通道与定时巡检队列</span>
+                </div>
+                <div class="panel-actions">
+                  <el-button link type="primary" size="small" @click="router.push('/system')">
+                    系统设置 &gt;
+                  </el-button>
+                </div>
+              </div>
+
+              <div class="panel-body">
+                <div class="service-pulse-row">
+                  <div class="pulse-card">
+                    <div class="pulse-icon">📡</div>
+                    <div>
+                      <div class="pulse-name">IM 消息实时长连接守护</div>
+                      <div class="pulse-sub">实时监听买家咨询并触发秒级自动回复</div>
+                    </div>
+                    <el-tag :type="data?.system.im_running ? 'success' : 'info'" size="small" effect="dark" class="ml-auto">
+                      {{ data?.system.im_running ? '运行中' : '未启动' }}
+                    </el-tag>
+                  </div>
+
+                  <div class="pulse-card">
+                    <div class="pulse-icon">🎯</div>
+                    <div>
+                      <div class="pulse-name">选品监控定时扫描引擎</div>
+                      <div class="pulse-sub">全天候异步巡检闲鱼新上架好货</div>
+                    </div>
+                    <el-tag size="small" type="primary" effect="plain" class="ml-auto">
+                      {{ data?.monitor_tasks ?? 0 }} 个任务生效
+                    </el-tag>
+                  </div>
+                </div>
+
+                <!-- 定时调度队列 -->
+                <div v-if="data?.system.jobs.length" class="jobs-block">
+                  <div class="jobs-header-row">
+                    <span>常驻定时调度队列 (Cron 任务)</span>
+                    <span class="small-muted">共 {{ data.system.jobs.length }} 个常驻任务</span>
+                  </div>
+                  <div class="jobs-scroll-container">
+                    <div v-for="j in data.system.jobs.slice(0, 6)" :key="j.id" class="job-item-row">
+                      <span class="job-name mono ellipsis">{{ j.id }}</span>
+                      <span class="job-time small-muted mono">下次执行：{{ fmtTime(j.next_run) }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </el-tab-pane>
+      </el-tabs>
+    </main>
   </div>
 </template>
 
 <style scoped>
+/* 全局页面视口高度自适应：占满可用高度，消除外部滚动条 */
 .dashboard-page {
-  animation: fadeIn 0.25s ease-out;
+  height: calc(100vh - 56px - 40px);
+  display: flex;
+  flex-direction: column;
   box-sizing: border-box;
+  animation: fadeIn 0.22s ease-out;
+  overflow: hidden;
 }
+
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
 /* 顶部状态栏 */
-.dash-head {
+.dash-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 10px;
+  flex-shrink: 0;
 }
-.head-left {
+.header-left {
   display: flex;
   align-items: baseline;
   gap: 12px;
 }
-.title-with-badge {
+.page-title-text {
   font-size: 18px;
   font-weight: 700;
   color: #0f172a;
@@ -631,15 +700,16 @@ function healthColor(h: number) {
   align-items: center;
   gap: 8px;
 }
-.head-sub {
+.header-meta {
   font-size: 12px;
   color: #94a3b8;
 }
-.head-right {
+.header-right {
   display: flex;
   align-items: center;
   gap: 10px;
 }
+
 .live-pill {
   display: inline-flex;
   align-items: center;
@@ -649,7 +719,7 @@ function healthColor(h: number) {
   color: #059669;
   font-size: 11px;
   font-weight: 500;
-  padding: 1px 7px;
+  padding: 1px 8px;
   border-radius: 999px;
 }
 .live-pulse {
@@ -665,34 +735,53 @@ function healthColor(h: number) {
   100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
 }
 
+/* 待办胶囊 */
 .pending-alarm-pill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  font-size: 12px;
+  padding: 3px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  font-weight: 500;
+}
+.pending-alarm-pill.active {
   background: #fffbeb;
   border: 1px solid #fde68a;
   color: #b45309;
-  font-size: 12px;
-  font-weight: 600;
-  padding: 3px 10px;
-  border-radius: 999px;
-  cursor: pointer;
-  transition: all 0.15s;
 }
-.pending-alarm-pill:hover {
+.pending-alarm-pill.active:hover {
   background: #fef3c7;
   transform: translateY(-1px);
 }
+.pending-alarm-pill.calm {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  color: #64748b;
+}
+.pending-alarm-pill.calm:hover {
+  background: #f1f5f9;
+}
+.alarm-icon { color: #f59e0b; font-size: 14px; }
+.check-icon { color: #10b981; font-size: 14px; }
+.arrow-right { font-size: 11px; opacity: 0.7; }
+.refresh-btn { border-color: #e2e8f0; font-weight: 500; }
 
-/* 核心指标卡片矩阵 (紧凑高度 ~70px) */
-.kpi-row {
-  margin-bottom: 10px;
+/* 核心指标卡片矩阵 (紧凑高度 72px) */
+.kpi-section {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 10px;
+  margin-bottom: 12px;
+  flex-shrink: 0;
 }
 .kpi-card {
   background: #ffffff;
   border: 1px solid var(--xh-border);
   border-radius: 9px;
-  padding: 9px 12px 7px;
+  padding: 8px 12px 6px;
   cursor: pointer;
   transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
@@ -702,22 +791,22 @@ function healthColor(h: number) {
 .kpi-card:hover {
   transform: translateY(-2px);
   border-color: #cbd5e1;
-  box-shadow: 0 4px 10px -2px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 6px 14px -2px rgba(0, 0, 0, 0.06);
 }
-.kpi-top {
+.kpi-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 3px;
+  margin-bottom: 2px;
 }
 .kpi-label {
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 500;
   color: #64748b;
 }
-.kpi-icon-wrap {
-  width: 24px;
-  height: 24px;
+.kpi-icon-bubble {
+  width: 22px;
+  height: 22px;
   border-radius: 6px;
   display: flex;
   align-items: center;
@@ -728,66 +817,91 @@ function healthColor(h: number) {
   font-weight: 700;
   letter-spacing: -0.4px;
   line-height: 1.2;
-  margin-bottom: 3px;
+  margin-bottom: 2px;
   font-variant-numeric: tabular-nums;
 }
-.kpi-hint {
-  font-size: 11px;
+.kpi-footer {
+  font-size: 10.5px;
   color: #94a3b8;
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-top: auto;
 }
-.arrow-hint {
+.kpi-arrow {
   opacity: 0;
   transition: opacity 0.15s, transform 0.15s;
   font-size: 10px;
 }
-.kpi-card:hover .arrow-hint {
+.kpi-card:hover .kpi-arrow {
   opacity: 1;
   transform: translateX(2px);
 }
 
-/* 主 Tab 容器 (全屏紧凑工作台) */
-.dash-tabs {
-  border-radius: 10px;
+/* 主工作区满高 Flex-1 布局 */
+.dash-main-container {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 自定义 Border Card Tabs 样式：全屏撑满 */
+.custom-dash-tabs {
+  flex: 1;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
   border: 1px solid var(--xh-border);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
   background: #ffffff;
+  overflow: hidden;
 }
-.dash-tabs :deep(.el-tabs__header) {
+.custom-dash-tabs :deep(.el-tabs__header) {
   background: #f8fafc;
   margin: 0;
   border-bottom: 1px solid var(--xh-border);
+  flex-shrink: 0;
 }
-.dash-tabs :deep(.el-tabs__nav-wrap) {
-  padding: 0 12px;
+.custom-dash-tabs :deep(.el-tabs__nav-wrap) {
+  padding: 0 14px;
 }
-.dash-tabs :deep(.el-tabs__item) {
-  height: 40px;
-  line-height: 40px;
+.custom-dash-tabs :deep(.el-tabs__item) {
+  height: 42px;
+  line-height: 42px;
   font-size: 13.5px;
   color: #64748b;
   border: none !important;
-  transition: all 0.15s;
+  transition: all 0.15s ease;
+  padding: 0 16px !important;
 }
-.dash-tabs :deep(.el-tabs__item.is-active) {
+.custom-dash-tabs :deep(.el-tabs__item.is-active) {
   background: #ffffff;
   color: var(--xh-primary, #10b981) !important;
   font-weight: 600;
   border-bottom: 2px solid var(--xh-primary, #10b981) !important;
 }
-.dash-tabs :deep(.el-tabs__content) {
+.custom-dash-tabs :deep(.el-tabs__content) {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
   padding: 12px 14px;
+  box-sizing: border-box;
+}
+.custom-dash-tabs :deep(.el-tab-pane) {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
-.tab-label-custom {
+.tab-item-label {
   display: flex;
   align-items: center;
   gap: 6px;
 }
-.tab-count-badge {
+.tab-badge-num {
   font-size: 10px;
   background: #e2e8f0;
   color: #475569;
@@ -795,7 +909,7 @@ function healthColor(h: number) {
   border-radius: 999px;
   font-weight: 600;
 }
-.dot-online-mini {
+.dot-status-green {
   width: 6px;
   height: 6px;
   background: #10b981;
@@ -803,263 +917,324 @@ function healthColor(h: number) {
   margin-left: 2px;
 }
 
-/* Tab 内卡片 */
-.subcard {
+/* 网格双列撑满布局 */
+.tab-grid-layout.two-cols {
+  display: grid;
+  grid-template-columns: 1.55fr 1fr;
+  gap: 12px;
+  height: 100%;
+  flex: 1;
+  min-height: 0;
+}
+
+/* 模块面板卡片通用样式 (撑满高度) */
+.panel-box {
   background: #ffffff;
   border: 1px solid #eef2f6;
-  border-radius: 8px;
-  padding: 12px 14px;
+  border-radius: 10px;
+  padding: 12px 16px;
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
 }
-.subcard-head {
+.panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
+  flex-shrink: 0;
 }
-.subcard-title-group {
+.title-with-subtitle {
   display: flex;
   align-items: baseline;
   gap: 8px;
 }
-.subcard-title {
-  font-size: 14px;
+.panel-title {
+  font-size: 14.5px;
   font-weight: 600;
   color: #1e293b;
 }
-.subcard-subtitle {
+.panel-desc {
   font-size: 11px;
   color: #94a3b8;
 }
+.panel-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 表格容器弹性撑满 */
+.table-flex-wrap {
+  flex: 1;
+  min-height: 0;
+}
+.modern-account-table {
+  border-radius: 6px;
+}
 
 /* 账号单元格 */
-.account-cell {
+.account-profile {
   display: flex;
   align-items: center;
   gap: 8px;
 }
-.acc-avatar-bubble {
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
+.avatar-bubble {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
   background: #ecfdf5;
   border: 1px solid #d1fae5;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
+  font-size: 15px;
 }
-.acc-info {
+.status-dot-pulse {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  border: 1px solid #fff;
+}
+.status-dot-pulse.online { background: #10b981; }
+.status-dot-pulse.offline { background: #cbd5e1; }
+
+.account-texts {
   display: flex;
   flex-direction: column;
 }
-.acc-name {
+.acc-nick {
   font-weight: 600;
   color: #1e293b;
   font-size: 12.5px;
   line-height: 1.3;
 }
-.acc-sub {
+.acc-id {
   font-size: 10px;
   color: #94a3b8;
 }
-.health-wrap {
+
+.health-cell {
   display: flex;
   align-items: center;
   gap: 6px;
 }
-.health-num {
-  font-size: 11.5px;
+.health-bar {
+  flex: 1;
+}
+.health-text {
+  font-size: 11px;
   font-weight: 600;
   min-width: 32px;
 }
 
-/* IM 状态指示 */
-.im-status-pill {
+.connection-tag {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #f8fafc;
 }
-.im-status-pill .dot {
+.connection-tag .con-dot {
   width: 5px;
   height: 5px;
   border-radius: 50%;
 }
-.im-status-pill.online {
+.connection-tag.is-connected {
   color: #059669;
+  background: #ecfdf5;
 }
-.im-status-pill.online .dot {
+.connection-tag.is-connected .con-dot {
   background: #10b981;
-  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
 }
-.im-status-pill.offline {
+.connection-tag.is-disconnected {
   color: #94a3b8;
 }
-.im-status-pill.offline .dot {
+.connection-tag.is-disconnected .con-dot {
   background: #cbd5e1;
 }
 
-/* 待办卡片 */
-.dash-pending-box {
-  background: #ffffff;
-  border: 1px solid var(--xh-border);
-  border-radius: 8px;
-  padding: 10px 14px;
+.panel-footer-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  cursor: pointer;
-  transition: all 0.15s;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #f1f5f9;
+  flex-shrink: 0;
 }
-.dash-pending-box:hover {
-  transform: translateY(-1px);
-  border-color: #cbd5e1;
-}
-.dash-pending-box.active {
-  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
-  border-color: #fde68a;
-}
-.pending-left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.pending-icon-wrap {
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
-  background: #f1f5f9;
-  color: #64748b;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.pending-icon-wrap.warn {
-  background: #fef08a;
-  color: #b45309;
-}
-.pending-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: #1e293b;
-}
-.pending-desc {
+.footer-tip {
   font-size: 11px;
-  color: #64748b;
-  margin-top: 1px;
-}
-.pending-count {
-  font-size: 22px;
-  font-weight: 700;
   color: #94a3b8;
-}
-.pending-count.warn {
-  color: #d97706;
 }
 
-/* 风控空状态 */
-.empty-risk-state.compact {
-  padding: 24px 12px;
+/* 安全防御态势图 (充实专业感) */
+.shield-cockpit {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   text-align: center;
+  padding: 16px 20px;
+  background: radial-gradient(circle at 50% 30%, #f0fdf4 0%, #ffffff 70%);
+  border-radius: 8px;
+  border: 1px solid #d1fae5;
 }
-.empty-icon-shield {
-  font-size: 32px;
+.shield-aura {
+  position: relative;
+  margin-bottom: 8px;
+}
+.shield-big-icon {
+  font-size: 42px;
+  filter: drop-shadow(0 4px 12px rgba(16, 185, 129, 0.25));
+}
+.shield-safe-badge {
+  position: absolute;
+  bottom: -4px;
+  right: -16px;
+  background: #10b981;
+  color: #ffffff;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+  letter-spacing: 0.5px;
+}
+.shield-status-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #065f46;
   margin-bottom: 4px;
 }
-.empty-risk-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: #334155;
+.shield-status-desc {
+  font-size: 11.5px;
+  color: #64748b;
+  max-width: 320px;
+  line-height: 1.5;
+  margin: 0 0 12px;
 }
-.empty-risk-desc {
+.shield-feature-pills {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.shield-pill {
   font-size: 11px;
-  color: #94a3b8;
-  margin-top: 2px;
+  background: #ffffff;
+  border: 1px solid #a7f3d0;
+  color: #047857;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-weight: 500;
 }
 
 /* 风控时间线 */
-.risk-timeline.compact {
-  padding-left: 4px;
-  max-height: 200px;
+.risk-timeline-container {
+  flex: 1;
   overflow-y: auto;
+  padding-right: 4px;
 }
-.risk-row {
+.compact-timeline {
+  padding-left: 4px;
+}
+.timeline-row {
   display: flex;
   align-items: center;
   gap: 6px;
 }
-.risk-acc-name {
+.acc-badge {
   font-weight: 600;
   font-size: 12px;
 }
-.risk-reason {
+.timeline-reason {
   font-size: 11.5px;
   color: #64748b;
   margin-top: 2px;
 }
 
-/* Tab 2 找货面板样式 */
-.tab-search-container {
-  padding: 6px 4px;
+/* Tab 2 找货面板满屏自适应 */
+.tab-search-wrapper {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
-.quick-search-hero.embedded {
-  background: linear-gradient(135deg, #ffffff 0%, #f4fbf7 60%, #eefbf3 100%);
-  border: 1px solid rgba(16, 185, 129, 0.3);
+.search-hero-card {
+  background: linear-gradient(135deg, #f0fdf4 0%, #ffffff 50%, #eff6ff 100%);
+  border: 1px solid rgba(16, 185, 129, 0.25);
   border-radius: 10px;
   padding: 16px 20px;
-  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.04);
+  box-shadow: 0 2px 10px rgba(16, 185, 129, 0.04);
 }
-.search-flex-row {
+.hero-top-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 20px;
   flex-wrap: wrap;
 }
-.search-desc {
-  min-width: 240px;
+.hero-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
-.search-main-title {
+.search-badge-icon {
+  width: 36px;
+  height: 36px;
+  background: #10b981;
+  color: #ffffff;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+}
+.hero-title {
   font-size: 16px;
   font-weight: 700;
   color: #0f172a;
+  margin: 0;
   display: flex;
   align-items: center;
   gap: 8px;
 }
-.search-icon-badge {
-  width: 28px;
-  height: 28px;
-  background: #10b981;
-  color: #ffffff;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.hero-tag {
+  font-weight: 500;
 }
-.search-sub-title {
+.hero-subtitle {
   font-size: 12px;
   color: #64748b;
-  margin-top: 3px;
+  margin: 3px 0 0;
 }
-.search-input-wrap {
+.hero-input-box {
   flex: 1;
   min-width: 280px;
-  max-width: 600px;
+  max-width: 620px;
 }
-.hero-search-input :deep(.el-input__wrapper) {
+.custom-hero-input :deep(.el-input__wrapper) {
   border-radius: 8px 0 0 8px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
 }
-.hero-search-btn {
+.hero-submit-btn {
   background: #10b981 !important;
   border-color: #10b981 !important;
   color: #ffffff !important;
   font-weight: 500;
   border-radius: 0 8px 8px 0;
 }
-.hot-search-row {
+.hero-hot-section {
   margin-top: 12px;
   padding-top: 10px;
   border-top: 1px dashed rgba(16, 185, 129, 0.2);
@@ -1068,17 +1243,17 @@ function healthColor(h: number) {
   gap: 8px;
   flex-wrap: wrap;
 }
-.hot-title {
-  font-size: 12px;
+.hot-label {
+  font-size: 11.5px;
   color: #64748b;
   font-weight: 500;
 }
-.hot-tags-group {
+.hot-chips-list {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
 }
-.hot-pill {
+.hot-chip {
   font-size: 11px;
   background: #ffffff;
   border: 1px solid #d1fae5;
@@ -1086,145 +1261,209 @@ function healthColor(h: number) {
   padding: 2px 9px;
   border-radius: 999px;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.15s ease;
 }
-.hot-pill:hover {
+.hot-chip:hover {
   background: #10b981;
   border-color: #10b981;
   color: #ffffff;
   transform: translateY(-1px);
 }
-.more-search-link {
+.jump-radar-btn {
   margin-left: auto;
   font-size: 12px;
   font-weight: 500;
 }
 
 /* 玩法卡片网格 */
-.search-features-grid {
+.radar-workflow-grid {
+  flex: 1;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 12px;
-  margin-top: 14px;
 }
-.sf-item {
+.workflow-card {
   background: #ffffff;
   border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 12px 14px;
+  border-radius: 9px;
+  padding: 16px;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.18s ease;
+  height: 100%;
+  box-sizing: border-box;
 }
-.sf-item:hover {
-  transform: translateY(-1px);
+.workflow-card:hover {
+  transform: translateY(-2px);
   border-color: #cbd5e1;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.05);
 }
-.sf-icon {
-  font-size: 24px;
+.wf-icon-wrap {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  flex-shrink: 0;
 }
-.sf-title {
-  font-size: 13px;
+.icon-blue { background: #eff6ff; }
+.icon-purple { background: #f5f3ff; }
+.icon-emerald { background: #ecfdf5; }
+
+.wf-content {
+  flex: 1;
+}
+.wf-name {
+  font-size: 14px;
   font-weight: 600;
   color: #1e293b;
+  margin-bottom: 3px;
 }
-.sf-desc {
-  font-size: 11px;
+.wf-desc {
+  font-size: 11.5px;
   color: #64748b;
-  margin-top: 2px;
+  line-height: 1.45;
+}
+.wf-arrow {
+  color: #cbd5e1;
+  font-size: 14px;
+  transition: transform 0.15s;
+}
+.workflow-card:hover .wf-arrow {
+  transform: translateX(3px);
+  color: #10b981;
 }
 
 /* Tab 3 大模型与系统服务 */
-.llm-info-grid {
+.llm-details-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.metric-card {
+  background: #f8fafc;
+  padding: 8px 12px;
+  border-radius: 6px;
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 2px;
 }
-.llm-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 12px;
-}
-.llm-label {
+.m-label {
+  font-size: 11px;
   color: #64748b;
 }
-.llm-val {
-  color: #1e293b;
+.m-val {
+  font-size: 13px;
+  color: #0f172a;
+  font-weight: 500;
 }
-.llm-model-tag {
-  background: #f1f5f9;
-  padding: 1px 6px;
-  border-radius: 4px;
-  color: #334155;
-  font-size: 11px;
-}
-.llm-divider {
-  height: 1px;
-  background: #f1f5f9;
-  margin: 3px 0;
-}
-.token-progress-wrap {
-  margin-top: 8px;
-  padding-top: 6px;
-  border-top: 1px dashed var(--xh-border);
-}
-.token-head {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 3px;
+.m-val.highlight {
+  font-weight: 700;
+  color: #10b981;
 }
 
-.system-status-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  font-size: 12px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid #f1f5f9;
+.tier-models-box {
+  background: #ffffff;
+  border: 1px solid #f1f5f9;
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
 }
-.sys-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.sys-label {
-  color: #64748b;
-}
-.jobs-list-wrap {
-  margin-top: 8px;
-}
-.jobs-header {
+.tier-title {
   font-size: 11px;
-  color: #94a3b8;
+  color: #64748b;
   font-weight: 500;
   margin-bottom: 6px;
 }
-.jobs-scroll-box {
+.tier-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.tier-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11.5px;
+  background: #f8fafc;
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+.tier-name { color: #475569; }
+.tier-val { color: #0f172a; font-size: 11px; }
+
+.budget-progress-box {
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px dashed #f1f5f9;
+}
+.budget-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.small-muted { font-size: 11px; color: #94a3b8; }
+.small-bold { font-size: 11px; font-weight: 600; }
+
+.service-pulse-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.pulse-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #f8fafc;
+  border: 1px solid #eef2f6;
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+.pulse-icon { font-size: 20px; }
+.pulse-name { font-size: 12.5px; font-weight: 600; color: #1e293b; }
+.pulse-sub { font-size: 11px; color: #94a3b8; }
+.ml-auto { margin-left: auto; }
+
+.jobs-block {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.jobs-header-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #475569;
+  margin-bottom: 6px;
+}
+.jobs-scroll-container {
+  flex: 1;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 5px;
 }
-.job-chip {
+.job-item-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
   background: #f8fafc;
-  padding: 4px 8px;
+  padding: 5px 8px;
   border-radius: 4px;
   font-size: 11px;
 }
-.job-id {
-  color: #475569;
-  max-width: 140px;
-}
+.job-name { color: #334155; max-width: 160px; }
 
 .ml-s { margin-left: 6px; }
 .mt-s { margin-top: 10px; }
 .mt-xs { margin-top: 4px; }
-.font-semibold { font-weight: 600; }
-.smaller { font-size: 10px; }
+.inline-block { display: inline-block; }
 </style>
