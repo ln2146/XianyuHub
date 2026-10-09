@@ -125,6 +125,45 @@ class TaskResult(IdMixin, Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
+class WatchStatus(StrEnum):
+    WATCHING = "watching"  # 监控中
+    TRIGGERED = "triggered"  # 已到价并提醒（自动暂停）
+    ENDED = "ended"  # 商品已售出 / 下架 / 删除（自动停止）
+    PAUSED = "paused"  # 连续失败或手动暂停
+
+
+class PriceWatch(IdMixin, TimestampMixin, Base):
+    """单品价格监控：定时拉取单个商品详情，记录价格走势，到达目标价时提醒。"""
+
+    __tablename__ = "buyer_price_watches"
+    __table_args__ = (UniqueConstraint("owner_id", "item_id"),)
+
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    item_id: Mapped[str] = mapped_column(String(32), index=True)
+    title: Mapped[str] = mapped_column(String(256), default="")
+    image_url: Mapped[str] = mapped_column(String(512), default="")
+    link: Mapped[str] = mapped_column(String(512), default="")
+    note: Mapped[str] = mapped_column(String(256), default="")
+    # 提醒条件（至少一个）：价格 ≤ 目标价；或较加入时价格降幅 ≥ drop_percent
+    target_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    drop_percent: Mapped[float | None] = mapped_column(Float, nullable=True)
+    interval_minutes: Mapped[int] = mapped_column(Integer, default=60)
+    account_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 为空则匿名查询
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    status: Mapped[str] = mapped_column(String(16), default=WatchStatus.WATCHING)
+    # 价格
+    base_price: Mapped[float | None] = mapped_column(Float, nullable=True)  # 加入（或重新开启）时的价格
+    last_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    lowest_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    item_status: Mapped[str] = mapped_column(String(32), default="")
+    # 运行状态
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    triggered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    consecutive_failures: Mapped[int] = mapped_column(Integer, default=0)
+    ended_reason: Mapped[str | None] = mapped_column(String(128), nullable=True)
+
+
 class SellerProfileCache(Base):
     __tablename__ = "seller_profiles"
 

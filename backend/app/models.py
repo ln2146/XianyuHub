@@ -5,6 +5,7 @@ from app.domains.buyer.models import (  # noqa: F401
     MarketItemRecord,
     MonitorTask,
     PriceSnapshot,
+    PriceWatch,
     SellerProfileCache,
     TaskResult,
 )

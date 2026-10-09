@@ -16,6 +16,7 @@ from app.core.events import Topics, bus
 from app.core.realtime import hub
 from app.domains.account import service as account_service
 from app.domains.buyer import scheduling as buyer_scheduling
+from app.domains.buyer import watch as buyer_watch
 from app.domains.goods import service as goods_service
 from app.domains.message import service as message_service
 from app.domains.order import service as order_service
@@ -84,6 +85,7 @@ async def setup_runtime(transport=None) -> None:
 async def start_workers() -> None:
     scheduler.add_interval_job("account.keepalive", account_service.keepalive_all, seconds=30 * 60, jitter=300)
     await buyer_scheduling.register_all()
+    scheduler.add_interval_job("buyer.price_watch", buyer_watch.check_due_watches, seconds=5 * 60, jitter=30)
     scheduler.add_interval_job("goods.publish_due", goods_service.publish_due_drafts, seconds=60, jitter=5)
     scheduler.add_cron_job("goods.polish_all", goods_service.polish_all, "30 9 * * *")
     scheduler.add_interval_job("order.retry_failed", order_service.retry_failed, seconds=60, jitter=10)

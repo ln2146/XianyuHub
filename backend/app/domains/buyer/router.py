@@ -17,6 +17,7 @@ from app.core.events import Topics, bus
 from app.core.pagination import set_total
 from app.domains.account.service import get_account_for
 from app.domains.buyer import scheduling
+from app.domains.buyer import watch as watch_service
 from app.domains.buyer.ai import draft_task
 from app.domains.buyer.analysis import (
     InsightOut,
@@ -31,10 +32,12 @@ from app.domains.buyer.models import (
     MarketItemRecord,
     MonitorTask,
     PriceSnapshot,
+    PriceWatch,
     SellerProfileCache,
     TaskResult,
     UserMark,
     Verdict,
+    WatchStatus,
 )
 from app.domains.buyer.pipeline import load_seller_profile, run_task, task_lock, upsert_market_item
 from app.goofish.dto import ItemDetail, SearchQuery
@@ -67,7 +70,7 @@ class TaskIn(BaseModel):
     ai_prescreen: bool = True
     fetch_seller_profile: bool = False
     notify_conditional: bool = False
-    price_drop_percent: float = Field(default=5, ge=0, le=90)
+    price_drop_percent: float = Field(default=0, ge=0, le=90)  # 降价提醒已移交「价格监控」，新任务默认关闭
     account_id: int | None = None
     cron: str = "*/30 8-23 * * *"
     enabled: bool = True
@@ -633,3 +636,160 @@ async def item_insight(item_id: str, body: InsightIn, user: CurrentUser, session
     except LLMError as e:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(e)) from e
     return InsightResp(item=item, seller=seller, ai=ai)
+
+
+# ---------------------------------------------------------------- 单品价格监控
+WATCH_INTERVALS = (15, 30, 60, 120, 180, 360, 720, 1440)
+
+
+class WatchSettings(BaseModel):
+    target_price: float | None = Field(default=None, gt=0)
+    drop_percent: float | None = Field(default=None, gt=0, le=90)
+    interval_minutes: int = 60
+    account_id: int | None = None
+    note: str = Field(default="", max_length=256)
+
+    @field_validator("interval_minutes")
+    @classmethod
+    def _interval(cls, v: int) -> int:
+        if v not in WATCH_INTERVALS:
+            raise ValueError(f"检查频率只能是 {', '.join(map(str, WATCH_INTERVALS))} 分钟之一")
+        return v
+
+
+class WatchIn(WatchSettings):
+    item: str = Field(min_length=1, max_length=512, description="商品链接或商品 ID")
+
+
+class WatchUpdate(WatchSettings):
+    enabled: bool = True
+
+
+class WatchOut(BaseModel):
+    id: int
+    item_id: str
+    title: str
+    image_url: str
+    link: str
+    note: str
+    target_price: float | None
+    drop_percent: float | None
+    interval_minutes: int
+    account_id: int | None
+    enabled: bool
+    status: str
+    base_price: float | None
+    last_price: float | None
+    lowest_price: float | None
+    item_status: str
+    last_checked_at: datetime | None
+    triggered_at: datetime | None
+    last_error: str | None
+    ended_reason: str | None
+    created_at: datetime
+
+
+def _watch_out(w: PriceWatch) -> WatchOut:
+    return WatchOut.model_validate(w, from_attributes=True)
+
+
+async def _own_watch(session, user, watch_id: int) -> PriceWatch:  # noqa: ANN001
+    w = await session.get(PriceWatch, watch_id)
+    if w is None or w.owner_id != user.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "监控不存在")
+    return w
+
+
+def _need_condition(body: WatchSettings) -> None:
+    if body.target_price is None and not body.drop_percent:
+        raise HTTPException(422, "请至少设置目标价或降幅提醒中的一项")
+
+
+@router.get("/watches", response_model=list[WatchOut])
+async def list_watches(user: CurrentUser, session: SessionDep) -> list[WatchOut]:
+    rows = await session.execute(
+        select(PriceWatch).where(PriceWatch.owner_id == user.id).order_by(PriceWatch.id.desc())
+    )
+    return [_watch_out(w) for w in rows.scalars()]
+
+
+@router.post("/watches", response_model=WatchOut, status_code=201)
+async def create_watch(body: WatchIn, user: CurrentUser, session: SessionDep) -> WatchOut:
+    _need_condition(body)
+    try:
+        item_id = watch_service.parse_item_id(body.item)
+    except watch_service.WatchInputError as e:
+        raise HTTPException(422, str(e)) from e
+    if body.account_id is not None:
+        await get_account_for(session, user, body.account_id)
+    exists = (
+        await session.execute(select(PriceWatch).where(PriceWatch.owner_id == user.id, PriceWatch.item_id == item_id))
+    ).scalar_one_or_none()
+    if exists is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "这件商品已经在价格监控中")
+    # 立即查一次详情：确认商品可访问，并记录加入时的价格作为降幅基准
+    with _goofish_errors("获取商品详情"):
+        detail = await get_runtime().gateway.get_item_detail(item_id, account_id=body.account_id)
+    if watch_service.ended_reason(detail):
+        raise HTTPException(422, f"该商品当前不在售（{detail.status}），无法监控")
+    data = body.model_dump(exclude={"item"})
+    w = PriceWatch(
+        owner_id=user.id,
+        item_id=item_id,
+        base_price=detail.item.price,
+        enabled=True,
+        status=WatchStatus.WATCHING,
+        consecutive_failures=0,
+        **data,
+    )
+    if watch_service.alert_hit(w, detail.item.price):
+        raise HTTPException(
+            422,
+            f"当前价格 ¥{detail.item.price:g} 已满足提醒条件，请设置更低的目标价",
+        )
+    session.add(w)
+    await watch_service.apply_detail(w, detail, session)
+    await session.commit()
+    return _watch_out(w)
+
+
+@router.put("/watches/{watch_id}", response_model=WatchOut)
+async def update_watch(watch_id: int, body: WatchUpdate, user: CurrentUser, session: SessionDep) -> WatchOut:
+    _need_condition(body)
+    w = await _own_watch(session, user, watch_id)
+    if body.account_id is not None:
+        await get_account_for(session, user, body.account_id)
+    reopen = body.enabled and (not w.enabled or w.status != WatchStatus.WATCHING)
+    if reopen and w.status == WatchStatus.ENDED:
+        raise HTTPException(status.HTTP_409_CONFLICT, "商品已售出或下架，无法重新开启")
+    for k, v in body.model_dump().items():
+        setattr(w, k, v)
+    if reopen:
+        # 重新开启：以当前价格作为新的降幅基准，清除失败计数
+        w.status, w.triggered_at, w.consecutive_failures, w.last_error = WatchStatus.WATCHING, None, 0, None
+        w.base_price = w.last_price or w.base_price
+        if watch_service.alert_hit(w, w.last_price):
+            price = w.last_price
+            await session.rollback()
+            raise HTTPException(422, f"当前价格 ¥{price:g} 已满足提醒条件，请先调低目标价再开启")
+    elif not body.enabled and w.status == WatchStatus.WATCHING:
+        w.status = WatchStatus.PAUSED
+    await session.commit()
+    return _watch_out(w)
+
+
+@router.delete("/watches/{watch_id}", status_code=204)
+async def delete_watch(watch_id: int, user: CurrentUser, session: SessionDep) -> None:
+    w = await _own_watch(session, user, watch_id)
+    await session.delete(w)
+    await session.commit()
+
+
+@router.post("/watches/{watch_id}/check", response_model=WatchOut)
+async def check_watch_now(watch_id: int, user: CurrentUser, session: SessionDep) -> WatchOut:
+    await _own_watch(session, user, watch_id)
+    with _goofish_errors("获取商品详情"):
+        w = await watch_service.check_watch(watch_id)
+    if w is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "监控不存在")
+    return _watch_out(w)

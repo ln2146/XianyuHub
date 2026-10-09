@@ -15,6 +15,7 @@ TASK = {
     "rules": {"exclude": ["配件"]},
     "criteria": "必须：M1 芯片；电池 ≥ 85%",
     "cron": "*/30 8-23 * * *",
+    "price_drop_percent": 5,
 }
 
 
