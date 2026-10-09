@@ -22,6 +22,7 @@ class Topics:
     ACCOUNT_RISK_DETECTED = "account.risk.detected"
     ACCOUNT_STATUS_CHANGED = "account.status.changed"
     ITEM_PUBLISHED = "item.published"
+    BUYER_TASK_CHANGED = "buyer.task.changed"
     DELIVERY_FAILED = "delivery.failed"
 
 
@@ -29,14 +30,22 @@ class EventBus:
     def __init__(self) -> None:
         self._handlers: dict[str, list[Handler]] = defaultdict(list)
         self._tasks: set[asyncio.Task] = set()
+        self.bridge: Any = None  # app.core.cluster.Cluster，分离部署时设置
 
     def subscribe(self, topic: str, handler: Handler) -> None:
         self._handlers[topic].append(handler)
 
     def clear(self) -> None:
         self._handlers.clear()
+        self.bridge = None
 
-    async def publish(self, topic: str, payload: dict[str, Any]) -> None:
+    async def publish(self, topic: str, payload: dict[str, Any], *, remote: bool = False) -> None:
+        """remote=True 表示事件来自其他进程，只在本进程分发，不再转发。"""
+        if self.bridge is not None and not remote:
+            try:
+                await self.bridge.broadcast_event(topic, payload)
+            except Exception:  # noqa: BLE001
+                logger.exception("跨进程事件转发失败 topic={}", topic)
         for handler in list(self._handlers.get(topic, [])):
             task = asyncio.create_task(self._run(topic, handler, payload))
             self._tasks.add(task)

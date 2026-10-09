@@ -1,0 +1,26 @@
+# 分离部署：API 进程只提供接口，后台任务（调度器、IM 长连接、订单处理）由独立 Worker 运行。
+# 用法：docker compose -f docker-compose.yml -f docker-compose.split.yml up -d --build
+# 说明：IM 长连接只能有一个 Worker 持有，请保持 worker 副本数为 1；API 可以按需扩容。
+services:
+  backend:
+    environment:
+      PROCESS_ROLE: api
+
+  worker:
+    image: xianyuhub-backend:latest
+    restart: unless-stopped
+    command: ["python", "-m", "app.workers.main"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://xianyu:${POSTGRES_PASSWORD}@postgres:5432/xianyuhub
+      REDIS_URL: redis://redis:6379/0
+      PROCESS_ROLE: worker
+    volumes:
+      - backend-data:/app/data
+    healthcheck:
+      disable: true
+    depends_on:
+      backend:
+        condition: service_healthy  # 等 API 完成数据库迁移
+      redis:
+        condition: service_healthy

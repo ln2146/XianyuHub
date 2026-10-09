@@ -20,6 +20,7 @@ class RealtimeHub:
     def __init__(self) -> None:
         self._conns: set[_Conn] = set()
         self._lock = asyncio.Lock()
+        self.bridge: Any = None  # 分离部署时把 Worker 的推送转发给 API 进程
 
     async def add(self, ws: WebSocket, user_id: int, account_ids: set[int] | None) -> _Conn:
         conn = _Conn(ws, user_id, account_ids)
@@ -36,8 +37,19 @@ class RealtimeHub:
         return len(self._conns)
 
     async def publish(
-        self, event: str, data: dict[str, Any], *, account_id: int | None = None, user_id: int | None = None
+        self,
+        event: str,
+        data: dict[str, Any],
+        *,
+        account_id: int | None = None,
+        user_id: int | None = None,
+        remote: bool = False,
     ) -> None:
+        if self.bridge is not None and not remote:
+            with contextlib.suppress(Exception):
+                await self.bridge.broadcast_hub(
+                    {"event": event, "data": data, "account_id": account_id, "user_id": user_id}
+                )
         payload = json.dumps({"event": event, "data": data}, ensure_ascii=False, default=str)
         for conn in list(self._conns):
             if user_id is not None and conn.user_id != user_id:

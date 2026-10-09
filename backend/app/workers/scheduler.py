@@ -38,6 +38,31 @@ def add_cron_job(job_id: str, fn: Callable[..., Awaitable[None]], cron: str, *, 
     )
 
 
+def jobs_snapshot() -> list[dict]:
+    sched = get_scheduler()
+    if not sched.running:
+        return []
+    return [
+        {"id": j.id, "next_run": j.next_run_time.isoformat() if j.next_run_time else None} for j in sched.get_jobs()
+    ]
+
+
+async def jobs_anywhere() -> list[dict]:
+    """本进程的调度任务；分离部署的 API 进程向 Worker 查询。"""
+    local = jobs_snapshot()
+    if local:
+        return local
+    from app.core.cluster import ClusterUnavailable, get_cluster
+
+    cluster = get_cluster()
+    if cluster is None:
+        return []
+    try:
+        return await cluster.call("system.jobs", {}, timeout=5) or []
+    except (ClusterUnavailable, RuntimeError):
+        return []
+
+
 def remove_job(job_id: str) -> None:
     sched = get_scheduler()
     if sched.get_job(job_id):

@@ -474,17 +474,42 @@ async def auto_reply(conv_id: int) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------- 发送 / 接管
-async def send_text(conv_id: int, text: str, *, source: str, meta: dict[str, Any] | None = None) -> ChatMessage:
+async def im_send_local(account_id: int, cid: str, peer_id: str, text: str) -> None:
+    """在持有 IM 长连接的进程内发送（同时登记回声，避免把自己发的消息当成卖家亲自回复）。"""
     manager = get_im_manager()
     if manager is None:
         raise ConnectionError("IM 网关未运行")
+    _remember_sent(account_id, cid, text)
+    await manager.send_text(account_id, cid, peer_id, text)
+
+
+async def rpc_im_send(payload: dict[str, Any]) -> bool:
+    await im_send_local(payload["account_id"], payload["cid"], payload["peer_id"], payload["text"])
+    return True
+
+
+async def im_send(account_id: int, cid: str, peer_id: str, text: str) -> None:
+    if get_im_manager() is not None:
+        await im_send_local(account_id, cid, peer_id, text)
+        return
+    from app.core.cluster import ClusterUnavailable, get_cluster
+
+    cluster = get_cluster()
+    if cluster is None:
+        raise ConnectionError("IM 网关未运行")
+    try:
+        await cluster.call("im.send", {"account_id": account_id, "cid": cid, "peer_id": peer_id, "text": text})
+    except (ClusterUnavailable, RuntimeError) as e:
+        raise ConnectionError(str(e)) from e
+
+
+async def send_text(conv_id: int, text: str, *, source: str, meta: dict[str, Any] | None = None) -> ChatMessage:
     async with session_factory()() as s:
         conv = await s.get(Conversation, conv_id)
         if conv is None or not conv.peer_id:
             raise ValueError("会话不存在或缺少买家信息")
         account_id, cid, peer_id = conv.account_id, conv.cid, conv.peer_id
-    _remember_sent(account_id, cid, text)
-    await manager.send_text(account_id, cid, peer_id, text)
+    await im_send(account_id, cid, peer_id, text)
     async with session_factory()() as s:
         conv = await s.get(Conversation, conv_id)
         msg = await save_message(s, conv, direction="out", source=source, text=text, meta=meta)

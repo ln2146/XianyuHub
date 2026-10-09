@@ -119,6 +119,8 @@ class ImGatewayManager:
         if account_id is None:
             return
         if payload.get("state") == AccountState.ACTIVE:
+            if payload.get("restart"):
+                await self.stop_account(account_id)
             await self.start_account(account_id)
         elif payload.get("state") in (AccountState.NEED_LOGIN, AccountState.DISABLED, AccountState.CIRCUIT_OPEN):
             await self.stop_account(account_id)
@@ -137,6 +139,22 @@ class ImGatewayManager:
 
 
 _manager: ImGatewayManager | None = None
+
+
+async def im_status_snapshot() -> dict[str, Any] | None:
+    """{account_id(str): {status, detail, at, connected}}；本进程没有 IM 网关时向 Worker 查询，都没有返回 None。"""
+    manager = get_im_manager()
+    if manager is not None:
+        return {str(k): {**v, "connected": manager.is_connected(k)} for k, v in manager.status.items()}
+    from app.core.cluster import ClusterUnavailable, get_cluster
+
+    cluster = get_cluster()
+    if cluster is None:
+        return None
+    try:
+        return await cluster.call("im.status", {}, timeout=5)
+    except (ClusterUnavailable, RuntimeError):
+        return None
 
 
 def get_im_manager() -> ImGatewayManager | None:

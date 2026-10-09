@@ -152,7 +152,18 @@ async def run_task(task_id: int) -> RunStats:
         logger.info("任务 {} 正在运行，跳过本次触发", task_id)
         return RunStats(notes=["已在运行"])
     async with lock:
-        return await _run(task_id)
+        from app.core.cluster import get_cluster
+
+        cluster = get_cluster()
+        token = await cluster.try_lock(f"buyer.task.{task_id}", 1800) if cluster else None
+        if cluster and token is None:
+            logger.info("任务 {} 正在其他进程运行，跳过本次触发", task_id)
+            return RunStats(notes=["已在其他进程运行"])
+        try:
+            return await _run(task_id)
+        finally:
+            if cluster and token:
+                await cluster.unlock(f"buyer.task.{task_id}", token)
 
 
 async def _run(task_id: int) -> RunStats:

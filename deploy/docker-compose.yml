@@ -30,6 +30,7 @@ services:
       retries: 20
 
   backend:
+    image: xianyuhub-backend:latest
     build:
       context: ../backend
       args:
@@ -39,6 +40,7 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://xianyu:${POSTGRES_PASSWORD}@postgres:5432/xianyuhub
       REDIS_URL: redis://redis:6379/0
+      PROCESS_ROLE: ${PROCESS_ROLE:-all}
       RUN_WORKERS_IN_API: "true"
     volumes:
       - backend-data:/app/data

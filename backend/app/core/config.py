@@ -60,6 +60,8 @@ class Settings(BaseSettings):
 
     # ---------- Worker ----------
     run_workers_in_api: bool = True  # 单机模式：API 进程内同时运行调度器 / IM 网关
+    # all：单进程（默认）；api / worker：分离部署（需要 REDIS_URL），通过 Redis 跨进程同步
+    process_role: str = "all"
 
     @property
     def is_production(self) -> bool:

@@ -111,6 +111,25 @@ async def on_guard_state_change(key: str, rt: Runtime, reason: str) -> None:
         )
 
 
+async def reload_guard_state(account_id: int) -> None:
+    """从数据库刷新单个账号的风控状态（其他进程修改后调用）。"""
+    rt = get_runtime()
+    async with session_factory()() as s:
+        acc = await s.get(XyAccount, account_id)
+        if acc is None:
+            return
+        cooldown = acc.cooldown_until.timestamp() if acc.cooldown_until else 0.0
+        state, strikes, error, punish = acc.status, acc.strikes, acc.last_error, acc.punish_url
+    key = account_key(account_id)
+    try:
+        rt.guard.load(key, state, cooldown, strikes)
+    except ValueError:
+        return
+    runtime = rt.guard.runtime(key)
+    runtime.last_error, runtime.punish_url = error, punish
+    await rt.gateway.invalidate(account_id)
+
+
 async def load_guard_states() -> None:
     rt = get_runtime()
     async with session_factory()() as s:
@@ -145,6 +164,11 @@ async def upsert_account(
     rt = get_runtime()
     await rt.gateway.invalidate(acc.id)
     rt.guard.load(account_key(acc.id), AccountState.ACTIVE, 0, acc.strikes)
+    # 通知 IM 网关用新的登录态（重新）建立长连接
+    await bus.publish(
+        Topics.ACCOUNT_STATUS_CHANGED,
+        {"account_id": acc.id, "state": AccountState.ACTIVE, "reason": "登录", "restart": True},
+    )
     await record_audit("account.login", user_id=owner.id, actor_type="human", account_id=acc.id, detail={"unb": unb})
     return acc
 

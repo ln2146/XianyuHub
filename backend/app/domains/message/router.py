@@ -16,7 +16,7 @@ from app.domains.message import service
 from app.domains.message.models import ChatMessage, Conversation, MessageSource, ReplyRule, ReplySuggestion
 from app.domains.system.models import User
 from app.goofish.errors import RiskBlockedError
-from app.workers.im_gateway import get_im_manager
+from app.workers.im_gateway import im_status_snapshot
 
 router = APIRouter(prefix="/messages", tags=["messages"])
 ws_router = APIRouter()
@@ -238,17 +238,13 @@ async def delete_rule(rule_id: int, user: CurrentUser, session: SessionDep) -> N
 
 @router.get("/im-status")
 async def im_status(user: CurrentUser, session: SessionDep) -> dict[str, Any]:
-    manager = get_im_manager()
+    snapshot = await im_status_snapshot()
     ids = await accessible_account_ids(session, user)
-    if manager is None:
+    if snapshot is None:
         return {"running": False, "accounts": {}}
     return {
         "running": True,
-        "accounts": {
-            str(k): {**v, "connected": manager.is_connected(k)}
-            for k, v in manager.status.items()
-            if ids is None or k in ids
-        },
+        "accounts": {k: v for k, v in snapshot.items() if ids is None or int(k) in ids},
     }
 
 

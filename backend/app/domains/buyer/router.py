@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 
 from app.core.deps import CurrentUser, SessionDep
+from app.core.events import Topics, bus
 from app.core.pagination import set_total
 from app.domains.buyer import scheduling
 from app.domains.buyer.ai import draft_task
@@ -148,6 +149,7 @@ async def create_task(body: TaskIn, user: CurrentUser, session: SessionDep) -> T
     session.add(task)
     await session.commit()
     scheduling.sync_task(task)
+    await bus.publish(Topics.BUYER_TASK_CHANGED, {"task_id": task.id})
     return _task_out(task)
 
 
@@ -189,6 +191,7 @@ async def update_task(task_id: int, body: TaskIn, user: CurrentUser, session: Se
     task.consecutive_failures = 0
     await session.commit()
     scheduling.sync_task(task)
+    await bus.publish(Topics.BUYER_TASK_CHANGED, {"task_id": task.id})
     return _task_out(task)
 
 
@@ -198,6 +201,7 @@ async def delete_task(task_id: int, user: CurrentUser, session: SessionDep) -> N
     scheduling.remove_task(task.id)
     await session.delete(task)
     await session.commit()
+    await bus.publish(Topics.BUYER_TASK_CHANGED, {"task_id": task_id})
 
 
 @router.post("/tasks/{task_id}/run", status_code=202)

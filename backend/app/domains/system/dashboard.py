@@ -16,7 +16,7 @@ from app.goofish.gateway import account_key
 from app.intelligence.llm import get_llm
 from app.runtime import get_runtime
 from app.workers import scheduler
-from app.workers.im_gateway import get_im_manager
+from app.workers.im_gateway import im_status_snapshot
 
 router = APIRouter(tags=["dashboard"])
 
@@ -36,7 +36,7 @@ async def dashboard(user: CurrentUser, session: SessionDep) -> dict[str, Any]:
     accounts = list((await session.execute(acc_stmt)).scalars())
     acc_ids = [a.id for a in accounts]
     guard = get_runtime().guard
-    manager = get_im_manager()
+    im = await im_status_snapshot()
     since = _today_start()
 
     msg_rows = await session.execute(
@@ -90,7 +90,7 @@ async def dashboard(user: CurrentUser, session: SessionDep) -> dict[str, Any]:
                 "nickname": a.nickname or a.unb,
                 "status": guard.runtime(account_key(a.id)).state,
                 "health": guard.runtime(account_key(a.id)).health,
-                "im_connected": bool(manager and manager.is_connected(a.id)),
+                "im_connected": bool(im and (im.get(str(a.id)) or {}).get("connected")),
                 "auto_reply": a.get_settings().auto_reply,
                 "auto_delivery": a.get_settings().auto_delivery,
             }
@@ -121,10 +121,7 @@ async def dashboard(user: CurrentUser, session: SessionDep) -> dict[str, Any]:
         ],
         "system": {
             "llm": get_llm().status(),
-            "im_running": manager is not None,
-            "jobs": [
-                {"id": j.id, "next_run": j.next_run_time}
-                for j in (scheduler.get_scheduler().get_jobs() if scheduler.get_scheduler().running else [])
-            ],
+            "im_running": im is not None,
+            "jobs": await scheduler.jobs_anywhere(),
         },
     }
