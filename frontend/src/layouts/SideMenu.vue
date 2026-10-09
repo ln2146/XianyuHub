@@ -19,7 +19,10 @@ import {
   User,
 } from '@element-plus/icons-vue'
 
+import { usePrefsStore } from '@/stores/prefs'
+
 const props = defineProps<{ active: string; collapsed: boolean }>()
+const prefs = usePrefsStore()
 
 const activeMenu = computed(() => {
   if (props.active.startsWith('/radar')) return '/radar/smart'
@@ -42,13 +45,13 @@ const activeMenu = computed(() => {
     </el-menu-item>
 
     <!-- 选品雷达（统一工作台入口） -->
-    <el-menu-item index="/radar/smart">
+    <el-menu-item v-if="prefs.showBuyer" index="/radar/smart">
       <el-icon class="menu-icon-primary"><Aim /></el-icon>
       <template #title><span>选品雷达</span></template>
     </el-menu-item>
 
     <!-- 商品中心 -->
-    <el-sub-menu index="goods">
+    <el-sub-menu v-if="prefs.showSeller" index="goods">
       <template #title>
         <el-icon class="menu-icon-primary"><Goods /></el-icon>
         <span>商品中心</span>
@@ -64,7 +67,7 @@ const activeMenu = computed(() => {
     </el-sub-menu>
 
     <!-- 订单发货 -->
-    <el-sub-menu index="orders">
+    <el-sub-menu v-if="prefs.showSeller" index="orders">
       <template #title>
         <el-icon class="menu-icon-primary"><Tickets /></el-icon>
         <span>订单发货</span>
@@ -80,7 +83,7 @@ const activeMenu = computed(() => {
     </el-sub-menu>
 
     <!-- 消息中心 -->
-    <el-sub-menu index="messages">
+    <el-sub-menu v-if="prefs.showSeller" index="messages">
       <template #title>
         <el-icon class="menu-icon-primary"><ChatDotRound /></el-icon>
         <span>消息中心</span>

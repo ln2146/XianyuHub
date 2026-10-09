@@ -5,6 +5,7 @@ import { ElMessageBox } from 'element-plus'
 import { ArrowDown, Expand, Fold } from '@element-plus/icons-vue'
 import SideMenu from './SideMenu.vue'
 import { useAuthStore } from '@/stores/auth'
+import { usePrefsStore, usageModeLabels, type UsageMode } from '@/stores/prefs'
 import { useRealtimeStore } from '@/stores/realtime'
 import { useMobile } from '@/composables/useMobile'
 import { roleMap } from '@/utils/format'
@@ -12,6 +13,7 @@ import { roleMap } from '@/utils/format'
 const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
+const prefs = usePrefsStore()
 const realtime = useRealtimeStore()
 const isMobile = useMobile()
 
@@ -42,7 +44,8 @@ async function logout() {
 }
 
 function onCommand(cmd: string) {
-  if (cmd === 'logout') logout()
+  if (cmd.startsWith('mode:')) prefs.setMode(cmd.slice(5) as UsageMode)
+  else if (cmd === 'logout') logout()
   else if (cmd === 'password') router.push({ path: '/system', query: { tab: 'password' } })
 }
 </script>
@@ -90,7 +93,15 @@ function onCommand(cmd: string) {
             </span>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item command="password">修改密码</el-dropdown-item>
+                <el-dropdown-item
+                  v-for="(label, m) in usageModeLabels"
+                  :key="m"
+                  :command="`mode:${m}`"
+                  :class="{ 'mode-on': prefs.mode === m }"
+                >
+                  {{ prefs.mode === m ? '✓ ' : '' }}{{ label }}
+                </el-dropdown-item>
+                <el-dropdown-item command="password" divided>修改密码</el-dropdown-item>
                 <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>
               </el-dropdown-menu>
             </template>

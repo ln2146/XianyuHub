@@ -26,6 +26,7 @@ import {
 import { getDashboard, type Dashboard, type DashboardAccount } from '@/api/dashboard'
 import { updateAccount } from '@/api/account'
 import { ElMessage } from 'element-plus'
+import SetupChecklist from '@/components/SetupChecklist.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import { NEEDS_ACTION_STATUSES, accountStatusMap, fmtMoney, fmtTime } from '@/utils/format'
 
@@ -272,6 +273,8 @@ function fmtJobNextRun(v: string | null | undefined): string {
         </el-button>
       </div>
     </header>
+
+    <SetupChecklist :data="data" />
 
     <!-- 核心指标卡片矩阵 (紧凑单行 6 列) -->
     <section class="kpi-section">
