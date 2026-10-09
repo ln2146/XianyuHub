@@ -4,7 +4,18 @@ import { useRealtimeStore } from '@/stores/realtime'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, Search } from '@element-plus/icons-vue'
-import { closeHold, deliverOrder, getOrder, listOrders, syncOrders, type DeliveryRecord, type Order } from '@/api/order'
+import {
+  closeHold,
+  createBinding,
+  deliverOrder,
+  getOrder,
+  listOrders,
+  listPools,
+  syncOrders,
+  type DeliveryRecord,
+  type Order,
+  type PoolOut,
+} from '@/api/order'
 import StatusTag from '@/components/StatusTag.vue'
 import ListPager from '@/components/ListPager.vue'
 import { useAccountsStore } from '@/stores/accounts'
@@ -48,6 +59,92 @@ async function load(p = 1) {
     page.value = p
   } finally {
     loading.value = false
+  }
+}
+
+// ---------------------------------------------------------------- 就地快捷关联发货
+const pools = ref<PoolOut[]>([])
+const poolsLoaded = ref(false)
+
+async function ensurePools() {
+  if (poolsLoaded.value) return
+  try {
+    pools.value = await listPools()
+    poolsLoaded.value = true
+  } catch {
+    /* 拦截器已处理 */
+  }
+}
+
+const poolKindMap: Record<string, string> = {
+  text: '固定内容 (网盘/说明)',
+  pool: '卡密库存 (每单一条)',
+  api: '接口取货 (第三方API)',
+}
+
+const quickBind = reactive({
+  open: false,
+  saving: false,
+  delivering: false,
+  order: null as Order | null,
+  pool_id: null as number | null,
+  applyToAll: true,
+  template: '',
+})
+
+async function openQuickBind(o: Order) {
+  await ensurePools()
+  Object.assign(quickBind, {
+    open: true,
+    saving: false,
+    delivering: false,
+    order: o,
+    pool_id: pools.value[0]?.id || null,
+    applyToAll: true,
+    template: '您好，订单已发货，内容如下：\n{content}\n如有问题请随时联系～',
+  })
+}
+
+async function saveQuickBind(andDeliver = false) {
+  if (!quickBind.order || !quickBind.pool_id) {
+    ElMessage.warning('请选择关联的发货内容库')
+    return
+  }
+  const o = quickBind.order
+  if (!o.item_id) {
+    ElMessage.error('该订单缺少闲鱼商品 ID，无法关联')
+    return
+  }
+  quickBind.saving = true
+  if (andDeliver) quickBind.delivering = true
+  try {
+    await createBinding({
+      pool_id: quickBind.pool_id,
+      account_id: quickBind.applyToAll ? null : o.account_id,
+      item_id: o.item_id,
+      spec_value: o.spec_value || null,
+      template: quickBind.template.trim(),
+      delay_seconds: 0,
+      max_per_buyer: 0,
+    })
+    ElMessage.success('商品发货库关联成功')
+
+    if (andDeliver) {
+      const r = await deliverOrder(o.id)
+      if (r.ok) {
+        ElMessage.success('发货成功！内容已发出并已在闲鱼确认发货')
+      } else {
+        ElMessage.warning(`关联已保存，但发货提示：${r.error || r.status}`)
+      }
+    }
+    quickBind.open = false
+    await load(page.value)
+    if (detail.open && detail.order?.id === o.id) await openDetail(o)
+  } catch {
+    /* 拦截器已处理 */
+  } finally {
+    quickBind.saving = false
+    quickBind.delivering = false
   }
 }
 
@@ -110,9 +207,14 @@ async function deliver(o: Order) {
   busy[`d-${o.id}`] = true
   try {
     const r = await deliverOrder(o.id)
-    if (r.ok) ElMessage.success('发货成功')
-    else if (r.code === 'no_binding') await promptLink(r.item_id || o.item_id)
-    else ElMessage.error(`发货失败：${r.error || orderStatusMap[r.status]?.label || r.status}`)
+    if (r.ok) {
+      ElMessage.success('发货成功')
+    } else if (r.code === 'no_binding') {
+      ElMessage.warning('检测到该商品尚未关联发货内容，已为您打开就地关联弹窗')
+      await openQuickBind(o)
+    } else {
+      ElMessage.error(`发货失败：${r.error || orderStatusMap[r.status]?.label || r.status}`)
+    }
     await load(page.value)
     if (detail.open && detail.order?.id === o.id) await openDetail(o)
   } catch {
@@ -120,20 +222,6 @@ async function deliver(o: Order) {
   } finally {
     busy[`d-${o.id}`] = false
   }
-}
-
-/** 商品没有关联发货内容：引导去「自动发货 → 商品关联」，并预填商品 */
-async function promptLink(itemId: string | null) {
-  try {
-    await ElMessageBox.confirm(
-      '这个商品还没有关联发货内容，系统不知道该发什么给买家。关联好之后回到这里再点「手动发货」即可。',
-      '还没有发货内容',
-      { type: 'warning', confirmButtonText: '去关联', cancelButtonText: '稍后' },
-    )
-  } catch {
-    return
-  }
-  router.push({ path: '/orders/cards', query: { tab: 'bindings', item_id: itemId || undefined } })
 }
 
 async function toManual(o: Order) {
@@ -273,8 +361,8 @@ async function openDetail(o: Order) {
             <template #default="{ row }">
               <div class="ops">
                 <el-button size="small" @click="openDetail(row as Order)">详情</el-button>
-                <el-button v-if="needsLink(row as Order)" size="small" type="warning" plain @click="goLink(row as Order)">
-                  去关联
+                <el-button v-if="needsLink(row as Order)" size="small" type="warning" plain @click="openQuickBind(row as Order)">
+                  关联发货
                 </el-button>
                 <el-button v-if="canDeliver(row as Order)" size="small" type="primary" :loading="busy[`d-${row.id}`]" @click="deliver(row as Order)">
                   手动发货
@@ -315,7 +403,7 @@ async function openDetail(o: Order) {
           </el-descriptions>
 
           <div class="ops mt">
-            <el-button v-if="needsLink(detail.order)" type="warning" plain @click="goLink(detail.order)">去关联发货内容</el-button>
+            <el-button v-if="needsLink(detail.order)" type="warning" plain @click="openQuickBind(detail.order)">关联发货</el-button>
             <el-button v-if="canDeliver(detail.order)" type="primary" :loading="busy[`d-${detail.order.id}`]" @click="deliver(detail.order)">手动发货</el-button>
             <el-button v-if="detail.order.status === 'risk_hold'" type="warning" plain @click="toManual(detail.order)">转人工</el-button>
           </div>
@@ -342,6 +430,98 @@ async function openDetail(o: Order) {
         </template>
       </div>
     </el-drawer>
+
+    <!-- 就地快捷关联发货弹窗 -->
+    <el-dialog
+      v-model="quickBind.open"
+      title="快捷关联发货内容"
+      width="540px"
+      destroy-on-close
+      class="quick-bind-dialog"
+    >
+      <div v-if="quickBind.order" class="quick-bind-body">
+        <div class="quick-bind-summary">
+          <div class="summary-line">
+            <span class="muted">订单编号：</span>
+            <span class="mono font-semibold">{{ quickBind.order.order_id }}</span>
+            <span class="dot-sep">·</span>
+            <span>{{ accounts.nameOf(quickBind.order.account_id) }}</span>
+          </div>
+          <div class="summary-line mt-xs">
+            <span class="muted">商品标题：</span>
+            <span class="font-semibold">{{ quickBind.order.item_title || quickBind.order.item_id }}</span>
+          </div>
+          <div v-if="quickBind.order.spec_value" class="summary-line mt-xs">
+            <span class="muted">规格：</span>
+            <el-tag size="small" effect="plain">{{ quickBind.order.spec_name }}：{{ quickBind.order.spec_value }}</el-tag>
+          </div>
+        </div>
+
+        <el-alert
+          type="info"
+          :closable="false"
+          show-icon
+          class="mt"
+          title="关联后，买家购买此商品将自动从此内容库取货发货；也可直接「保存并立即发货」，全程无需离开此界面。"
+        />
+
+        <el-form label-position="top" class="mt">
+          <el-form-item label="选择发货内容库（固定网盘 / 卡密库存 / API）" required>
+            <el-select v-model="quickBind.pool_id" placeholder="请选择发货内容库" class="w-full">
+              <el-option
+                v-for="p in pools"
+                :key="p.id"
+                :value="p.id"
+                :label="`${p.name} · ${poolKindMap[p.kind] || p.kind} ${p.kind === 'pool' ? `(余${p.stock?.available ?? 0})` : ''}`"
+              />
+            </el-select>
+            <div v-if="!pools.length" class="smaller err mt-xs">
+              暂无可用的发货内容库，
+              <el-link type="primary" class="smaller" @click="router.push('/orders/cards')">前往自动发货管理新建内容库 &gt;</el-link>
+            </div>
+          </el-form-item>
+
+          <el-form-item label="生效范围">
+            <el-radio-group v-model="quickBind.applyToAll">
+              <el-radio :value="true">全部闲鱼账号通用（推荐）</el-radio>
+              <el-radio :value="false">仅当前账号（{{ accounts.nameOf(quickBind.order.account_id) }}）有效</el-radio>
+            </el-radio-group>
+          </el-form-item>
+
+          <el-collapse class="template-collapse">
+            <el-collapse-item title="自定义发货消息模板（可选）" name="tpl">
+              <el-input
+                v-model="quickBind.template"
+                type="textarea"
+                :rows="3"
+                placeholder="您好，订单已发货，内容如下：&#10;{content}&#10;如有问题请随时联系～"
+              />
+              <div class="muted smaller mt-xs">说明：{content} 会被自动替换为实际卡密或网盘说明。</div>
+            </el-collapse-item>
+          </el-collapse>
+        </el-form>
+      </div>
+
+      <template #footer>
+        <div class="bind-dialog-footer">
+          <el-link type="info" class="smaller" @click="goLink(quickBind.order!)">前往发货库中心高级配置 &gt;</el-link>
+          <div class="footer-btns">
+            <el-button @click="quickBind.open = false">取消</el-button>
+            <el-button :loading="quickBind.saving && !quickBind.delivering" @click="saveQuickBind(false)">
+              仅保存关联
+            </el-button>
+            <el-button
+              type="primary"
+              :loading="quickBind.saving && quickBind.delivering"
+              :disabled="!quickBind.pool_id"
+              @click="saveQuickBind(true)"
+            >
+              保存并立即发货
+            </el-button>
+          </div>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -454,11 +634,47 @@ h4 {
   white-space: pre-wrap;
   word-break: break-all;
 }
+.quick-bind-summary {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.summary-line {
+  font-size: 13px;
+  color: #1e293b;
+}
+.template-collapse {
+  margin-top: 10px;
+  border: none;
+}
+.template-collapse :deep(.el-collapse-item__header) {
+  font-size: 12px;
+  color: var(--xh-muted);
+}
+.bind-dialog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+.footer-btns {
+  display: flex;
+  gap: 8px;
+}
+.w-full {
+  width: 100%;
+}
 @media (max-width: 768px) {
   .w150,
   .w180,
   .w220 {
     width: 100%;
+  }
+  .bind-dialog-footer {
+    flex-direction: column-reverse;
+    gap: 12px;
+    align-items: flex-end;
   }
 }
 </style>
