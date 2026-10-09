@@ -388,8 +388,11 @@ onMounted(() => {
     <div class="results-container" v-loading="loading">
       <!-- 错误提示 -->
       <el-alert v-if="searchError" type="error" show-icon :closable="false" class="mb">
-        <template #title>搜索失败</template>
-        <div>{{ searchError }}</div>
+        <template #title>搜索遇到问题</template>
+        <div class="search-error-msg">{{ searchError }}</div>
+        <div v-if="searchError.includes('RGV587') || searchError.includes('风控') || searchError.includes('安全限制') || searchError.includes('挤爆')" class="search-error-tip">
+          💡 <strong>应对建议</strong>：当前请求通道（如本地 IP 或当前账号）被闲鱼官方识别并临时限流。如果您有多个闲鱼账号，请在上方<strong>「账号通道」</strong>下拉框中切换其他正常账号重试；或稍等 2~5 分钟等限制自动解除。
+        </div>
       </el-alert>
 
       <!-- 搜索状态栏 -->
@@ -1084,5 +1087,18 @@ onMounted(() => {
 }
 .mb {
   margin-bottom: 16px;
+}
+.search-error-msg {
+  font-size: 14px;
+  line-height: 1.6;
+}
+.search-error-tip {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.65);
+  border-radius: 6px;
+  font-size: 13px;
+  color: #374151;
+  line-height: 1.6;
 }
 </style>
