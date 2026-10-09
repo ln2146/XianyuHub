@@ -234,7 +234,6 @@ async function remove(c: Channel) {
     <div class="page-head">
       <div>
         <h2>通知设置</h2>
-        <div class="sub">好货推荐、降价、风控、新订单、发货失败等事件推送到你常用的 App</div>
       </div>
       <div class="toolbar">
         <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
@@ -242,7 +241,7 @@ async function remove(c: Channel) {
       </div>
     </div>
 
-    <el-empty v-if="!loading && !channels.length" description="还没有通知渠道，添加一个以便及时收到好货与异常提醒" />
+    <el-empty v-if="!loading && !channels.length" description="暂无通知渠道" />
     <div v-loading="loading" class="grid">
       <el-card v-for="c in channels" :key="c.id" shadow="never" class="ch">
         <div class="ch-head">

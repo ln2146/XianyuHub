@@ -284,9 +284,8 @@ const historyOption = computed(() => {
 
     <div v-loading="loading" class="grid">
       <div v-if="!loading && !shown.length" class="empty-box">
-        <el-empty :description="watches.length ? '该状态下暂无监控' : '还没有监控的商品'">
+        <el-empty :description="watches.length ? '该状态下暂无监控' : '暂无监控商品'">
           <template v-if="!watches.length">
-            <p class="muted small empty-tip">在智能搜索或实时搜货里看中一件商品，点「价格监控」；也可以直接粘贴闲鱼商品链接。</p>
             <div class="empty-actions">
               <el-button type="primary" :icon="Plus" @click="openCreate()">粘贴链接添加</el-button>
               <el-button @click="router.push('/radar/smart')">去智能搜索挑选</el-button>

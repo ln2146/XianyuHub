@@ -396,7 +396,6 @@ onBeforeUnmount(() => window.clearInterval(timer))
             <span class="label">{{ s }}</span>
           </li>
         </ol>
-        <div v-else class="sub">手动填写全部商品信息，也可以随时改用 AI 生成</div>
       </div>
       <div>
         <el-button v-if="mode !== 'ai'" :icon="MagicStick" @click="resetAll">新的 AI 发布</el-button>
@@ -412,7 +411,6 @@ onBeforeUnmount(() => window.clearInterval(timer))
             <div class="card-head">
               <div>
                 <div class="card-title"><span class="ai-badge"><el-icon><MagicStick /></el-icon></span> AI 生成商品信息</div>
-                <div class="card-sub">只需上传图片，标题、描述、价格、底价、运费和客服知识库会一次性自动生成</div>
               </div>
             </div>
           </template>
@@ -684,30 +682,30 @@ onBeforeUnmount(() => window.clearInterval(timer))
 
             <div class="guide-items-list">
               <div class="guide-item-row">
-                                <div class="guide-item-content">
+                <div class="guide-item-content">
                   <div class="guide-item-name">多拍实拍细节</div>
-                  <div class="guide-item-desc">正面、背面、成色细节、瑕疵和标签各拍一张，AI 判断成色和写描述时会更准确，买家也更放心。</div>
+                  <div class="guide-item-desc">拍全成色细节与瑕疵，AI 识别与定价更精准</div>
                 </div>
               </div>
 
               <div class="guide-item-row">
-                                <div class="guide-item-content">
+                <div class="guide-item-content">
                   <div class="guide-item-name">定价与底价</div>
-                  <div class="guide-item-desc">AI 参考同款在售价给出建议价；设置「底价」后，AI 客服议价不会低于这个价格，底价也不会透露给买家。</div>
+                  <div class="guide-item-desc">设置底价保护，AI 自动议价绝不低于底价</div>
                 </div>
               </div>
 
               <div class="guide-item-row">
-                                <div class="guide-item-content">
+                <div class="guide-item-content">
                   <div class="guide-item-name">自动去掉违规内容</div>
-                  <div class="guide-item-desc">生成的标题和描述会自动去掉微信、QQ、手机号等站外联系方式，以及“保证正品”这类绝对化承诺。</div>
+                  <div class="guide-item-desc">自动剔除站外联系方式与违规夸大承诺词</div>
                 </div>
               </div>
 
               <div class="guide-item-row">
-                                <div class="guide-item-content">
+                <div class="guide-item-content">
                   <div class="guide-item-name">从选品雷达转手</div>
-                  <div class="guide-item-desc">在选品雷达的商品详情里点「转手发品」，会带入标题和建议价，补上实拍图即可发布。</div>
+                  <div class="guide-item-desc">支持雷达好货一键带入参数极速转手发品</div>
                 </div>
               </div>
             </div>

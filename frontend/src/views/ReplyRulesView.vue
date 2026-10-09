@@ -226,7 +226,6 @@ async function quickEnableTemplate(tpl: PresetTemplate) {
     <div class="page-head">
       <div>
         <h2>消息中心 · 回复规则</h2>
-        <div class="sub">买家消息命中关键词时自动回复，优先级高于 AI 大模型。请确保账号开启了「自动回复」与「关键词回复」。</div>
       </div>
       <div class="toolbar">
         <el-button :icon="Refresh" :loading="loading" round @click="load">刷新列表</el-button>
@@ -239,7 +238,7 @@ async function quickEnableTemplate(tpl: PresetTemplate) {
       <div class="acc-card-head">
         <div class="acc-card-title">
           <el-icon class="title-icon"><Setting /></el-icon>
-          <span>闲鱼账号自动回复状态（就地控制，无需跳转）</span>
+          <span>闲鱼账号自动回复状态</span>
         </div>
         <el-link type="primary" class="smaller" @click="router.push('/accounts')">前往账号管理中心 &gt;</el-link>
       </div>
@@ -298,10 +297,7 @@ async function quickEnableTemplate(tpl: PresetTemplate) {
       <!-- 空规则冷启动推荐面板 -->
       <div v-if="!loading && !rules.length" class="empty-rules-hero">
         <div class="hero-top">
-          <h3 class="hero-title">还没有关键词规则，可以从常用模版开始</h3>
-          <p class="hero-sub">
-            买家消息命中关键词时直接用你写好的话回复，没命中再交给 AI。自动回复等同于你本人的承诺，涉及发货、运费、正品的模版需要先改成你的实际情况。
-          </p>
+          <h3 class="hero-title">常用关键词回复预设模版</h3>
         </div>
 
         <div class="preset-cards-grid">
@@ -333,11 +329,6 @@ async function quickEnableTemplate(tpl: PresetTemplate) {
           </div>
         </div>
 
-        <ul class="rules-guide-tip">
-          <li><strong>关键词优先</strong>：命中关键词时直接回复，内容完全由你决定。</li>
-          <li><strong>AI 兜底</strong>：没命中时，开启了 AI 回复的账号由 AI 结合商品知识库作答。</li>
-          <li><strong>随机延迟</strong>：回复前按账号设置随机等待几秒，避免秒回显得像机器。</li>
-        </ul>
       </div>
 
       <!-- 有规则时的表格 -->

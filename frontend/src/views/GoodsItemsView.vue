@@ -329,7 +329,6 @@ function listingHint(row: MyItem): { label: string; type: 'warning' | 'success';
     <div class="page-head">
       <div>
         <h2>商品中心 · 商品管理</h2>
-        <div class="sub">同步在售商品，为每个商品配置底价、议价阶梯和客服知识库（AI 回复时使用，底价不会透露给买家）</div>
       </div>
       <div class="toolbar">
         <el-button type="primary" :icon="Plus" @click="router.push('/goods/publish')">发布新商品</el-button>

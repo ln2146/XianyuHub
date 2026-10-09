@@ -26,7 +26,6 @@ import {
 import { getDashboard, type Dashboard, type DashboardAccount } from '@/api/dashboard'
 import { updateAccount } from '@/api/account'
 import { ElMessage } from 'element-plus'
-import SetupChecklist from '@/components/SetupChecklist.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import { NEEDS_ACTION_STATUSES, accountStatusMap, fmtMoney, fmtTime } from '@/utils/format'
 
@@ -245,7 +244,6 @@ function fmtJobNextRun(v: string | null | undefined): string {
             实时监控中
           </span>
         </h2>
-        <span class="header-meta">以北京时间零点为基准自动统计 · 每分钟实时同步最新业务变动</span>
       </div>
 
       <div class="header-right">
@@ -273,8 +271,6 @@ function fmtJobNextRun(v: string | null | undefined): string {
         </el-button>
       </div>
     </header>
-
-    <SetupChecklist :data="data" />
 
     <!-- 核心指标卡片矩阵 (紧凑单行 6 列) -->
     <section class="kpi-section">
@@ -366,7 +362,6 @@ function fmtJobNextRun(v: string | null | undefined): string {
               <div class="panel-header">
                 <div class="title-with-subtitle">
                   <span class="panel-title">已接入闲鱼账号</span>
-                  <span class="panel-desc">长连接在线状态与一键自动化托管控制</span>
                 </div>
                 <div class="panel-action-group">
                   <button type="button" class="mini-capsule-btn ghost" @click="router.push('/accounts')">
@@ -469,7 +464,6 @@ function fmtJobNextRun(v: string | null | undefined): string {
               <div class="automation-telemetry-section">
                 <div class="telemetry-head">
                   <span class="telemetry-title">今日自动化</span>
-                  <span class="telemetry-sub">自动回复、自动发货与账号风控状态</span>
                 </div>
                 <div class="telemetry-grid">
                   <div class="telemetry-card" @click="router.push('/messages/rules')">
@@ -479,7 +473,7 @@ function fmtJobNextRun(v: string | null | undefined): string {
                     </div>
                     <div class="tc-val">{{ data?.today.messages_auto || 0 }} <span class="tc-unit">条</span></div>
                     <div class="tc-desc">
-                      今日收到 {{ data?.today.messages_in || 0 }} 条消息 · 人工回复 {{ data?.today.messages_manual || 0 }} 条
+                      今日收到 {{ data?.today.messages_in || 0 }} 条消息 · 人工已回 {{ data?.today.messages_manual || 0 }} 条
                     </div>
                   </div>
 
@@ -490,7 +484,7 @@ function fmtJobNextRun(v: string | null | undefined): string {
                     </div>
                     <div class="tc-val">{{ data?.today.deliveries || 0 }} <span class="tc-unit">笔</span></div>
                     <div class="tc-desc">
-                      付款后按商品关联的发货内容自动发送 · 待人工 {{ data?.pending_manual_orders || 0 }} 笔
+                      待人工处理 {{ data?.pending_manual_orders || 0 }} 笔
                     </div>
                   </div>
 
@@ -501,7 +495,7 @@ function fmtJobNextRun(v: string | null | undefined): string {
                     </div>
                     <div class="tc-val">{{ restrictedCount }} <span class="tc-unit">个账号受限</span></div>
                     <div class="tc-desc">
-                      风控记录 {{ data?.risk_events.length || 0 }} 条 · 触发限流时自动冷却并暂停相关任务
+                      今日风控拦截 {{ data?.risk_events.length || 0 }} 条
                     </div>
                   </div>
                 </div>
@@ -532,7 +526,7 @@ function fmtJobNextRun(v: string | null | undefined): string {
                         {{ (data?.pending_manual_orders || 0) > 0 ? `${data?.pending_manual_orders} 笔订单待人工处理` : '全部订单处理完毕' }}
                       </div>
                       <div class="pending-status-sub">
-                        {{ (data?.pending_manual_orders || 0) > 0 ? '买家付款或缺货待核验，请尽快处理' : '当前无待人工发货或滞留订单，履约通道通畅' }}
+                        {{ (data?.pending_manual_orders || 0) > 0 ? '买家付款或缺货待核验，请及时处理' : '履约通道畅通' }}
                       </div>
                     </div>
                   </div>
@@ -548,7 +542,6 @@ function fmtJobNextRun(v: string | null | undefined): string {
                 <div class="panel-header">
                   <div class="title-with-subtitle">
                     <span class="panel-title">风控记录</span>
-                    <span class="panel-desc">账号触发闲鱼限流、滑块验证或登录失效时记录在这里</span>
                   </div>
                   <div class="panel-actions">
                     <el-tag :type="data?.risk_events.some((r) => !r.resolved) ? 'danger' : 'success'" size="small">
@@ -561,9 +554,6 @@ function fmtJobNextRun(v: string | null | undefined): string {
                   <div v-if="!data?.risk_events.length" class="risk-empty">
                     <el-icon class="risk-empty-icon"><CircleCheck /></el-icon>
                     <div class="risk-empty-title">暂无风控记录</div>
-                    <p class="risk-empty-desc">
-                      所有请求按动作类型限速并加随机间隔；一旦触发限流或滑块验证，账号会自动冷却，相关自动化任务暂停并通知你。
-                    </p>
                   </div>
 
                   <!-- 发生风控记录时的时间线 -->
@@ -616,7 +606,6 @@ function fmtJobNextRun(v: string | null | undefined): string {
                       闲鱼全量一手货源实时探索
                       <el-tag size="small" type="success" effect="plain" class="hero-tag">免建监控 · 即搜即看</el-tag>
                     </h3>
-                    <p class="hero-subtitle">直接输入商品型号获取闲鱼最新发布的原始货源、真实底价与卖家信誉等级</p>
                   </div>
                 </div>
 
@@ -663,7 +652,7 @@ function fmtJobNextRun(v: string | null | undefined): string {
                 <div class="wf-icon-wrap icon-blue">⚡</div>
                 <div class="wf-content">
                   <div class="wf-name">实时搜货</div>
-                  <div class="wf-desc">秒级拉取闲鱼个人玩家最新上架，比倒爷二手加价更快一步锁定一手低价。</div>
+                  <div class="wf-desc">实时秒级抓取闲鱼一手货源与底价</div>
                 </div>
                 <el-icon class="wf-arrow"><Right /></el-icon>
               </div>
@@ -672,7 +661,7 @@ function fmtJobNextRun(v: string | null | undefined): string {
                 <div class="wf-icon-wrap icon-purple">🎯</div>
                 <div class="wf-content">
                   <div class="wf-name">智能搜索 · 价格监控</div>
-                  <div class="wf-desc">按关键词定时搜货并 AI 质检，结果就在同一页；看中的单品加入价格监控，到价即提醒。</div>
+                  <div class="wf-desc">定时搜货与 AI 质检，到价自动提醒</div>
                 </div>
                 <el-icon class="wf-arrow"><Right /></el-icon>
               </div>
@@ -681,7 +670,7 @@ function fmtJobNextRun(v: string | null | undefined): string {
                 <div class="wf-icon-wrap icon-emerald">💎</div>
                 <div class="wf-content">
                   <div class="wf-name">好货一键转手发品</div>
-                  <div class="wf-desc">从智能搜索结果中发现具有套利空间的捡漏品，点击一键带入加价率直接生成带货文案。</div>
+                  <div class="wf-desc">一键带入低价货源快速转手发品</div>
                 </div>
                 <el-icon class="wf-arrow"><Right /></el-icon>
               </div>
@@ -703,7 +692,6 @@ function fmtJobNextRun(v: string | null | undefined): string {
                       {{ llm.available ? '引擎正常' : '连接异常' }}
                     </span>
                   </div>
-                  <span class="panel-desc">驱动买家意图接待、自动发货决策与商品真伪鉴定</span>
                 </div>
                 <div class="panel-action-group">
                   <button type="button" class="mini-capsule-btn primary" @click="router.push('/llm')">
@@ -775,7 +763,6 @@ function fmtJobNextRun(v: string | null | undefined): string {
                       常驻正常
                     </span>
                   </div>
-                  <span class="panel-desc">WebSocket 实时推送通道与定时巡检任务队列</span>
                 </div>
                 <div class="panel-action-group">
                   <button type="button" class="mini-capsule-btn primary" @click="router.push('/system')">

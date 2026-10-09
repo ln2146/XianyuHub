@@ -557,7 +557,6 @@ onActivated(() => {
       <div v-if="!searched && !loading" class="welcome">
         <el-icon class="welcome-icon"><Search /></el-icon>
         <p class="welcome-title">输入关键词，实时查看闲鱼在售商品</p>
-        <p class="welcome-sub">想定时盯着某类商品，搜完点右上角「保存为智能搜索」</p>
         <div class="explore">
           <div v-for="g in exploreGroups" :key="g.name" class="explore-row">
             <span class="explore-name">{{ g.name }}</span>
@@ -566,7 +565,7 @@ onActivated(() => {
         </div>
       </div>
 
-      <el-empty v-else-if="searched && !loading && !items.length && !searchError" description="没有找到符合条件的商品，试试放宽筛选条件" :image-size="80">
+      <el-empty v-else-if="searched && !loading && !items.length && !searchError" description="暂无符合条件的商品" :image-size="80">
         <el-button @click="resetFilters">重置筛选</el-button>
       </el-empty>
 

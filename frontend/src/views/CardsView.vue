@@ -480,7 +480,6 @@ const accountModal = reactive({
     <div class="page-head">
       <div>
         <h2>订单发货 · 自动发货</h2>
-        <div class="sub">买家付款后，系统自动把你设置的内容发到聊天里，并在闲鱼上点「发货」</div>
       </div>
       <el-button :icon="Refresh" @click="refreshAll">刷新</el-button>
     </div>
@@ -492,7 +491,6 @@ const accountModal = reactive({
           <span class="spark-emoji">⚡</span>
           <span>自动发货 · 快速上手向导</span>
         </div>
-        <span class="steps-desc">买家付款后，系统在闲鱼聊天自动发送卡密/网盘并确认发货</span>
       </div>
       <div class="delivery-steps-grid">
         <div class="delivery-step-item" :class="{ current: tab === 'pools' }" @click="tab = 'pools'">

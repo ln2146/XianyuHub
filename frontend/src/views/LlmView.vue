@@ -326,7 +326,6 @@ async function remove(p: LlmProvider) {
     <div class="page-head">
       <div>
         <h2>模型接入</h2>
-        <div class="sub">配置多套大模型接入，随时切换；AI 判定、客服回复、意图分类分别使用不同档位的模型</div>
       </div>
       <div class="toolbar">
         <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>

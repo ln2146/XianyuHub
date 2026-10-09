@@ -404,7 +404,6 @@ onBeforeUnmount(stopQrPoll)
     <div class="page-head">
       <div>
         <h2>账号中心</h2>
-        <div class="sub">管理闲鱼账号的登录状态、是否被平台限制以及各项自动化开关。所有自动化默认关闭，需在「设置」中逐项开启。</div>
       </div>
       <div class="toolbar">
         <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>

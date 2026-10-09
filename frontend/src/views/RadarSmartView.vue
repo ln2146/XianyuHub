@@ -491,7 +491,7 @@ onBeforeUnmount(stopTimer)
           <span v-if="totalRecommend" class="t-count" title="推荐数量">{{ totalRecommend }}</span>
         </button>
         <p v-if="!tasksLoading && !tasks.length" class="tasks-empty">
-          还没有智能搜索。在上方输入想买的东西，系统会定时搜索闲鱼并用 AI 挑出好货。
+          暂无智能搜索任务
         </p>
         <div
           v-for="t in tasks"
@@ -569,7 +569,7 @@ onBeforeUnmount(stopTimer)
             v-if="!loading && !results.length"
             class="empty"
             :image-size="80"
-            :description="tasks.length ? (currentTask?.running ? '正在搜索，结果马上就来…' : '暂无符合条件的商品') : '在上方输入想买的东西，开始第一个智能搜索'"
+            :description="tasks.length ? (currentTask?.running ? '正在搜索中…' : '暂无符合条件的商品') : '暂无搜索结果'"
           >
             <el-button v-if="currentTask && !currentTask.running" type="primary" :icon="CaretRight" @click="run(currentTask)">立即搜索</el-button>
             <el-button v-else-if="!tasks.length" @click="router.push('/radar/search')">先去实时搜货看看</el-button>

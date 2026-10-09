@@ -265,7 +265,6 @@ async function openDetail(o: Order) {
     <div class="page-head">
       <div>
         <h2>订单发货 · 订单管理</h2>
-        <div class="sub">买家付款后系统自动按设置发货并确认发货；风控暂停、未关联或发货失败订单在此集中处理</div>
       </div>
       <div class="toolbar">
         <el-button :icon="Refresh" :loading="loading" round @click="load(page)">刷新列表</el-button>
