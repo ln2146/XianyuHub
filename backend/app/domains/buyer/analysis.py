@@ -205,6 +205,10 @@ class RatingDynamics(BaseModel):
     last_rated_at: datetime | None = None
     burst: bool = False
     burst_note: str = ""
+    burst_count: int = 0
+    burst_revived: bool = False  # 集中评价前已沉寂半年以上（沉睡号 / 转手号被重新激活）
+    burst_templated: float = 0.0  # 集中评价中模板化（过短 / 重复）内容的占比
+    templated: int = 0  # 全部样本中模板化评价条数
     monthly: list[MonthBucket] = Field(default_factory=list)
     negative_hits: list[tuple[str, int]] = Field(default_factory=list)
     positive_hits: list[tuple[str, int]] = Field(default_factory=list)
@@ -217,7 +221,18 @@ def _pos_rate(rs: list[SellerRating]) -> float | None:
     return round(sum(1 for r in rated if r.rate == 1) / len(rated), 3) if rated else None
 
 
-def rating_dynamics(ratings: list[SellerRating], now: datetime | None = None) -> RatingDynamics:
+_REVIEW_NOISE = re.compile(r"[\s\W_]+|(\d)\1+|[\U0001F000-\U0001FAFF\u2600-\u27BF]")
+
+
+def _normalize_review(text: str) -> str:
+    """'好评9666666👍👍' → '好评96'：用于识别过短 / 复制粘贴的模板评价。"""
+    return _REVIEW_NOISE.sub(lambda m: m.group(1) or "", (text or "").lower())
+
+
+def rating_dynamics(
+    ratings: list[SellerRating], now: datetime | None = None, *, total: int | None = None
+) -> RatingDynamics:
+    """total：卖家主页上的总评价数（样本只取了最新几页）。"""
     now = now or datetime.now(UTC)
     # 作为卖家收到的评价才反映卖货口碑；接口未区分角色时全部计入
     seller_side = [r for r in ratings if "买家" in r.role] or [r for r in ratings if "卖家" not in r.role]
@@ -244,12 +259,31 @@ def rating_dynamics(ratings: list[SellerRating], now: datetime | None = None) ->
     if timed:
         d.last_rated_at = timed[0][0]
 
-    # 集中评价：任意 7 天窗口内的评价数占样本过半且 ≥ 6 条 → 刷评或批量出货
+    # 模板化评价：去掉标点 / 表情 / 重复数字后过短，或与其他评价完全相同
+    norm = {id(r): _normalize_review(r.content) for r in seller_side}
+    seen_texts = Counter(v for v in norm.values() if v)
+    templated_ids = {k for k, v in norm.items() if len(v) <= 4 or seen_texts[v] >= 2}
+    d.templated = len(templated_ids)
+
+    # 集中评价：任意 7 天窗口内 ≥ 6 条，且占全部评价过半。
+    # 分母取接口给出的总评价数：样本只有最新几十条，高销量卖家的样本天然挤在几天内，不能算刷评。
     times = [t for t, _ in timed]
-    peak = max((sum(1 for u in times if timedelta(0) <= t - u <= timedelta(days=7)) for t in times), default=0)
-    if peak >= 6 and peak >= len(times) * 0.5:
-        d.burst = True
+    best_start, peak = None, 0
+    for t in times:
+        n = sum(1 for u in times if timedelta(0) <= t - u <= timedelta(days=7))
+        if n > peak:
+            best_start, peak = t, n
+    if peak >= 6 and peak >= max(len(times), total or 0) * 0.5 and best_start is not None:
+        window = [r for t, r in timed if timedelta(0) <= best_start - t <= timedelta(days=7)]
+        before = [t for t in times if t < best_start - timedelta(days=7)]
+        d.burst, d.burst_count = True, peak
+        d.burst_revived = bool(before) and (best_start - timedelta(days=7) - max(before)) > timedelta(days=180)
+        d.burst_templated = round(sum(1 for r in window if id(r) in templated_ids) / len(window), 2)
         d.burst_note = f"{peak} 条评价集中在 7 天内出现"
+        if d.burst_revived:
+            d.burst_note += "（此前已沉寂半年以上）"
+        if d.burst_templated >= 0.5:
+            d.burst_note += f"，其中 {d.burst_templated:.0%} 内容过短或雷同"
 
     buckets: dict[str, MonthBucket] = {}
     for t, r in timed:
@@ -378,7 +412,7 @@ def analyze_seller(
     a.sold_sampled = sum(1 for i in profile.items if i.get("status") == "已售")
     a.homogeneity = title_homogeneity([i.get("title") or "" for i in profile.items if i.get("status") == "在售"])
     a.dealer_words = [w for w in DEALER_WORDS if w in (profile.introduction or "")]
-    a.ratings = d = rating_dynamics(profile.ratings, now)
+    a.ratings = d = rating_dynamics(profile.ratings, now, total=profile.rate_cnt)
 
     score = 70
     hi, risk = a.highlights, a.risks
@@ -418,7 +452,13 @@ def analyze_seller(
     if d.as_seller == 0:
         score -= 5
         risk.append("暂无作为卖家的评价，交易记录不可考")
-    else:
+    elif d.as_seller < 5:
+        score -= 4
+        risk.append(f"作为卖家仅 {d.as_seller} 条评价，口碑参考价值有限")
+    if (profile.item_cnt or 0) >= 50 and d.as_seller < 5:
+        score -= 5
+        risk.append(f"累计商品 {profile.item_cnt} 件但卖家评价仅 {d.as_seller} 条，成交记录与铺货规模不符")
+    if d.as_seller:
         rate = d.positive_rate or 0
         if d.as_seller >= 5 and rate < 0.9:
             score -= 15
@@ -426,7 +466,7 @@ def analyze_seller(
         elif d.as_seller >= 5 and rate < 0.95:
             score -= 5
             risk.append(f"卖家好评率 {rate:.0%}，略低")
-        elif d.as_seller >= 10 and rate >= 0.98:
+        elif d.as_seller >= 10 and rate >= 0.98 and not d.burst:  # 集中刷出来的好评不加分
             score += 6
             hi.append(f"卖家好评率 {rate:.0%}（样本 {d.as_seller} 条）")
         if d.trend == "down":
@@ -441,8 +481,16 @@ def analyze_seller(
         elif d.last_rated_at and (now or datetime.now(UTC)) - d.last_rated_at > timedelta(days=365):
             risk.append("最近一年没有新评价，可能是沉睡号 / 被转手的账号")
         if d.burst:
-            score -= 8
-            risk.append(f"{d.burst_note}，存在刷评或批量出货可能")
+            young = reg_days is not None and reg_days < 180
+            if young or d.burst_revived:
+                score -= 15
+                who = "新号" if young else "沉睡号"
+                risk.append(f"{d.burst_note}：{who}短期集中获评，是典型的刷评养号特征")
+            else:
+                score -= 8
+                risk.append(f"{d.burst_note}，存在刷评或批量出货可能")
+            if d.burst_templated >= 0.5:
+                score -= 5
         if d.negative_hits:
             score -= min(20, 5 * len(d.negative_hits))
             risk.append("评价中出现：" + "、".join(f"{w}×{n}" for w, n in d.negative_hits[:5]))

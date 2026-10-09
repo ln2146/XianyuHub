@@ -79,6 +79,36 @@ def test_negative_hits_skip_negations():
     assert negative_hits("描述不符，翻新机") == ["不符", "翻新"]
 
 
+def test_few_reviews_and_listing_mismatch_lower_score():
+    base = dict(item_area="上海", zhima="信用极好", reg_days=2000, now=NOW)
+    many = SellerProfile(seller_id="1", ip_location="上海", ratings=[rating(1, 30 * i + 5) for i in range(12)])
+    few = SellerProfile(seller_id="2", ip_location="上海", ratings=[rating(1, 5), rating(1, 40)])
+    shop = SellerProfile(seller_id="3", ip_location="上海", item_cnt=79042, ratings=[rating(1, 5), rating(1, 40)])
+    a, b, c = (analyze_seller(p, **base) for p in (many, few, shop))
+    assert any("仅 2 条评价" in r for r in b.risks) and b.score < a.score
+    assert any("成交记录与铺货规模不符" in r for r in c.risks) and c.score < b.score
+
+
+def test_burst_uses_total_reviews_and_flags_revived_templated_accounts():
+    week = [rating(1, 1 + i * 0.5, "好评9666666👍") for i in range(8)]
+    # 高销量卖家：样本只有最新 8 条，但总评价 500 条，不算刷评
+    assert not rating_dynamics(week, NOW, total=500).burst
+
+    # 沉睡一年多的号突然集中获得模板化好评
+    revived = rating_dynamics([*week, rating(1, 600), rating(1, 650)], NOW, total=10)
+    assert revived.burst and revived.burst_count == 8 and revived.burst_revived
+    assert revived.burst_templated == 1.0 and "沉寂半年以上" in revived.burst_note and "雷同" in revived.burst_note
+
+    normal = SellerProfile(
+        seller_id="1", ratings=[rating(1, 1 + i * 0.5, f"第{i}次买，卖家人很好发货快") for i in range(8)]
+    )
+    sleeper = SellerProfile(seller_id="2", ratings=[*week, rating(1, 600), rating(1, 650)], rate_cnt=10)
+    n = analyze_seller(normal, reg_days=2000, now=NOW)
+    z = analyze_seller(sleeper, reg_days=2000, now=NOW)
+    assert n.ratings.burst and z.ratings.burst
+    assert any("刷评养号" in r for r in z.risks) and z.score <= n.score - 10
+
+
 def test_title_homogeneity():
     same = ["iPhone 13 128G 国行 95新"] * 3 + ["iPhone 13 256G 国行 99新"]
     mixed = ["自用 MacBook Air", "宜家书桌九成新", "Switch 健身环", "考研数学全套书"]
