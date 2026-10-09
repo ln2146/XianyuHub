@@ -38,9 +38,9 @@ export const accountStatusMap: Record<string, { label: string; type: TagType }> 
 }
 
 export const verdictMap: Record<string, { label: string; type: TagType }> = {
-  recommend: { label: '推荐', type: 'success' },
-  conditional: { label: '有条件推荐', type: 'warning' },
-  reject: { label: '不推荐', type: 'danger' },
+  recommend: { label: '💎 推荐捡漏', type: 'success' },
+  conditional: { label: '⚠️ 需核验', type: 'warning' },
+  reject: { label: '🚫 不推荐', type: 'danger' },
   filtered: { label: '已筛除', type: 'info' },
 }
 

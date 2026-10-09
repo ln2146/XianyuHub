@@ -681,10 +681,11 @@ onMounted(() => {
         </el-form-item>
         <el-form-item label="巡检频率">
           <el-select v-model="taskModal.form.cron" class="full">
-            <el-option value="*/10 8-23 * * *" label="每 10 分钟一次（白天）" />
-            <el-option value="*/30 8-23 * * *" label="每 30 分钟一次（推荐，低风控）" />
-            <el-option value="0 * * * *" label="每小时一次" />
-            <el-option value="0 */3 * * *" label="每 3 小时一次" />
+            <el-option value="*/30 8-23 * * *" label="日常巡检 · 每 30 分钟一次（推荐，低风控）" />
+            <el-option value="*/10 8-23 * * *" label="急切捡漏 · 每 10 分钟一次（白天）" />
+            <el-option value="0 * * * *" label="平稳巡检 · 每小时一次" />
+            <el-option value="0 */2 * * *" label="闲时巡检 · 每 2 小时一次" />
+            <el-option value="0 9,21 * * *" label="定时汇总 · 每天早晚 9 点 / 21 点" />
           </el-select>
         </el-form-item>
         <el-form-item label="筛选条件">

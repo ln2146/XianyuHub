@@ -172,20 +172,20 @@ const historyOption = computed(() => ({
           <el-option v-for="t in tasks" :key="t.id" :value="t.id" :label="t.name" />
         </el-select>
         <el-select v-model="filters.verdict" class="f-sel" @change="load()">
-          <el-option value="default" label="推荐 + 有条件" />
-          <el-option value="recommend" label="仅推荐" />
-          <el-option value="conditional" label="有条件推荐" />
-          <el-option value="reject" label="不推荐" />
+          <el-option value="default" label="优质精选（推荐 + 需核验）" />
+          <el-option value="recommend" label="💎 仅超值捡漏" />
+          <el-option value="conditional" label="⚠️ 仅需核验" />
+          <el-option value="reject" label="🚫 不推荐" />
           <el-option value="filtered" label="已筛除" />
-          <el-option value="all" label="全部" />
+          <el-option value="all" label="全部状态" />
         </el-select>
         <el-select v-model="filters.mark" clearable placeholder="全部标记" class="f-sel" @change="load()">
           <el-option v-for="(label, k) in markMap" :key="k" :value="k" :label="label" />
         </el-select>
         <el-select v-model="filters.sort" class="f-sel" @change="load()">
-          <el-option value="newest" label="最新发现" />
-          <el-option value="price_asc" label="价格最低" />
           <el-option value="deal" label="性价比最高" />
+          <el-option value="newest" label="最新发现" />
+          <el-option value="price_asc" label="价格从低到高" />
         </el-select>
         <el-input v-model="filters.q" placeholder="标题关键词" clearable class="f-q" :prefix-icon="Search" @keyup.enter="load()" @clear="load()" />
       </div>

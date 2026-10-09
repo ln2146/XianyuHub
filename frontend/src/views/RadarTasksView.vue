@@ -119,11 +119,51 @@ const edit = reactive({
   generating: false,
 })
 
+const cronPresets = [
+  { label: '日常巡检 · 每30分钟 (8-23点，推荐)', value: '*/30 8-23 * * *' },
+  { label: '急切捡漏 · 每10分钟 (8-23点)', value: '*/10 8-23 * * *' },
+  { label: '高频巡检 · 每15分钟 (8-23点)', value: '*/15 8-23 * * *' },
+  { label: '平稳巡检 · 每小时一次', value: '0 * * * *' },
+  { label: '闲时巡检 · 每2小时一次', value: '0 */2 * * *' },
+  { label: '早晚汇总 · 每天9点/21点', value: '0 9,21 * * *' },
+]
+
+const selectedCronPreset = ref('*/30 8-23 * * *')
+
+function syncCronPresetFromForm() {
+  const match = cronPresets.find((p) => p.value === edit.form.cron)
+  selectedCronPreset.value = match ? match.value : 'custom'
+}
+
+function onCronPresetChange(val: string | number | boolean | undefined) {
+  const str = String(val)
+  if (str !== 'custom') {
+    edit.form.cron = str
+  }
+}
+
+function formatCron(cron: string): string {
+  if (!cron) return '未设置'
+  const preset = cronPresets.find((p) => p.value === cron)
+  if (preset) return preset.label.split(' · ')[0] || preset.label
+  if (cron === '*/5 * * * *') return '极速捡漏 (每5分)'
+  if (cron === '*/10 8-23 * * *') return '急切捡漏 (每10分)'
+  if (cron === '*/15 8-23 * * *') return '高频巡检 (每15分)'
+  if (cron === '*/30 8-23 * * *') return '日常巡检 (每30分)'
+  if (cron === '0 * * * *') return '平稳巡检 (每小时)'
+  if (cron === '0 */2 * * *') return '闲时巡检 (每2小时)'
+  if (cron === '0 */3 * * *') return '闲时巡检 (每3小时)'
+  if (cron === '0 9,21 * * *') return '定时汇总 (早9/晚9)'
+  return cron
+}
+
 function openCreate() {
   Object.assign(edit, { open: true, id: null, form: emptyTask(), tab: 'search', nl: '' })
+  syncCronPresetFromForm()
 }
 function openEdit(t: TaskOut) {
   Object.assign(edit, { open: true, id: t.id, form: toIn(t), tab: 'search', nl: '' })
+  syncCronPresetFromForm()
 }
 
 async function generate() {
@@ -174,14 +214,6 @@ async function save() {
   }
 }
 
-const cronPresets = [
-  { label: '每 30 分钟（8-23 点）', value: '*/30 8-23 * * *' },
-  { label: '每 15 分钟（8-23 点）', value: '*/15 8-23 * * *' },
-  { label: '每小时', value: '0 * * * *' },
-  { label: '每 2 小时', value: '0 */2 * * *' },
-  { label: '每天 9 点和 21 点', value: '0 9,21 * * *' },
-]
-
 function statsText(s: Record<string, unknown>) {
   if (!s || !Object.keys(s).length) return ''
   const n = (k: string) => Number(s[k] ?? 0)
@@ -217,10 +249,23 @@ function statsText(s: Record<string, unknown>) {
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="计划" width="150">
+          <el-table-column label="计划频率" width="190">
             <template #default="{ row }">
-              <div class="mono small">{{ row.cron }}</div>
-              <el-switch :model-value="row.enabled" :loading="busy[`en-${row.id}`]" size="small" @change="(v: string | number | boolean) => toggle(row as TaskOut, !!v)" />
+              <div class="cron-plan-cell">
+                <el-tag size="small" type="info" effect="plain" class="mb-xs">{{ formatCron(row.cron) }}</el-tag>
+                <div class="cron-switch-row">
+                  <el-switch
+                    :model-value="row.enabled"
+                    :loading="busy[`en-${row.id}`]"
+                    size="small"
+                    active-text="启用"
+                    inactive-text="暂停"
+                    inline-prompt
+                    @change="(v: string | number | boolean) => toggle(row as TaskOut, !!v)"
+                  />
+                  <span class="mono smaller muted ml-s">{{ row.cron }}</span>
+                </div>
+              </div>
             </template>
           </el-table-column>
           <el-table-column label="上次运行" min-width="220">
@@ -405,15 +450,20 @@ function statsText(s: Record<string, unknown>) {
 
         <el-tab-pane label="调度与通知" name="schedule">
           <el-form label-width="130px" :label-position="isMobile ? 'top' : 'right'">
-            <el-form-item label="执行计划（cron）" required>
-              <el-input v-model="edit.form.cron" class="mono w240" />
-              <div class="presets">
-                <el-tag v-for="p in cronPresets" :key="p.value" class="preset" :effect="edit.form.cron === p.value ? 'dark' : 'plain'" @click="edit.form.cron = p.value">{{ p.label }}</el-tag>
+            <el-form-item label="巡检频率" required>
+              <el-radio-group v-model="selectedCronPreset" class="cron-radio-list" @change="onCronPresetChange">
+                <el-radio v-for="p in cronPresets" :key="p.value" :value="p.value" border class="cron-radio-item">
+                  {{ p.label }}
+                </el-radio>
+                <el-radio value="custom" border class="cron-radio-item">自定义 Cron 表达式</el-radio>
+              </el-radio-group>
+              <div v-if="selectedCronPreset === 'custom'" class="mt-s" style="width: 100%">
+                <el-input v-model="edit.form.cron" placeholder="例如：*/20 9-22 * * *" class="mono w240" />
+                <div class="form-tip">标准 5 段 cron：分 时 日 月 周。间隔至少 5 分钟，建议 30 分钟以上。</div>
               </div>
-              <div class="form-tip">标准 5 段 cron：分 时 日 月 周。间隔至少 5 分钟，建议 30 分钟以上。</div>
             </el-form-item>
-            <el-form-item label="启用">
-              <el-switch v-model="edit.form.enabled" />
+            <el-form-item label="任务开关">
+              <el-switch v-model="edit.form.enabled" active-text="启用自动巡检" inactive-text="暂停" />
             </el-form-item>
             <el-form-item label="通知有条件推荐">
               <el-switch v-model="edit.form.notify_conditional" />
@@ -517,8 +567,36 @@ function statsText(s: Record<string, unknown>) {
   margin-top: 6px;
   width: 100%;
 }
-.preset {
-  cursor: pointer;
+.cron-plan-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.cron-switch-row {
+  display: flex;
+  align-items: center;
+  margin-top: 4px;
+}
+.cron-radio-list {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+}
+.cron-radio-item {
+  margin-right: 0 !important;
+  margin-left: 0 !important;
+  width: 100%;
+}
+.smaller {
+  font-size: 11px;
+}
+.mb-xs {
+  margin-bottom: 4px;
+}
+.ml-s {
+  margin-left: 6px;
 }
 @media (max-width: 768px) {
   .nl {
