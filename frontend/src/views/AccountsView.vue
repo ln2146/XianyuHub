@@ -22,6 +22,7 @@ import {
   type RiskEvent,
 } from '@/api/account'
 import { getImStatus, type ImStatus } from '@/api/message'
+import { listBindings } from '@/api/order'
 import { listUsers, type UserOut } from '@/api/system'
 import StatusTag from '@/components/StatusTag.vue'
 import { useAccountsStore } from '@/stores/accounts'
@@ -256,6 +257,22 @@ function openSettings(a: Account) {
     settings.workEnd = e ?? '23:00'
   }
   settings.open = true
+  loadBindingCount(a)
+}
+
+/** 该账号可用的商品关联数量；null 表示未知（非本人账号或加载失败），不提示 */
+const bindingCount = ref<number | null>(null)
+
+async function loadBindingCount(a: Account) {
+  bindingCount.value = null
+  // 关联属于账号所有者，只有本人账号才能准确判断
+  if (a.owner_id !== auth.user?.id) return
+  try {
+    const list = await listBindings()
+    bindingCount.value = list.filter((b) => b.account_id === null || b.account_id === a.id).length
+  } catch {
+    bindingCount.value = null
+  }
 }
 
 async function saveSettings() {
@@ -595,6 +612,10 @@ onBeforeUnmount(stopQrPoll)
         <el-form-item label="自动发货">
           <el-switch v-model="settings.form.auto_delivery" />
           <div class="form-tip">买家付款后自动发送你设置的内容，并在闲鱼上点击发货。发什么内容请在 <router-link to="/orders/cards">订单发货 → 自动发货</router-link> 中设置。</div>
+          <el-alert v-if="settings.form.auto_delivery && bindingCount === 0" type="warning" :closable="false" show-icon class="mt-s">
+            <template #title>还没有任何商品关联了发货内容</template>
+            现在打开，买家付款后也不会自动发货。请先到 <router-link to="/orders/cards">自动发货</router-link> 页面新建发货内容并关联商品。
+          </el-alert>
         </el-form-item>
         <el-form-item label="发货方式">
           <el-select v-model="settings.form.delivery_mode" class="full">
