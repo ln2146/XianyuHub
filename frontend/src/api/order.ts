@@ -105,7 +105,11 @@ export const syncOrders = (accountId: number) =>
   http.post<Record<string, number>>(`/orders/sync/${accountId}`, null, { timeout: 120_000 }).then((r) => r.data)
 export const deliverOrder = (id: number) =>
   http
-    .post<{ ok: boolean; status: string; error: string | null }>(`/orders/${id}/deliver`, null, { timeout: 120_000 })
+    .post<{ ok: boolean; status: string; error: string | null; code: 'no_binding' | null; item_id: string | null }>(
+      `/orders/${id}/deliver`,
+      null,
+      { timeout: 120_000 },
+    )
     .then((r) => r.data)
 export const closeHold = (id: number) => http.post<{ status: string }>(`/orders/${id}/close-hold`).then((r) => r.data)
 

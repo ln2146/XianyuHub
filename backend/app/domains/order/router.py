@@ -11,6 +11,7 @@ from app.core.pagination import set_total
 from app.domains.account.service import accessible_account_ids, get_account_for
 from app.domains.order import service
 from app.domains.order.models import (
+    ORDER_STATE_LABELS,
     BuyerBlacklist,
     CardBinding,
     CardItem,
@@ -197,10 +198,12 @@ async def manual_deliver(order_pk: int, user: CurrentUser, session: SessionDep) 
     """人工触发发货（跳过发货前风控，适用于风控暂停 / 失败转人工的订单）。"""
     order = await _own_order(session, user, order_pk)
     if order.status not in (OrderState.PAID, OrderState.RISK_HOLD, OrderState.DELIVER_FAILED, OrderState.MANUAL):
-        raise HTTPException(status.HTTP_409_CONFLICT, f"当前状态 {order.status} 不能发货")
+        label = ORDER_STATE_LABELS.get(order.status, order.status)
+        raise HTTPException(status.HTTP_409_CONFLICT, f"订单当前为「{label}」，不能发货")
     ok = await service.deliver(order.id, force=True, user_id=user.id)
     await session.refresh(order)
-    return {"ok": ok, "status": order.status, "error": order.fail_reason}
+    code = "no_binding" if not ok and order.fail_reason == service.NO_BINDING_REASON else None
+    return {"ok": ok, "status": order.status, "error": order.fail_reason, "code": code, "item_id": order.item_id}
 
 
 @router.post("/orders/{order_pk}/close-hold")

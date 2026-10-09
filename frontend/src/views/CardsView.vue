@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh } from '@element-plus/icons-vue'
 import {
@@ -32,6 +33,8 @@ import { fmtTime } from '@/utils/format'
 
 const accounts = useAccountsStore()
 const isMobile = useMobile()
+const route = useRoute()
+const router = useRouter()
 const tab = ref('pools')
 
 const kindMap: Record<PoolKind, { label: string; type: 'primary' | 'success' | 'warning'; tip: string }> = {
@@ -132,11 +135,18 @@ async function savePool() {
   }
   poolEdit.saving = true
   try {
+    let createdId: number | null = null
     if (poolEdit.id) await updatePool(poolEdit.id, body)
-    else await createPool(body)
+    else createdId = (await createPool(body)).id
     ElMessage.success('已保存')
     poolEdit.open = false
     await loadPools()
+    // 从订单 / 商品页跳转过来时：新建完内容接着关联那个商品
+    if (createdId && pendingItemId.value) {
+      const itemId = pendingItemId.value
+      pendingItemId.value = null
+      startLinkItem(itemId, createdId)
+    }
   } catch {
     /* 拦截器已提示 */
   } finally {
@@ -355,17 +365,46 @@ async function removeBl(e: BlacklistEntry) {
 }
 
 function refreshAll() {
-  loadPools()
-  loadBindings()
-  loadBlacklist()
+  return Promise.all([loadPools(), loadBindings(), loadBlacklist()])
 }
 
-onMounted(() => {
-  refreshAll()
+// ================================================================ 从其他页面跳转来关联商品
+/** 待关联的商品：还没有发货内容时先新建，保存后自动接着关联 */
+const pendingItemId = ref<string | null>(null)
+
+function startLinkItem(itemId: string, poolId?: number) {
+  if (!pools.value.length) {
+    pendingItemId.value = itemId
+    tab.value = 'pools'
+    ElMessage.info('先新建一份要发给买家的内容，保存后会自动带你去关联这个商品')
+    openPoolCreate()
+    return
+  }
+  tab.value = 'bindings'
+  // 已有该商品的通用关联（不限规格、不限账号）则直接编辑，避免重复关联
+  const existing = bindings.value.find((b) => b.item_id === itemId && !b.spec_value && !b.account_id)
+  if (existing) {
+    openBindingEdit(existing)
+  } else {
+    openBindingCreate()
+    bEdit.form.item_id = itemId
+  }
+  if (poolId) bEdit.form.pool_id = poolId
+}
+
+onMounted(async () => {
   accounts.load().catch(() => undefined)
   listItems({})
     .then((r) => (goods.value = r))
     .catch(() => undefined)
+  const { tab: qTab, item_id: qItem } = route.query
+  if (typeof qTab === 'string' && ['pools', 'bindings', 'blacklist'].includes(qTab)) tab.value = qTab
+  await refreshAll().catch(() => undefined)
+  if (typeof qItem === 'string' && qItem) {
+    startLinkItem(qItem)
+    // 清掉参数，避免刷新页面时又弹出对话框
+    router.replace({ path: route.path, query: { tab: tab.value } })
+  }
 })
 
 const lowStock = (p: PoolOut) => p.kind === 'pool' && p.stock.available <= p.low_stock_threshold

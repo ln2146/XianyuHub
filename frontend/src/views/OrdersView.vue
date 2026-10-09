@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRealtimeStore } from '@/stores/realtime'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, Search } from '@element-plus/icons-vue'
 import { closeHold, deliverOrder, getOrder, listOrders, syncOrders, type DeliveryRecord, type Order } from '@/api/order'
@@ -12,6 +12,7 @@ import { useMobile } from '@/composables/useMobile'
 import { fmtMoney, fmtTime, itemUrl, orderStatusMap } from '@/utils/format'
 
 const route = useRoute()
+const router = useRouter()
 const accounts = useAccountsStore()
 const realtime = useRealtimeStore()
 const isMobile = useMobile()
@@ -93,6 +94,12 @@ const deliveryModeLabel: Record<string, string> = {
 }
 
 const canDeliver = (o: Order) => ['paid', 'risk_hold', 'deliver_failed', 'manual'].includes(o.status)
+/** 因为商品没有关联发货内容而卡住的订单（与后端 NO_BINDING_REASON 对应） */
+const needsLink = (o: Order) => canDeliver(o) && !!o.fail_reason?.includes('还没有关联发货内容')
+
+function goLink(o: Order) {
+  router.push({ path: '/orders/cards', query: { tab: 'bindings', item_id: o.item_id || undefined } })
+}
 
 async function deliver(o: Order) {
   await ElMessageBox.confirm(
@@ -104,6 +111,7 @@ async function deliver(o: Order) {
   try {
     const r = await deliverOrder(o.id)
     if (r.ok) ElMessage.success('发货成功')
+    else if (r.code === 'no_binding') await promptLink(r.item_id || o.item_id)
     else ElMessage.error(`发货失败：${r.error || orderStatusMap[r.status]?.label || r.status}`)
     await load(page.value)
     if (detail.open && detail.order?.id === o.id) await openDetail(o)
@@ -112,6 +120,20 @@ async function deliver(o: Order) {
   } finally {
     busy[`d-${o.id}`] = false
   }
+}
+
+/** 商品没有关联发货内容：引导去「自动发货 → 商品关联」，并预填商品 */
+async function promptLink(itemId: string | null) {
+  try {
+    await ElMessageBox.confirm(
+      '这个商品还没有关联发货内容，系统不知道该发什么给买家。关联好之后回到这里再点「手动发货」即可。',
+      '还没有发货内容',
+      { type: 'warning', confirmButtonText: '去关联', cancelButtonText: '稍后' },
+    )
+  } catch {
+    return
+  }
+  router.push({ path: '/orders/cards', query: { tab: 'bindings', item_id: itemId || undefined } })
 }
 
 async function toManual(o: Order) {
@@ -209,6 +231,7 @@ async function openDetail(o: Order) {
             <template #default="{ row }">
               <div class="ops">
                 <el-button size="small" @click="openDetail(row as Order)">详情</el-button>
+                <el-button v-if="needsLink(row as Order)" size="small" type="warning" plain @click="goLink(row as Order)">去关联</el-button>
                 <el-button v-if="canDeliver(row as Order)" size="small" type="primary" :loading="busy[`d-${row.id}`]" @click="deliver(row as Order)">手动发货</el-button>
                 <el-button v-if="row.status === 'risk_hold'" size="small" type="warning" plain :loading="busy[`h-${row.id}`]" @click="toManual(row as Order)">转人工</el-button>
               </div>
@@ -244,6 +267,7 @@ async function openDetail(o: Order) {
           </el-descriptions>
 
           <div class="ops mt">
+            <el-button v-if="needsLink(detail.order)" type="warning" plain @click="goLink(detail.order)">去关联发货内容</el-button>
             <el-button v-if="canDeliver(detail.order)" type="primary" :loading="busy[`d-${detail.order.id}`]" @click="deliver(detail.order)">手动发货</el-button>
             <el-button v-if="detail.order.status === 'risk_hold'" type="warning" plain @click="toManual(detail.order)">转人工</el-button>
           </div>

@@ -183,6 +183,11 @@ async def test_unbound_physical_item_stays_paid(admin_client, im):  # noqa: F811
     order = (await admin_client.get("/api/v1/orders")).json()[0]
     assert order["status"] == "paid" and not order["fail_reason"]
 
+    # 人工点「手动发货」：返回 no_binding，前端据此引导去关联
+    r = (await admin_client.post(f"/api/v1/orders/{order['id']}/deliver")).json()
+    assert r["ok"] is False and r["code"] == "no_binding" and r["item_id"] == "900"
+    assert len(fake.sent) == 0
+
 
 @respx.mock
 async def test_dashboard(admin_client, im):  # noqa: F811

@@ -22,6 +22,22 @@ class OrderState(StrEnum):
     CLOSED = "closed"
 
 
+# 面向用户的中文状态名（与前端 orderStatusMap 保持一致）
+ORDER_STATE_LABELS: dict[str, str] = {
+    OrderState.PENDING_PAY: "待付款",
+    OrderState.PAID: "已付款",
+    OrderState.RISK_HOLD: "风控暂停",
+    OrderState.DELIVERING: "发货中",
+    OrderState.DELIVERED: "已发货",
+    OrderState.DELIVER_FAILED: "发货失败",
+    OrderState.MANUAL: "待人工",
+    OrderState.COMPLETED: "已完成",
+    OrderState.REFUNDING: "退款中",
+    OrderState.REFUNDED: "已退款",
+    OrderState.CLOSED: "已关闭",
+}
+
+
 # 允许的状态迁移（其余迁移会被拒绝，保证状态机一致）
 TRANSITIONS: dict[str, set[str]] = {
     OrderState.PENDING_PAY: {OrderState.PAID, OrderState.CLOSED},
