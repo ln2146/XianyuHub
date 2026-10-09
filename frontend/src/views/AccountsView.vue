@@ -594,7 +594,7 @@ onBeforeUnmount(stopQrPoll)
         <el-divider content-position="left">发货</el-divider>
         <el-form-item label="自动发货">
           <el-switch v-model="settings.form.auto_delivery" />
-          <div class="form-tip">买家付款后按「卡券绑定」自动发送卡密 / 文本，并在闲鱼上点击发货。</div>
+          <div class="form-tip">买家付款后自动发送你设置的内容，并在闲鱼上点击发货。发什么内容请在 <router-link to="/orders/cards">订单发货 → 自动发货</router-link> 中设置。</div>
         </el-form-item>
         <el-form-item label="发货方式">
           <el-select v-model="settings.form.delivery_mode" class="full">

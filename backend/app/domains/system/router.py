@@ -149,7 +149,7 @@ async def delete_user(user_id: int, admin: AdminUser, session: SessionDep) -> No
         raise HTTPException(status.HTTP_404_NOT_FOUND, "用户不存在")
     if user.id == admin.id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "不能删除自己")
-    for model, label in ((XyAccount, "闲鱼账号"), (MonitorTask, "选品任务"), (CardPool, "卡券")):
+    for model, label in ((XyAccount, "闲鱼账号"), (MonitorTask, "选品任务"), (CardPool, "发货内容")):
         owned = (
             await session.execute(select(func.count()).select_from(model).where(model.owner_id == user.id))
         ).scalar_one()

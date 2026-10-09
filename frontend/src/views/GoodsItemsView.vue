@@ -299,7 +299,7 @@ async function queryMarket() {
         </el-form-item>
         <el-form-item label="虚拟商品">
           <el-switch v-model="edit.is_virtual" />
-          <div class="form-tip">虚拟商品（卡密 / 账号 / 资料等）可配合卡券自动发货。</div>
+          <div class="form-tip">虚拟商品（卡密 / 账号 / 资料等）可在「订单发货 → 自动发货」中设置付款后自动发货。</div>
         </el-form-item>
       </el-form>
       <template #footer>

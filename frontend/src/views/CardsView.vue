@@ -35,12 +35,12 @@ const isMobile = useMobile()
 const tab = ref('pools')
 
 const kindMap: Record<PoolKind, { label: string; type: 'primary' | 'success' | 'warning'; tip: string }> = {
-  text: { label: '固定文本', type: 'primary', tip: '每单发送相同内容，如网盘链接、教程' },
-  pool: { label: '卡密库存', type: 'success', tip: '每单消耗一条卡密，导入后自动去重' },
-  api: { label: 'API 取货', type: 'warning', tip: '付款后调用你的接口获取发货内容' },
+  text: { label: '固定内容', type: 'primary', tip: '每个买家收到的都一样，适合网盘链接、教程、资料等' },
+  pool: { label: '卡密库存', type: 'success', tip: '每单发一条、发过不再发，适合激活码、兑换码、账号等；导入时自动去重' },
+  api: { label: '接口取货', type: 'warning', tip: '买家付款后调用你自己的接口获取内容（适合有自有系统的卖家）' },
 }
 
-// ================================================================ 卡券库
+// ================================================================ 发货内容
 const pools = ref<PoolOut[]>([])
 const poolsLoading = ref(false)
 
@@ -161,7 +161,7 @@ async function togglePool(p: PoolOut, enabled: boolean) {
 }
 
 async function removePool(p: PoolOut) {
-  await ElMessageBox.confirm(`删除卡券「${p.name}」及其全部卡密和绑定？此操作不可恢复。`, '删除卡券', {
+  await ElMessageBox.confirm(`删除发货内容「${p.name}」？其中的卡密和关联的商品也会一并删除，此操作不可恢复。`, '删除发货内容', {
     type: 'error',
     confirmButtonText: '删除',
     confirmButtonClass: 'el-button--danger',
@@ -224,7 +224,7 @@ async function removeCard(c: CardItem) {
   await Promise.all([loadCards(), loadPools()])
 }
 
-// ================================================================ 发货绑定
+// ================================================================ 商品关联
 const bindings = ref<BindingOut[]>([])
 const bindingsLoading = ref(false)
 const goods = ref<MyItem[]>([])
@@ -244,7 +244,7 @@ const goodsTitle = computed(() => {
 })
 
 const TEMPLATE_VARS = [
-  { key: '{content}', label: '发货内容（卡密 / 文本 / API 返回）' },
+  { key: '{content}', label: '发货内容（固定内容 / 卡密 / 接口返回）' },
   { key: '{order_id}', label: '订单号' },
   { key: '{buyer_name}', label: '买家昵称' },
   { key: '{item_title}', label: '商品标题' },
@@ -268,7 +268,7 @@ const templateRef = ref<{ textarea?: HTMLTextAreaElement }>()
 
 function openBindingCreate() {
   if (!pools.value.length) {
-    ElMessage.warning('请先在「卡券库」中创建卡券')
+    ElMessage.warning('请先在「① 发货内容」中新建要发给买家的内容')
     return
   }
   Object.assign(bEdit, { open: true, replaceId: null, form: emptyBinding() })
@@ -293,7 +293,7 @@ function insertVar(v: string) {
 
 async function saveBinding() {
   const f = bEdit.form
-  if (!f.pool_id) return ElMessage.warning('请选择卡券')
+  if (!f.pool_id) return ElMessage.warning('请选择发货内容')
   if (!f.item_id.trim()) return ElMessage.warning('请填写商品 ID')
   bEdit.saving = true
   try {
@@ -311,7 +311,7 @@ async function saveBinding() {
 }
 
 async function removeBinding(b: BindingOut) {
-  await ElMessageBox.confirm(`删除商品 ${b.item_id} 的发货绑定？`, '删除绑定', { type: 'warning' })
+  await ElMessageBox.confirm(`取消商品 ${b.item_id} 的关联？取消后该商品付款后不再自动发货。`, '取消关联', { type: 'warning' })
   await deleteBinding(b.id)
   ElMessage.success('已删除')
   await loadBindings()
@@ -375,28 +375,37 @@ const lowStock = (p: PoolOut) => p.kind === 'pool' && p.stock.available <= p.low
   <div class="page">
     <div class="page-head">
       <div>
-        <h2>订单发货 · 卡券</h2>
-        <div class="sub">配置发货内容（卡券库），再把卡券绑定到商品；买家付款后按绑定自动发货</div>
+        <h2>订单发货 · 自动发货</h2>
+        <div class="sub">买家付款后，系统自动把你设置的内容发到聊天里，并在闲鱼上点「发货」</div>
       </div>
       <el-button :icon="Refresh" @click="refreshAll">刷新</el-button>
     </div>
 
+    <el-alert type="info" :closable="false" class="steps-tip">
+      <template #title>三步开启自动发货</template>
+      <ol class="steps">
+        <li><b>发货内容</b>：写好要发给买家的东西（网盘链接、卡密等）</li>
+        <li><b>商品关联</b>：指定哪个商品发哪份内容</li>
+        <li>到 <router-link to="/accounts">账号中心</router-link> → 设置，打开「自动发货」开关</li>
+      </ol>
+    </el-alert>
+
     <el-card shadow="never">
       <el-tabs v-model="tab">
-        <!-- 卡券库 -->
-        <el-tab-pane label="卡券库" name="pools">
+        <!-- 发货内容 -->
+        <el-tab-pane label="① 发货内容" name="pools">
           <div class="tab-bar">
-            <el-button type="primary" :icon="Plus" @click="openPoolCreate">新建卡券</el-button>
+            <el-button type="primary" :icon="Plus" @click="openPoolCreate">新建发货内容</el-button>
           </div>
           <div class="table-wrap">
-            <el-table v-loading="poolsLoading" :data="pools" empty-text="暂无卡券">
+            <el-table v-loading="poolsLoading" :data="pools" empty-text="还没有发货内容，点击「新建发货内容」开始">
               <el-table-column label="名称" prop="name" min-width="140" />
               <el-table-column label="类型" width="110">
                 <template #default="{ row }">
                   <el-tag size="small" :type="kindMap[row.kind as PoolKind]?.type">{{ kindMap[row.kind as PoolKind]?.label || row.kind }}</el-tag>
                 </template>
               </el-table-column>
-              <el-table-column label="库存 / 内容" min-width="220">
+              <el-table-column label="内容 / 剩余库存" min-width="220">
                 <template #default="{ row }">
                   <template v-if="row.kind === 'pool'">
                     <span :class="{ low: lowStock(row as PoolOut) }">可用 {{ row.stock.available }}</span>
@@ -407,7 +416,9 @@ const lowStock = (p: PoolOut) => p.kind === 'pool' && p.stock.available <= p.low
                   <span v-else class="muted mono small ellipsis">{{ row.api_config.url || '-' }}</span>
                 </template>
               </el-table-column>
-              <el-table-column label="预警阈值" prop="low_stock_threshold" width="90" />
+              <el-table-column label="库存预警" width="90">
+                <template #default="{ row }">{{ row.kind === 'pool' ? `≤ ${row.low_stock_threshold}` : '-' }}</template>
+              </el-table-column>
               <el-table-column label="启用" width="70">
                 <template #default="{ row }">
                   <el-switch :model-value="row.enabled" size="small" @change="(v: string | number | boolean) => togglePool(row as PoolOut, !!v)" />
@@ -417,7 +428,7 @@ const lowStock = (p: PoolOut) => p.kind === 'pool' && p.stock.available <= p.low
                 <template #default="{ row }">
                   <div class="ops">
                     <el-button v-if="row.kind === 'pool'" size="small" type="primary" plain @click="openImport(row as PoolOut)">导入卡密</el-button>
-                    <el-button v-if="row.kind === 'pool'" size="small" @click="openCards(row as PoolOut)">卡密</el-button>
+                    <el-button v-if="row.kind === 'pool'" size="small" @click="openCards(row as PoolOut)">查看卡密</el-button>
                     <el-button size="small" @click="openPoolEdit(row as PoolOut)">编辑</el-button>
                     <el-button size="small" type="danger" plain @click="removePool(row as PoolOut)">删除</el-button>
                   </div>
@@ -427,13 +438,14 @@ const lowStock = (p: PoolOut) => p.kind === 'pool' && p.stock.available <= p.low
           </div>
         </el-tab-pane>
 
-        <!-- 发货绑定 -->
-        <el-tab-pane label="发货绑定" name="bindings">
+        <!-- 商品关联 -->
+        <el-tab-pane label="② 商品关联" name="bindings">
           <div class="tab-bar">
-            <el-button type="primary" :icon="Plus" @click="openBindingCreate">新建绑定</el-button>
+            <el-button type="primary" :icon="Plus" @click="openBindingCreate">关联商品</el-button>
+            <span class="muted small">只有关联了发货内容的商品，买家付款后才会自动发货</span>
           </div>
           <div class="table-wrap">
-            <el-table v-loading="bindingsLoading" :data="bindings" empty-text="暂无绑定">
+            <el-table v-loading="bindingsLoading" :data="bindings" empty-text="还没有关联商品，点击「关联商品」指定哪个商品发哪份内容">
               <el-table-column label="商品" min-width="200">
                 <template #default="{ row }">
                   <div class="ellipsis">{{ goodsTitle(row.item_id) || '商品' }}</div>
@@ -443,13 +455,13 @@ const lowStock = (p: PoolOut) => p.kind === 'pool' && p.stock.available <= p.low
               <el-table-column label="规格" width="110">
                 <template #default="{ row }">{{ row.spec_value || '全部规格' }}</template>
               </el-table-column>
-              <el-table-column label="卡券" min-width="120">
+              <el-table-column label="发货内容" min-width="120">
                 <template #default="{ row }">{{ poolName(row.pool_id) }}</template>
               </el-table-column>
               <el-table-column label="账号" min-width="110">
                 <template #default="{ row }">{{ row.account_id ? accounts.nameOf(row.account_id) : '全部账号' }}</template>
               </el-table-column>
-              <el-table-column label="消息模板" min-width="200" prop="template" show-overflow-tooltip />
+              <el-table-column label="发给买家的话" min-width="200" prop="template" show-overflow-tooltip />
               <el-table-column label="延迟" width="80">
                 <template #default="{ row }">{{ row.delay_seconds ? `${row.delay_seconds} 秒` : '立即' }}</template>
               </el-table-column>
@@ -494,13 +506,13 @@ const lowStock = (p: PoolOut) => p.kind === 'pool' && p.stock.available <= p.low
       </el-tabs>
     </el-card>
 
-    <!-- 卡券编辑 -->
-    <el-dialog v-model="poolEdit.open" :title="poolEdit.id ? '编辑卡券' : '新建卡券'" width="620px">
+    <!-- 发货内容编辑 -->
+    <el-dialog v-model="poolEdit.open" :title="poolEdit.id ? '编辑发货内容' : '新建发货内容'" width="620px">
       <el-form label-width="100px" :label-position="isMobile ? 'top' : 'right'">
         <el-form-item label="名称" required>
-          <el-input v-model="poolEdit.name" maxlength="64" />
+          <el-input v-model="poolEdit.name" maxlength="64" placeholder="方便自己辨认，买家看不到，例如：PS 教程网盘" />
         </el-form-item>
-        <el-form-item label="类型">
+        <el-form-item label="发货方式">
           <el-radio-group v-model="poolEdit.kind" :disabled="!!poolEdit.id">
             <el-radio-button v-for="(v, k) in kindMap" :key="k" :value="k">{{ v.label }}</el-radio-button>
           </el-radio-group>
@@ -520,7 +532,7 @@ const lowStock = (p: PoolOut) => p.kind === 'pool' && p.stock.available <= p.low
         <el-form-item v-if="poolEdit.kind === 'pool'" label="说明">
           <span class="muted small">保存后在列表中点击「导入卡密」批量导入，每行一条。</span>
         </el-form-item>
-        <el-form-item label="库存预警">
+        <el-form-item v-if="poolEdit.kind === 'pool'" label="库存预警">
           <el-input-number v-model="poolEdit.low_stock_threshold" :min="0" />
           <div class="form-tip">可用卡密低于该数量时发送「库存不足」通知。</div>
         </el-form-item>
@@ -581,9 +593,9 @@ const lowStock = (p: PoolOut) => p.kind === 'pool' && p.stock.available <= p.low
     </el-dialog>
 
     <!-- 绑定编辑 -->
-    <el-dialog v-model="bEdit.open" :title="bEdit.replaceId ? '编辑绑定' : '新建绑定'" width="620px">
+    <el-dialog v-model="bEdit.open" :title="bEdit.replaceId ? '编辑商品关联' : '关联商品'" width="620px">
       <el-form label-width="100px" :label-position="isMobile ? 'top' : 'right'">
-        <el-form-item label="卡券" required>
+        <el-form-item label="发货内容" required>
           <el-select v-model="bEdit.form.pool_id" class="w240">
             <el-option v-for="p in pools" :key="p.id" :value="p.id" :label="`${p.name}（${kindMap[p.kind]?.label}）`" />
           </el-select>
@@ -594,14 +606,14 @@ const lowStock = (p: PoolOut) => p.kind === 'pool' && p.stock.available <= p.low
           </el-select>
         </el-form-item>
         <el-form-item label="规格">
-          <el-input v-model="bEdit.form.spec_value" placeholder="留空匹配全部规格；多规格商品可按规格值绑定不同卡券" clearable />
+          <el-input v-model="bEdit.form.spec_value" placeholder="留空表示全部规格；多规格商品可按规格值分别关联不同内容" clearable />
         </el-form-item>
         <el-form-item label="限定账号">
           <el-select v-model="bEdit.form.account_id" clearable placeholder="全部账号" class="w240">
             <el-option v-for="a in accounts.list" :key="a.id" :value="a.id" :label="a.remark || a.nickname || a.unb" />
           </el-select>
         </el-form-item>
-        <el-form-item label="消息模板">
+        <el-form-item label="发给买家的话">
           <el-input ref="templateRef" v-model="bEdit.form.template" type="textarea" :rows="5" placeholder="留空使用默认模板" />
           <div class="vars">
             <span class="muted small">插入变量：</span>
@@ -609,6 +621,7 @@ const lowStock = (p: PoolOut) => p.kind === 'pool' && p.stock.available <= p.low
               <el-tag size="small" class="var" effect="plain" @click="insertVar(v.key)">{{ v.key }}</el-tag>
             </el-tooltip>
           </div>
+          <div class="form-tip">{content} 会被替换成上面选择的发货内容，其余变量按订单信息自动填充。</div>
         </el-form-item>
         <el-form-item label="延迟发货">
           <el-input-number v-model="bEdit.form.delay_seconds" :min="0" :max="600" />
@@ -630,7 +643,19 @@ const lowStock = (p: PoolOut) => p.kind === 'pool' && p.stock.available <= p.low
 
 <style scoped>
 .tab-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
   margin-bottom: 12px;
+}
+.steps-tip {
+  margin-bottom: 12px;
+}
+.steps {
+  margin: 4px 0 0;
+  padding-left: 20px;
+  line-height: 1.9;
 }
 .ops {
   display: flex;

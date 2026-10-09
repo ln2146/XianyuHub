@@ -256,7 +256,7 @@ async def precheck(s: AsyncSession, order: Order, owner_id: int, binding: CardBi
 async def allocate(s: AsyncSession, pool: CardPool, order: Order) -> tuple[str, int | None]:
     """返回 (内容, card_item_id)。卡密库存通过条件更新原子出库。"""
     if not pool.enabled:
-        raise DeliveryError("卡券已停用")
+        raise DeliveryError("发货内容已停用")
     if pool.kind == "text":
         return get_vault().decrypt(pool.text_enc) or "", None
     if pool.kind == "pool":
@@ -281,7 +281,7 @@ async def allocate(s: AsyncSession, pool: CardPool, order: Order) -> tuple[str, 
         raise DeliveryError("卡密分配冲突，请重试")
     if pool.kind == "api":
         return await call_delivery_api(pool.api_config, order), None
-    raise DeliveryError(f"未知卡券类型 {pool.kind}")
+    raise DeliveryError(f"未知的发货方式 {pool.kind}")
 
 
 def _render(template: str, order: Order, content: str = "") -> str:
@@ -347,7 +347,7 @@ async def _deliver(order_pk: int, *, force: bool, user_id: int | None) -> bool:
         binding = await find_binding(s, order, owner_id)
         if binding is None:
             await s.commit()
-            logger.info("订单 {} 的商品未绑定卡券，跳过自动发货", order.order_id)
+            logger.info("订单 {} 的商品未关联发货内容，跳过自动发货", order.order_id)
             return False
         if not force:
             reason = await precheck(s, order, owner_id, binding)
@@ -371,7 +371,7 @@ async def _deliver(order_pk: int, *, force: bool, user_id: int | None) -> bool:
         record.message_sent, record.consigned = already_sent, already_consigned
         try:
             if pool is None:
-                raise DeliveryError("卡券不存在")
+                raise DeliveryError("发货内容不存在")
             reused = None
             if already_sent:
                 reused = (
@@ -516,7 +516,7 @@ async def check_stock(pool_id: int) -> None:
             owner_id,
             Notification(
                 event=NotifyEvents.STOCK_LOW,
-                title=f"📦 卡券「{name}」库存不足",
+                title=f"📦 发货内容「{name}」卡密库存不足",
                 content=f"剩余 {left} 张，请及时补充。",
             ),
         )

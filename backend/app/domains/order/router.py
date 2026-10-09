@@ -111,7 +111,7 @@ async def _own_order(session, user, order_pk: int) -> Order:
 async def _own_pool(session, user, pool_id: int) -> CardPool:
     pool = await session.get(CardPool, pool_id)
     if pool is None or pool.owner_id != user.id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "卡券不存在")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "发货内容不存在")
     return pool
 
 
@@ -223,9 +223,9 @@ async def list_pools(user: CurrentUser, session: SessionDep) -> list[PoolOut]:
 @router.post("/cards/pools", response_model=PoolOut, status_code=201)
 async def create_pool(body: PoolIn, user: CurrentUser, session: SessionDep) -> PoolOut:
     if body.kind == "text" and not body.text:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "固定文本卡券需要填写内容")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "「固定内容」需要填写发货内容")
     if body.kind == "api" and not str(body.api_config.get("url", "")).startswith(("http://", "https://")):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "API 卡券需要有效的 url")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "「接口取货」需要填写有效的 url")
     pool = CardPool(
         owner_id=user.id,
         name=body.name,
@@ -267,7 +267,7 @@ async def delete_pool(pool_id: int, user: CurrentUser, session: SessionDep) -> N
 async def import_cards(pool_id: int, body: ImportIn, user: CurrentUser, session: SessionDep) -> dict[str, int]:
     pool = await _own_pool(session, user, pool_id)
     if pool.kind != "pool":
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "只有卡密库存类卡券可以导入")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "只有「卡密库存」类型的发货内容可以导入卡密")
     lines = [line.strip() for line in body.lines.splitlines() if line.strip()]
     existing = {fp for (fp,) in await session.execute(select(CardItem.fingerprint).where(CardItem.pool_id == pool.id))}
     added = dup = 0

@@ -50,7 +50,7 @@ defineProps<{ active: string; collapsed: boolean }>()
         <span>订单发货</span>
       </template>
       <el-menu-item index="/orders/list">订单</el-menu-item>
-      <el-menu-item index="/orders/cards">卡券</el-menu-item>
+      <el-menu-item index="/orders/cards">自动发货</el-menu-item>
     </el-sub-menu>
     <el-menu-item index="/notify">
       <el-icon><Bell /></el-icon>

@@ -96,7 +96,7 @@ const canDeliver = (o: Order) => ['paid', 'risk_hold', 'deliver_failed', 'manual
 
 async function deliver(o: Order) {
   await ElMessageBox.confirm(
-    `将立即为订单 ${o.order_id}（${o.buyer_nick || '买家'}，${fmtMoney(o.amount)}）发货：按卡券绑定发送内容并在闲鱼确认发货。此操作跳过发货前风控检查。`,
+    `将立即为订单 ${o.order_id}（${o.buyer_nick || '买家'}，${fmtMoney(o.amount)}）发货：按商品关联的发货内容发给买家并在闲鱼确认发货。此操作跳过发货前风控检查。`,
     '手动发货',
     { type: 'warning', confirmButtonText: '确认发货' },
   )
@@ -148,7 +148,7 @@ async function openDetail(o: Order) {
     <div class="page-head">
       <div>
         <h2>订单发货 · 订单</h2>
-        <div class="sub">买家付款后按卡券绑定自动发货（需在账号设置中开启）。风控暂停 / 发货失败的订单需人工处理。</div>
+        <div class="sub">买家付款后按「自动发货」里的设置发货（需在账号设置中开启）。风控暂停 / 发货失败的订单需人工处理。</div>
       </div>
     </div>
 
