@@ -257,8 +257,18 @@ export interface ItemDetail {
   status: string
 }
 
+/** 搜索通道（匿名 / 某个账号）是否在暂停保护中 */
+export const searchStatus = (account_id?: number | null) =>
+  http
+    .get<{ state: string; cooldown_seconds: number; strikes: number; needs_verify: boolean }>('/buyer/search/status', {
+      params: account_id ? { account_id } : undefined,
+      silent: true,
+    })
+    .then((r) => r.data)
+
 export const liveSearch = (params: LiveSearchQuery) =>
-  http.get<SearchPage>('/buyer/search', { params }).then((r) => r.data)
+  // 页面自己展示错误与冷却倒计时，不再弹全局提示
+  http.get<SearchPage>('/buyer/search', { params, silent: true }).then((r) => r.data)
 
 export const getItemDetail = (itemId: string, account_id?: number | null) =>
   http

@@ -1,6 +1,8 @@
 import asyncio
 import csv
 import io
+import math
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
@@ -42,6 +44,7 @@ from app.domains.buyer.models import (
 from app.domains.buyer.pipeline import load_seller_profile, run_task, task_lock, upsert_market_item
 from app.goofish.dto import QUICK_FILTERS, ItemDetail, SearchQuery
 from app.goofish.errors import GoofishError, RiskBlockedError, RiskControlError
+from app.goofish.gateway import account_key
 from app.intelligence.llm import LLMError, LLMUnavailable, get_llm
 from app.intelligence.pricing import deal_label, market_stats
 from app.intelligence.rules import ItemRules
@@ -386,14 +389,34 @@ async def task_market(task_id: int, user: CurrentUser, session: SessionDep) -> d
 
 
 # ---------------------------------------------------------------- 实时搜索与详情
+def _cooldown_left(account_id: int | None) -> int:
+    """该请求通道（匿名 / 某个账号）剩余的暂停保护秒数。"""
+    rt = get_runtime().gateway.guard.runtime(account_key(account_id))
+    return max(0, math.ceil(rt.cooldown_until - time.time()))
+
+
+def _channel_name(account_id: int | None) -> str:
+    return "匿名通道" if account_id is None else "该账号"
+
+
 @contextmanager
-def _goofish_errors(action: str) -> Iterator[None]:
+def _goofish_errors(action: str, account_id: int | None = None) -> Iterator[None]:
     try:
         yield
     except RiskBlockedError as e:
-        raise HTTPException(status.HTTP_423_LOCKED, f"账号保护中：{e}") from e
+        left = math.ceil(e.retry_after or 0)
+        headers = {"Retry-After": str(left)} if left else None
+        tail = f"，约 {max(1, math.ceil(left / 60))} 分钟后自动恢复" if left else ""
+        raise HTTPException(
+            status.HTTP_423_LOCKED, f"{_channel_name(account_id)}暂停保护中{tail}", headers=headers
+        ) from e
     except RiskControlError as e:
-        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, f"触发闲鱼安全限制：{e}") from e
+        left = _cooldown_left(account_id)
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            f"闲鱼临时限制了{_channel_name(account_id)}的请求，已自动暂停约 {max(1, math.ceil(left / 60))} 分钟，到时再试",
+            headers={"Retry-After": str(left)} if left else None,
+        ) from e
     except GoofishError as e:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"{action}失败：{e}") from e
 
@@ -443,13 +466,28 @@ async def live_search(
         free_shipping=free_shipping,
         quick_filters=quick,
     )
-    with _goofish_errors("搜索"):
+    with _goofish_errors("搜索", account_id):
         res = await get_runtime().gateway.search_items(query, account_id=account_id)
     # 入市场商品库：给商品分析提供同类价格样本与价格走势
     for item in res.items:
         await upsert_market_item(session, item)
     await session.commit()
     return res.model_dump()
+
+
+@router.get("/search/status")
+async def search_status(user: CurrentUser, session: SessionDep, account_id: int | None = None) -> dict[str, Any]:
+    """搜索通道当前是否在暂停保护中（页面据此提前提示，而不是等搜索失败）。"""
+    if account_id is not None:
+        await get_account_for(session, user, account_id)
+    rt = get_runtime().gateway.guard.runtime(account_key(account_id))
+    return {
+        "state": rt.state,
+        "cooldown_seconds": _cooldown_left(account_id),
+        "strikes": rt.strikes,
+        # 账号被要求滑块 / 安全验证：要去闲鱼完成验证后在账号页解除，等待不会自动恢复
+        "needs_verify": account_id is not None and rt.state == "circuit_open",
+    }
 
 
 @router.get("/items/{item_id}/detail")
@@ -461,7 +499,7 @@ async def get_item_detail(
 ) -> dict[str, Any]:
     if account_id is not None:
         await get_account_for(session, user, account_id)
-    with _goofish_errors("获取商品详情"):
+    with _goofish_errors("获取商品详情", account_id):
         detail = await get_runtime().gateway.get_item_detail(item_id, account_id=account_id)
     await _save_detail(session, detail)
     return detail.model_dump()
@@ -508,7 +546,7 @@ async def _item_analysis(
     rec = await session.get(MarketItemRecord, item_id)
     if rec is None or rec.detail_fetched_at is None:
         try:
-            with _goofish_errors("获取商品详情"):
+            with _goofish_errors("获取商品详情", account_id):
                 detail = await get_runtime().gateway.get_item_detail(item_id, account_id=account_id)
             rec = await _save_detail(session, detail)
         except HTTPException:
@@ -547,7 +585,7 @@ async def _seller_analysis(
 ) -> SellerAnalysis:
     if not (rec.seller_id or "").isdigit():
         # 搜索结果只有加密卖家 ID，补一次详情拿到数字 ID
-        with _goofish_errors("获取商品详情"):
+        with _goofish_errors("获取商品详情", account_id):
             detail = await get_runtime().gateway.get_item_detail(rec.item_id, account_id=account_id)
         rec = await _save_detail(session, detail)
         sold_cnt = sold_cnt if sold_cnt is not None else detail.seller.sold_cnt
@@ -555,7 +593,7 @@ async def _seller_analysis(
     seller_id = rec.seller_id
     if not seller_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "未获取到卖家信息")
-    with _goofish_errors("获取卖家主页"):
+    with _goofish_errors("获取卖家主页", account_id):
         profile = await load_seller_profile(seller_id, account_id, refresh=refresh)
     cached = await session.get(SellerProfileCache, seller_id)
     analysis = analyze_seller(
@@ -602,7 +640,7 @@ async def seller_analysis(
         await get_account_for(session, user, account_id)
     rec = await session.get(MarketItemRecord, item_id)
     if rec is None:
-        with _goofish_errors("获取商品详情"):
+        with _goofish_errors("获取商品详情", account_id):
             detail = await get_runtime().gateway.get_item_detail(item_id, account_id=account_id)
         rec = await _save_detail(session, detail)
     return await _seller_analysis(
@@ -735,7 +773,7 @@ async def create_watch(body: WatchIn, user: CurrentUser, session: SessionDep) ->
     if exists is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, "这件商品已经在价格监控中")
     # 立即查一次详情：确认商品可访问，并记录加入时的价格作为降幅基准
-    with _goofish_errors("获取商品详情"):
+    with _goofish_errors("获取商品详情", body.account_id):
         detail = await get_runtime().gateway.get_item_detail(item_id, account_id=body.account_id)
     if watch_service.ended_reason(detail):
         raise HTTPException(422, f"该商品当前不在售（{detail.status}），无法监控")

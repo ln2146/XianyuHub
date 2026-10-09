@@ -145,3 +145,26 @@ async def test_live_search_and_item_detail(admin_client):
     detail = detail_res.json()
     assert detail["item"]["item_id"] == "900000000001"
     assert detail["seller"]["nick"]
+
+
+@respx.mock
+async def test_search_rate_limit_reports_real_cooldown(admin_client):
+    respx.post(url__regex=r".*mtop\.gaia.*").mock(
+        return_value=httpx.Response(200, json={"ret": ["SUCCESS"], "data": {}}, headers={"set-cookie": "_m_h5_tk=a_1"})
+    )
+    respx.post(url__regex=r".*idlemtopsearch.*").mock(
+        return_value=httpx.Response(200, json={"ret": ["RGV587_ERROR::SM::哎哟喂,被挤爆啦"], "data": {}})
+    )
+    assert (await admin_client.get("/api/v1/buyer/search/status")).json()["cooldown_seconds"] == 0
+
+    r = await admin_client.get("/api/v1/buyer/search?keyword=iphone")
+    assert r.status_code == 429
+    left = int(r.headers["retry-after"])
+    assert 100 <= left <= 120  # 首次限流冷却 2 分钟
+    assert "匿名通道" in r.json()["detail"] and "2 分钟" in r.json()["detail"] and "RGV587" not in r.json()["detail"]
+
+    # 冷却期内再搜：不再请求闲鱼，直接告知剩余时间
+    r = await admin_client.get("/api/v1/buyer/search?keyword=iphone")
+    assert r.status_code == 423 and int(r.headers["retry-after"]) > 0
+    status = (await admin_client.get("/api/v1/buyer/search/status")).json()
+    assert status["state"] == "cooldown" and status["cooldown_seconds"] > 0 and status["strikes"] == 1

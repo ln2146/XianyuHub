@@ -80,6 +80,33 @@ async def test_guard_trips_on_risk_and_recovers():
     assert rt.health < 100  # strikes 仍计入健康度
 
 
+async def test_guard_anonymous_circuit_heals_after_cooldown_but_accounts_need_verify():
+    from app.goofish.guard.guard import ANON
+
+    guard = RiskGuard()
+
+    async def risky():
+        raise RiskControlError("滑块", punish_url="https://punish")
+
+    async def fine():
+        return 1
+
+    for key in (ANON, "acc:1"):
+        with pytest.raises(RiskControlError):
+            await guard.run(key, Action.SEARCH, risky)
+        assert guard.runtime(key).state == AccountState.CIRCUIT_OPEN
+        with pytest.raises(RiskBlockedError):  # 冷却期内都拒绝
+            await guard.run(key, Action.SEARCH, fine)
+        guard.runtime(key).cooldown_until = time.time() - 1
+
+    # 匿名通道没人能去做滑块验证：冷却结束后自动探活恢复
+    assert await guard.run(ANON, Action.SEARCH, fine) == 1
+    assert guard.runtime(ANON).state == AccountState.ACTIVE
+    # 账号通道仍需人工在闲鱼完成验证
+    with pytest.raises(RiskBlockedError):
+        await guard.run("acc:1", Action.SEARCH, fine)
+
+
 async def test_guard_session_expired_blocks_login_actions_only():
     guard = RiskGuard()
 

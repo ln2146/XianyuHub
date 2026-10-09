@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onActivated, onMounted, reactive, ref } from 'vue'
+import { computed, onActivated, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowDown, Bell, Check, Close, Grid, List, MagicStick, Search, Upload } from '@element-plus/icons-vue'
@@ -8,6 +8,7 @@ import {
   emptyTask,
   liveSearch,
   QUICK_FILTERS,
+  searchStatus,
   type LiveSearchQuery,
   type SearchItem,
 } from '@/api/buyer'
@@ -160,6 +161,37 @@ const searched = ref(false)
 const hasMore = ref(false)
 const searchError = ref('')
 
+// 闲鱼限流后的暂停保护：显示真实剩余时间，到点再试
+const cooldown = ref(0)
+const needsVerify = ref(false)
+let cooldownTimer: number | undefined
+function startCooldown(seconds: number) {
+  cooldown.value = Math.max(0, Math.round(seconds))
+  window.clearInterval(cooldownTimer)
+  if (cooldown.value > 0) {
+    cooldownTimer = window.setInterval(() => {
+      cooldown.value = Math.max(0, cooldown.value - 1)
+      if (!cooldown.value) window.clearInterval(cooldownTimer)
+    }, 1000)
+  }
+}
+onBeforeUnmount(() => window.clearInterval(cooldownTimer))
+const cooldownText = computed(() => {
+  const m = Math.floor(cooldown.value / 60)
+  const s = cooldown.value % 60
+  return m ? `${m} 分 ${s} 秒` : `${s} 秒`
+})
+const channelAccountId = () => (searchForm.account_id > 0 ? searchForm.account_id : null)
+async function refreshChannelStatus() {
+  try {
+    const st = await searchStatus(channelAccountId())
+    needsVerify.value = st.needs_verify
+    startCooldown(st.cooldown_seconds)
+  } catch {
+    /* 静默 */
+  }
+}
+
 let lastSearchTime = 0
 let filterDebounceTimer: number | undefined
 
@@ -204,8 +236,11 @@ async function doSearch(page = 1) {
     router.replace({ query: { q: kw, sort: searchForm.sort } })
   } catch (e: unknown) {
     items.value = []
-    const err = e as { response?: { data?: { detail?: string } }; message?: string }
+    const err = e as { response?: { data?: { detail?: string }; headers?: Record<string, string> }; message?: string }
     searchError.value = err.response?.data?.detail || err.message || '搜索失败，请稍后重试'
+    const retry = Number(err.response?.headers?.['retry-after'] || 0)
+    if (retry > 0) startCooldown(retry)
+    if ([423, 429].includes((e as { response?: { status?: number } }).response?.status || 0)) refreshChannelStatus()
   } finally {
     loading.value = false
   }
@@ -353,10 +388,12 @@ function checkRouteQuery() {
 
 onMounted(() => {
   accounts.load().catch(() => undefined)
+  refreshChannelStatus()
   checkRouteQuery()
 })
 
 onActivated(() => {
+  refreshChannelStatus()
   checkRouteQuery()
 })
 </script>
@@ -481,12 +518,23 @@ onActivated(() => {
 
     <!-- 结果 -->
     <div v-loading="loading" class="results">
-      <el-alert v-if="searchError" type="error" show-icon :closable="false">
+      <el-alert v-if="needsVerify" type="error" show-icon :closable="false" class="cooldown">
+        <template #title>闲鱼要求该账号完成安全验证，验证前这个账号无法搜索</template>
+        <div class="error-tip">
+          到「账号配置」点该账号的「打开验证页面」，在闲鱼完成滑块 / 安全验证后点「我已完成验证」。也可以先把「请求通道」切回匿名通道。
+        </div>
+      </el-alert>
+      <el-alert v-else-if="cooldown > 0" type="warning" show-icon :closable="false" class="cooldown">
+        <template #title>闲鱼临时限制了{{ searchForm.account_id > 0 ? '该账号' : '匿名通道' }}的搜索，{{ cooldownText }}后可以再试</template>
+        <div class="error-tip">
+          这是闲鱼的频率保护，系统已自动暂停这个通道，到点后再搜即可；连续被限制时暂停时间会逐步加长。
+          急用的话可以在下方「请求通道」临时选一个闲鱼账号搜索，但会占用该账号的请求额度，频繁使用有被限制的风险。
+        </div>
+      </el-alert>
+      <el-alert v-else-if="searchError" type="error" show-icon :closable="false">
         <template #title>搜索遇到问题</template>
         <div>{{ searchError }}</div>
-        <div v-if="/RGV587|风控|安全限制|挤爆/.test(searchError)" class="error-tip">
-          当前请求通道被闲鱼临时限流。可以在下方「请求通道」切换其他正常账号重试，或等 2~5 分钟自动解除。
-        </div>
+        <el-button size="small" class="retry" :loading="loading" @click="doSearch(searchForm.page || 1)">重试</el-button>
       </el-alert>
 
       <div v-if="searched && !searchError" class="results-bar">
@@ -495,7 +543,7 @@ onActivated(() => {
           <el-tooltip content="两次搜索之间自动保持温和节奏，降低触发闲鱼频控的概率">
             <span class="pacing">智能控频</span>
           </el-tooltip>
-          <el-select v-model="searchForm.account_id" size="small" class="channel" @change="debouncedFilterSearch">
+          <el-select v-model="searchForm.account_id" size="small" class="channel" @change="refreshChannelStatus(); debouncedFilterSearch()">
             <el-option :value="0" label="请求通道：自动 / 匿名" />
             <el-option v-for="a in accounts.list" :key="a.id" :value="a.id" :label="`请求通道：${a.nickname || a.remark || a.unb}`" />
           </el-select>
@@ -928,6 +976,10 @@ onActivated(() => {
 .error-tip {
   margin-top: 6px;
   font-size: var(--xh-fs-xs);
+  line-height: 1.6;
+}
+.retry {
+  margin-top: var(--xh-space-2);
 }
 .results-bar {
   display: flex;

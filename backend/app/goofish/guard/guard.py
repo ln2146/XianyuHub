@@ -107,13 +107,17 @@ class RiskGuard:
             cooldown = min(s.guard_cooldown_base_seconds * 2 ** (rt.strikes - 1), s.guard_cooldown_max_seconds)
             rt.cooldown_until = time.time() + cooldown
             rt.state = AccountState.CIRCUIT_OPEN
-            logger.warning("风控熔断（需人工验证）key={} strikes={} 冷却 {}s 原因={}", key, rt.strikes, cooldown, reason)
+            logger.warning(
+                "风控熔断（需人工验证）key={} strikes={} 冷却 {}s 原因={}", key, rt.strikes, cooldown, reason
+            )
         else:
             # 接口限流 / 挤爆报错：无滑块，进入短暂保护期，倒计时结束后自动自愈，不锁死全局业务
             cooldown = min(120 * 2 ** (rt.strikes - 1), 600)
             rt.cooldown_until = time.time() + cooldown
             rt.state = AccountState.COOLDOWN
-            logger.warning("风控限流避险（自动冷却）key={} strikes={} 冷却 {}s 原因={}", key, rt.strikes, cooldown, reason)
+            logger.warning(
+                "风控限流避险（自动冷却）key={} strikes={} 冷却 {}s 原因={}", key, rt.strikes, cooldown, reason
+            )
         await self._notify(key, reason)
 
     async def resolve(self, key: str) -> None:
@@ -132,7 +136,10 @@ class RiskGuard:
         if rt.state == AccountState.NEED_LOGIN and requires_login:
             raise RiskBlockedError("账号需要重新登录", state=rt.state)
         if rt.state in (AccountState.CIRCUIT_OPEN, AccountState.COOLDOWN):
-            if rt.state == AccountState.CIRCUIT_OPEN or now < rt.cooldown_until:
+            # 匿名通道没有账号可以去完成滑块验证：熔断也只等冷却结束，到点自动探活；
+            # 账号通道的熔断仍需人工在闲鱼完成验证后解除
+            manual = rt.state == AccountState.CIRCUIT_OPEN and key != ANON
+            if manual or now < rt.cooldown_until:
                 raise RiskBlockedError(
                     "账号被平台限制或处于暂停保护期，暂不执行操作",
                     state=rt.state,
@@ -144,8 +151,8 @@ class RiskGuard:
         policy = policies()[action]
         self._check(key, policy.requires_login and key != ANON)
         rt = self._rt[key]
-        if rt.state == AccountState.COOLDOWN:  # 冷却结束：本次调用作为探活
-            rt.state = AccountState.ACTIVE
+        if rt.state == AccountState.COOLDOWN or (key == ANON and rt.state == AccountState.CIRCUIT_OPEN):
+            rt.state = AccountState.ACTIVE  # 冷却结束：本次调用作为探活
 
         wait = await self.limiter.reserve(f"{key}:{action}", policy.rate, policy.per, policy.burst)
         if wait > policy.max_wait:
