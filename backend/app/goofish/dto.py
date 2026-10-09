@@ -32,6 +32,7 @@ class SellerInfo(BaseModel):
     zhima_level: str = ""
     reg_days: int | None = None
     sold_cnt: int | None = None
+    ip_location: str = ""  # IP 属地（省级），接口未返回时为空
 
 
 class ItemDetail(BaseModel):
@@ -78,6 +79,7 @@ class SellerProfile(BaseModel):
     rate_cnt: int | None = None
     seller_credit: str = ""
     buyer_credit: str = ""
+    ip_location: str = ""
     items: list[dict[str, Any]] = Field(default_factory=list)
     ratings: list[SellerRating] = Field(default_factory=list)
 

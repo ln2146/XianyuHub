@@ -1,9 +1,9 @@
 """选品雷达流水线：采集 → 去重 / 价格快照 → 规则初筛 → 价格情报 → 文本粗筛 → 详情 / 画像 → AI 判定 → 推送。"""
 
 import asyncio
+import random
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-import random
 from typing import Any
 
 from loguru import logger
@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import session_factory
 from app.core.events import Topics, bus
 from app.domains.buyer.ai import build_item_context, judge_item, prescreen_item
+from app.domains.buyer.analysis import analyze_seller
 from app.domains.buyer.models import (
     MarketItemRecord,
     MonitorTask,
@@ -22,7 +23,7 @@ from app.domains.buyer.models import (
     TaskResult,
     Verdict,
 )
-from app.goofish.dto import MarketItem, SearchQuery
+from app.goofish.dto import MarketItem, SearchQuery, SellerProfile
 from app.goofish.errors import GoofishError, RiskBlockedError, RiskControlError
 from app.intelligence.llm import LLMError, LLMUnavailable, Tier, get_llm
 from app.intelligence.pricing import MarketStats, deal_label, deal_score, market_stats
@@ -71,10 +72,13 @@ async def upsert_market_item(s: AsyncSession, item: MarketItem) -> tuple[MarketI
         value = getattr(item, attr)
         if value:
             setattr(rec, attr, value)
-    for attr in ("price", "orig_price", "want_cnt", "browse_cnt", "seller_id", "publish_time"):
+    for attr in ("price", "orig_price", "want_cnt", "browse_cnt", "publish_time"):
         value = getattr(item, attr)
         if value is not None:
             setattr(rec, attr, value)
+    # 搜索结果里是加密的卖家 ID，详情里才是数字 ID（卖家主页接口只认后者），不要用前者覆盖后者
+    if item.seller_id and (item.seller_id.isdigit() or not (rec.seller_id or "").isdigit()):
+        rec.seller_id = item.seller_id
     if item.images:
         rec.images = item.images
     if item.tags:
@@ -116,26 +120,17 @@ async def historical_stats(s: AsyncSession, task_id: int, current: list[float | 
 
 
 # ---------------------------------------------------------------- 卖家画像
-async def seller_profile(task: MonitorTask, seller_id: str) -> dict[str, Any] | None:
-    async with session_factory()() as s:
-        cached = await s.get(SellerProfileCache, seller_id)
-        if cached is not None:
-            fetched = cached.fetched_at if cached.fetched_at.tzinfo else cached.fetched_at.replace(tzinfo=UTC)
-            if datetime.now(UTC) - fetched < PROFILE_TTL:
-                return cached.data
-    profile = await get_runtime().gateway.get_seller_profile(seller_id, task.account_id)
-    rate = profile.seller_positive_rate
-    data = {
-        "昵称": profile.nick,
-        "简介": profile.introduction,
-        "卖家信用": profile.seller_credit,
-        "买家信用": profile.buyer_credit,
-        "商品数": profile.item_cnt,
-        "评价数": profile.rate_cnt,
-        "作为卖家的好评率": f"{rate:.0%}" if rate is not None else "未知",
-        "在售/已售商品（节选）": [f"{i['title']} ¥{i['price']} {i['status']}" for i in profile.items[:20]],
-        "最近评价（节选）": [f"[{r.role}] {r.content}" for r in profile.ratings[:15] if r.content],
-    }
+async def load_seller_profile(seller_id: str, account_id: int | None, *, refresh: bool = False) -> SellerProfile:
+    """卖家主页 + 在售商品 + 评价（4 次接口调用），缓存 24 小时。"""
+    if not refresh:
+        async with session_factory()() as s:
+            cached = await s.get(SellerProfileCache, seller_id)
+            if cached is not None and cached.data.get("seller_id"):  # 旧版缓存（只有摘要）视为过期
+                fetched = cached.fetched_at if cached.fetched_at.tzinfo else cached.fetched_at.replace(tzinfo=UTC)
+                if datetime.now(UTC) - fetched < PROFILE_TTL:
+                    return SellerProfile.model_validate(cached.data)
+    profile = await get_runtime().gateway.get_seller_profile(seller_id, account_id)
+    data = profile.model_dump(mode="json")
     async with session_factory()() as s:
         row = await s.get(SellerProfileCache, seller_id)
         if row is None:
@@ -143,7 +138,39 @@ async def seller_profile(task: MonitorTask, seller_id: str) -> dict[str, Any] | 
         else:
             row.data, row.fetched_at = data, datetime.now(UTC)
         await s.commit()
-    return data
+    return profile
+
+
+async def seller_profile(
+    task: MonitorTask, seller_id: str, *, item_area: str = "", zhima: str = "", reg_days: int | None = None
+) -> dict[str, Any]:
+    """给 AI 判定用的卖家画像摘要，附带 IP 属地比对与评价动态分析。"""
+    profile = await load_seller_profile(seller_id, task.account_id)
+    rate = profile.seller_positive_rate
+    analysis = analyze_seller(profile, item_area=item_area, zhima=zhima, reg_days=reg_days)
+    d = analysis.ratings
+    return {
+        "昵称": profile.nick,
+        "简介": profile.introduction,
+        "卖家信用": profile.seller_credit,
+        "买家信用": profile.buyer_credit,
+        "商品数": profile.item_cnt,
+        "评价数": profile.rate_cnt,
+        "作为卖家的好评率": f"{rate:.0%}" if rate is not None else "未知",
+        "IP属地": analysis.ip_note,
+        "评价动态": {
+            "近30天评价数": d.recent_30d,
+            "近90天好评率": d.recent_positive_rate,
+            "90天前好评率": d.earlier_positive_rate,
+            "口碑走向": d.trend,
+            "集中评价": d.burst_note or "无",
+            "负面关键词": dict(d.negative_hits),
+        },
+        "在售标题相似度": analysis.homogeneity,
+        "规则评估": f"{analysis.score} 分（{analysis.level}）；风险：{'；'.join(analysis.risks) or '无'}",
+        "在售/已售商品（节选）": [f"{i['title']} ¥{i['price']} {i['status']}" for i in profile.items[:20]],
+        "最近评价（节选）": [f"[{r.role}] {r.content}" for r in profile.ratings[:15] if r.content],
+    }
 
 
 # ---------------------------------------------------------------- 主流程
@@ -351,6 +378,7 @@ async def _evaluate_candidate(task, item_id, rules, price_stats, llm, stats: Run
         images = list(rec.images or ([rec.image_url] if rec.image_url else []))
         price = rec.price
         seller_id = rec.seller_id
+        seller_ctx = {"item_area": rec.area, "zhima": rec.seller_zhima, "reg_days": rec.seller_reg_days}
         if reasons:
             res = await _result(s, task.id, item_id)
             res.stage, res.filter_reasons = ResultStage.FILTERED, reasons
@@ -360,7 +388,7 @@ async def _evaluate_candidate(task, item_id, rules, price_stats, llm, stats: Run
 
     seller = None
     if task.fetch_seller_profile and seller_id:
-        seller = await seller_profile(task, seller_id)
+        seller = await seller_profile(task, seller_id, **seller_ctx)
 
     score = deal_score(price, price_stats)
     context = build_item_context(item_dict, stats=price_stats, deal=score, seller=seller)

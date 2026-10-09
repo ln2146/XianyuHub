@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { CopyDocument, Download, Link, Plus, Refresh, Search, TrendCharts, Upload } from '@element-plus/icons-vue'
+import { CopyDocument, DataAnalysis, Download, Link, Plus, Refresh, Search, TrendCharts, Upload } from '@element-plus/icons-vue'
 import {
   exportResults,
   listResults,
@@ -14,6 +14,7 @@ import {
   type UserMark,
 } from '@/api/buyer'
 import EChart from '@/components/EChart.vue'
+import ItemAnalysisPanel from '@/components/ItemAnalysisPanel.vue'
 import ListPager from '@/components/ListPager.vue'
 import RadarNav from '@/components/RadarNav.vue'
 import { copyText, fmtMoney, fmtRelative, fmtTime, itemUrl, markMap, verdictMap } from '@/utils/format'
@@ -124,6 +125,13 @@ async function openHistory(r: ResultOut) {
   } finally {
     history.loading = false
   }
+}
+
+// ---------------------------------------------------------------- 商品 / 商家分析
+const analysis = reactive({ open: false, result: null as ResultOut | null, tab: 'item' as 'item' | 'seller' | 'ai' })
+
+function openAnalysis(r: ResultOut, tab: 'item' | 'seller' | 'ai' = 'item') {
+  Object.assign(analysis, { open: true, result: r, tab })
 }
 
 function quickResell(r: ResultOut) {
@@ -253,6 +261,7 @@ const historyOption = computed(() => ({
             <el-button size="small" :type="r.mark === 'bought' ? 'success' : 'default'" @click="mark(r, 'bought')">已买</el-button>
           </div>
           <div class="links">
+            <el-button size="small" link type="warning" :icon="DataAnalysis" @click="openAnalysis(r)">商品/商家分析</el-button>
             <el-button size="small" link :icon="TrendCharts" @click="openHistory(r)">价格走势</el-button>
             <el-button size="small" link type="success" :icon="Upload" @click="quickResell(r)">转手发品</el-button>
             <el-button size="small" link type="primary" :icon="Link" tag="a" :href="itemLink(r)" target="_blank">打开</el-button>
@@ -270,6 +279,18 @@ const historyOption = computed(() => ({
       :disabled="loading"
       @change="changePage"
     />
+
+    <el-drawer v-model="analysis.open" size="560px" destroy-on-close>
+      <template #header>
+        <div class="ellipsis drawer-title">{{ analysis.result?.item.title || '商品分析' }}</div>
+      </template>
+      <ItemAnalysisPanel
+        v-if="analysis.result"
+        :item-id="analysis.result.item_id"
+        :task-id="analysis.result.task_id"
+        :initial-tab="analysis.tab"
+      />
+    </el-drawer>
 
     <el-dialog v-model="history.open" title="价格走势" width="640px">
       <div class="muted small ellipsis">{{ history.title }}</div>
@@ -431,6 +452,15 @@ const historyOption = computed(() => ({
 .links {
   display: flex;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.links .el-button + .el-button {
+  margin-left: 0;
+}
+.drawer-title {
+  font-weight: 600;
+  color: var(--xh-text);
 }
 .empty-state-box {
   grid-column: 1 / -1;

@@ -75,6 +75,7 @@ export interface ResultItem {
   want_cnt: number | null
   browse_cnt: number | null
   seller_nick: string
+  seller_id: string | null
   seller_zhima: string
   publish_time: string | null
   tags: string[]
@@ -222,6 +223,7 @@ export interface SellerInfo {
   zhima_level: string
   reg_days: number | null
   sold_cnt: number | null
+  ip_location?: string
 }
 
 export interface ItemDetail {
@@ -238,3 +240,139 @@ export const getItemDetail = (itemId: string, account_id?: number | null) =>
     .get<ItemDetail>(`/buyer/items/${itemId}/detail`, { params: account_id ? { account_id } : undefined })
     .then((r) => r.data)
 
+
+// ---------------------------------------------------------------- 商品分析 / 商家分析
+export interface ItemAnalysis {
+  item_id: string
+  title: string
+  price: number | null
+  orig_price: number | null
+  discount: number | null
+  market: MarketStats | null
+  sample_source: 'task' | 'keyword' | 'none'
+  percentile: number | null
+  diff_to_median: number | null
+  deal_score: number | null
+  deal_label: string
+  suspicious_low: boolean
+  want_cnt: number | null
+  browse_cnt: number | null
+  want_rate: number | null
+  age_days: number | null
+  want_per_day: number | null
+  heat_level: '高' | '中' | '低' | '未知'
+  price_points: { price: number; seen_at: string }[]
+  price_change: number | null
+  desc_len: number
+  image_count: number
+  missing_info: string[]
+  score: number
+  level: string
+  highlights: string[]
+  risks: string[]
+}
+
+export interface RatingEntry {
+  content: string
+  rate: number | null
+  role: string
+  created_at: string | null
+  hits: string[]
+}
+
+export interface RatingDynamics {
+  sampled: number
+  as_seller: number
+  positive: number
+  neutral: number
+  negative: number
+  positive_rate: number | null
+  recent_30d: number
+  recent_90d: number
+  recent_positive_rate: number | null
+  earlier_positive_rate: number | null
+  trend: 'up' | 'down' | 'stable' | 'unknown'
+  last_rated_at: string | null
+  burst: boolean
+  burst_note: string
+  monthly: { month: string; positive: number; neutral: number; negative: number }[]
+  negative_hits: [string, number][]
+  positive_hits: [string, number][]
+  negatives: RatingEntry[]
+  recent: RatingEntry[]
+}
+
+export interface SellerAnalysis {
+  seller_id: string
+  nick: string
+  avatar: string
+  introduction: string
+  ip_location: string
+  item_area: string
+  ip_match: 'match' | 'mismatch' | 'overseas' | 'unknown'
+  ip_note: string
+  zhima: string
+  reg_days: number | null
+  sold_cnt: number | null
+  seller_credit: string
+  item_cnt: number | null
+  rate_cnt: number | null
+  on_sale_sampled: number
+  sold_sampled: number
+  homogeneity: number
+  dealer_words: string[]
+  ratings: RatingDynamics
+  seller_type: 'personal' | 'dealer' | 'unknown'
+  type_reasons: string[]
+  score: number
+  level: string
+  highlights: string[]
+  risks: string[]
+  fetched_at: string | null
+}
+
+export interface InsightOut {
+  item_summary: string
+  seller_summary: string
+  ip_assessment: string
+  comment_insight: string
+  seller_type: 'personal' | 'dealer' | 'unknown'
+  trust_level: 'high' | 'medium' | 'low'
+  advice: string
+  questions_for_seller: string[]
+}
+
+export interface AnalysisContext {
+  task_id?: number | null
+  keyword?: string | null
+  account_id?: number | null
+}
+
+const clean = (o: object) =>
+  Object.fromEntries(Object.entries(o).filter(([, v]) => v !== null && v !== undefined && v !== ''))
+
+export const itemAnalysis = (itemId: string, ctx: AnalysisContext = {}) =>
+  http
+    .get<ItemAnalysis>(`/buyer/items/${itemId}/analysis`, { params: clean(ctx), timeout: 60_000 })
+    .then((r) => r.data)
+
+/** 商品所属卖家的分析（后端负责把搜索结果里的加密卖家 ID 换成数字 ID） */
+export const sellerAnalysis = (
+  itemId: string,
+  params: { account_id?: number | null; refresh?: boolean; ip_location?: string; sold_cnt?: number | null } = {},
+) =>
+  http
+    .get<SellerAnalysis>(`/buyer/items/${itemId}/seller-analysis`, { params: clean(params), timeout: 120_000 })
+    .then((r) => r.data)
+
+export const itemInsight = (
+  itemId: string,
+  body: AnalysisContext & { ip_location?: string; sold_cnt?: number | null } = {},
+) =>
+  http
+    .post<{ item: ItemAnalysis; seller: SellerAnalysis | null; ai: InsightOut }>(
+      `/buyer/items/${itemId}/insight`,
+      clean(body),
+      { timeout: 180_000 },
+    )
+    .then((r) => r.data)

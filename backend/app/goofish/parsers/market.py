@@ -4,6 +4,7 @@
 """
 
 import json
+import re
 from typing import Any
 
 from app.goofish.dto import (
@@ -23,6 +24,33 @@ SORT_OPTIONS = {
     "price_desc": ("price", "desc"),
     "default": ("", ""),
 }
+
+
+_IP_KEYS = ("ipLocation", "ipAddress", "ipAddr", "ipProvince", "ipCity", "ipLoc")
+_IP_TEXT = re.compile(r"IP\s*属地[:：\s]*([\u4e00-\u9fa5A-Za-z]+)")
+
+
+def find_ip_location(data: Any, depth: int = 0) -> str:
+    """在响应里查找 IP 属地：字段名在不同接口 / 版本中不固定，按已知键名和“IP属地：xx”文案兜底。"""
+    if depth > 6:
+        return ""
+    if isinstance(data, dict):
+        for key in _IP_KEYS:
+            value = data.get(key)
+            if isinstance(value, str) and value.strip():
+                m = _IP_TEXT.search(value)
+                return (m.group(1) if m else value).strip()
+        for value in data.values():
+            if found := find_ip_location(value, depth + 1):
+                return found
+    elif isinstance(data, list):
+        for value in data[:50]:
+            if found := find_ip_location(value, depth + 1):
+                return found
+    elif isinstance(data, str) and "属地" in data:
+        m = _IP_TEXT.search(data)
+        return m.group(1) if m else ""
+    return ""
 
 
 def build_search_payload(q: SearchQuery) -> dict[str, Any]:
@@ -138,6 +166,7 @@ def parse_detail(data: dict[str, Any]) -> ItemDetail:
         zhima_level=dig(seller_do, "zhimaLevelInfo", "levelName", default="") or "",
         reg_days=parse_int(seller_do.get("userRegDay")),
         sold_cnt=parse_int(seller_do.get("hasSoldNumInteger")),
+        ip_location=find_ip_location(seller_do),
     )
     status = str(item_do.get("itemStatusStr") or item_do.get("itemStatus") or "")
     return ItemDetail(item=item, seller=seller, status=status, raw=data)
@@ -161,6 +190,7 @@ def parse_user_head(seller_id: str, data: dict[str, Any]) -> SellerProfile:
         rate_cnt=parse_int(dig(data, "module", "tabs", "rate", "number")),
         seller_credit=seller_credit,
         buyer_credit=buyer_credit,
+        ip_location=find_ip_location(data.get("module") or data),
     )
 
 
