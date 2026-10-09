@@ -45,10 +45,6 @@ export interface AuditOut {
 export const login = (username: string, password: string) =>
   http.post<TokenOut>('/auth/login', { username, password }).then((r) => r.data)
 
-/** 本机免登录：只有本机直接访问时成功，否则 404（静默，不弹错误） */
-export const localLogin = () =>
-  http.post<TokenOut>('/auth/local', null, { silent: true }).then((r) => r.data)
-
 export const me = () => http.get<UserOut>('/auth/me').then((r) => r.data)
 
 export const changePassword = (old_password: string, new_password: string) =>
