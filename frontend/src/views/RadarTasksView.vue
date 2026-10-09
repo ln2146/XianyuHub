@@ -68,7 +68,7 @@ async function run(t: TaskOut) {
   busy[`run-${t.id}`] = true
   try {
     await runTask(t.id)
-    ElMessage.success('任务已开始运行，结果会陆续出现在好货看板')
+    ElMessage.success('已开始搜货，结果会陆续出现在好货看板')
     await load(true)
   } catch {
     /* 拦截器已提示 */
@@ -91,7 +91,7 @@ async function toggle(t: TaskOut, enabled: boolean) {
 }
 
 async function remove(t: TaskOut) {
-  await ElMessageBox.confirm(`删除任务「${t.name}」及其全部结果？`, '删除任务', { type: 'warning' })
+  await ElMessageBox.confirm(`删除自动搜货「${t.name}」及其全部结果？`, '删除自动搜货', { type: 'warning' })
   await deleteTask(t.id)
   ElMessage.success('已删除')
   await load(true)
@@ -217,7 +217,7 @@ async function save() {
 function statsText(s: Record<string, unknown>) {
   if (!s || !Object.keys(s).length) return ''
   const n = (k: string) => Number(s[k] ?? 0)
-  return `抓取 ${n('fetched')} · 新增 ${n('new')} · 判定 ${n('evaluated')} · 推荐 ${n('recommended')}${n('price_drops') ? ` · 降价 ${n('price_drops')}` : ''}`
+  return `抓取 ${n('fetched')} · 新增 ${n('new')} · 判定 ${n('evaluated')} · 推荐 ${n('recommended')}`
 }
 </script>
 
@@ -226,7 +226,7 @@ function statsText(s: Record<string, unknown>) {
     <RadarNav current="tasks">
       <template #actions>
         <el-button :icon="Refresh" :loading="loading" @click="load()">刷新</el-button>
-        <el-button type="primary" :icon="Plus" @click="openCreate">新建监控任务</el-button>
+        <el-button type="primary" :icon="Plus" @click="openCreate">新建自动搜货</el-button>
       </template>
     </RadarNav>
 
@@ -235,15 +235,15 @@ function statsText(s: Record<string, unknown>) {
         <el-table v-loading="loading" :data="tasks">
           <template #empty>
             <div class="table-empty-box">
-              <el-empty description="还没有设置监控任务，可以用一句话描述让 AI 帮你生成">
+              <el-empty description="还没有自动搜货，可以用一句话描述让 AI 帮你生成；搜到的好货会出现在好货看板">
                 <div class="empty-btn-group">
-                  <el-button type="primary" :icon="Plus" @click="openCreate">新建监控任务</el-button>
+                  <el-button type="primary" :icon="Plus" @click="openCreate">新建自动搜货</el-button>
                   <el-button :icon="Search" @click="router.push('/radar/search')">先去实时搜货</el-button>
                 </div>
               </el-empty>
             </div>
           </template>
-          <el-table-column label="任务" min-width="200">
+          <el-table-column label="自动搜货" min-width="200">
             <template #default="{ row }">
               <div class="name">
                 {{ row.name }}
@@ -296,7 +296,7 @@ function statsText(s: Record<string, unknown>) {
               <el-alert v-if="row.paused_reason" :title="`已自动暂停：${row.paused_reason}`" type="error" :closable="false" class="paused" />
             </template>
           </el-table-column>
-          <el-table-column label="结果" width="150">
+          <el-table-column label="结果（好货看板）" width="170">
             <template #default="{ row }">
               <el-link type="primary" @click="router.push({ path: '/radar/results', query: { task_id: row.id } })">
                 推荐 {{ row.result_counts.recommend || 0 }} · 有条件 {{ row.result_counts.conditional || 0 }}
@@ -326,7 +326,7 @@ function statsText(s: Record<string, unknown>) {
     </el-card>
 
     <!-- 编辑任务 -->
-    <el-dialog v-model="edit.open" :title="edit.id ? '编辑任务' : '新建任务'" width="760px" top="5vh" :fullscreen="isMobile">
+    <el-dialog v-model="edit.open" :title="edit.id ? '编辑自动搜货' : '新建自动搜货'" width="760px" top="5vh" :fullscreen="isMobile">
       <div class="nl">
         <el-input
           v-model="edit.nl"
@@ -477,12 +477,7 @@ function statsText(s: Record<string, unknown>) {
             </el-form-item>
             <el-form-item label="通知有条件推荐">
               <el-switch v-model="edit.form.notify_conditional" />
-              <div class="form-tip">默认只推送「推荐」结果。</div>
-            </el-form-item>
-            <el-form-item label="降价提醒阈值">
-              <el-input-number v-model="edit.form.price_drop_percent" :min="0" :max="90" />
-              <span class="muted ml">%</span>
-              <div class="form-tip">已推荐的商品降价超过该比例时再次通知，0 表示不提醒。</div>
+              <div class="form-tip">默认只推送「推荐」结果。想盯某件商品降价，请在好货看板里点「价格监控」。</div>
             </el-form-item>
           </el-form>
         </el-tab-pane>

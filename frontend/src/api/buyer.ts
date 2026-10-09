@@ -153,7 +153,7 @@ export const emptyTask = (): TaskIn => ({
   ai_prescreen: true,
   fetch_seller_profile: false,
   notify_conditional: false,
-  price_drop_percent: 5,
+  price_drop_percent: 0,
   account_id: null,
   cron: '*/30 8-23 * * *',
   enabled: true,
@@ -239,6 +239,56 @@ export const getItemDetail = (itemId: string, account_id?: number | null) =>
   http
     .get<ItemDetail>(`/buyer/items/${itemId}/detail`, { params: account_id ? { account_id } : undefined })
     .then((r) => r.data)
+
+// ---------------------------------------------------------------- 单品价格监控
+export type WatchStatus = 'watching' | 'triggered' | 'ended' | 'paused'
+
+export interface WatchSettings {
+  target_price: number | null
+  drop_percent: number | null
+  interval_minutes: number
+  account_id: number | null
+  note: string
+}
+
+export interface WatchOut extends WatchSettings {
+  id: number
+  item_id: string
+  title: string
+  image_url: string
+  link: string
+  enabled: boolean
+  status: WatchStatus
+  base_price: number | null
+  last_price: number | null
+  lowest_price: number | null
+  item_status: string
+  last_checked_at: string | null
+  triggered_at: string | null
+  last_error: string | null
+  ended_reason: string | null
+  created_at: string
+}
+
+export const WATCH_INTERVALS = [
+  { value: 15, label: '每 15 分钟' },
+  { value: 30, label: '每 30 分钟' },
+  { value: 60, label: '每小时（推荐）' },
+  { value: 120, label: '每 2 小时' },
+  { value: 180, label: '每 3 小时' },
+  { value: 360, label: '每 6 小时' },
+  { value: 720, label: '每 12 小时' },
+  { value: 1440, label: '每天一次' },
+]
+
+export const listWatches = () => http.get<WatchOut[]>('/buyer/watches').then((r) => r.data)
+export const createWatch = (body: WatchSettings & { item: string }) =>
+  http.post<WatchOut>('/buyer/watches', body, { timeout: 60_000 }).then((r) => r.data)
+export const updateWatch = (id: number, body: WatchSettings & { enabled: boolean }) =>
+  http.put<WatchOut>(`/buyer/watches/${id}`, body).then((r) => r.data)
+export const deleteWatch = (id: number) => http.delete(`/buyer/watches/${id}`)
+export const checkWatch = (id: number) =>
+  http.post<WatchOut>(`/buyer/watches/${id}/check`, undefined, { timeout: 60_000 }).then((r) => r.data)
 
 
 // ---------------------------------------------------------------- 商品分析 / 商家分析

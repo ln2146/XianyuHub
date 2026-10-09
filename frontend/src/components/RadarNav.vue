@@ -1,30 +1,35 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Aim, Search, Timer, TrendCharts } from '@element-plus/icons-vue'
+import { Aim, Bell, Search, Timer, TrendCharts } from '@element-plus/icons-vue'
 
 const props = defineProps<{
-  current: 'search' | 'results' | 'tasks'
+  current: 'search' | 'results' | 'tasks' | 'watch'
 }>()
 
 const router = useRouter()
 const route = useRoute()
 
+// 找货（好货看板 / 实时搜货 / 自动搜货）+ 盯价（价格监控）
 const tabs = [
-  { id: 'search', label: '实时搜货', icon: Search, path: '/radar/search' },
   { id: 'results', label: '好货看板', icon: TrendCharts, path: '/radar/results' },
-  { id: 'tasks', label: '监控任务', icon: Timer, path: '/radar/tasks' },
+  { id: 'search', label: '实时搜货', icon: Search, path: '/radar/search' },
+  { id: 'tasks', label: '自动搜货', icon: Timer, path: '/radar/tasks' },
+  { id: 'watch', label: '价格监控', icon: Bell, path: '/radar/watch' },
 ] as const
 
 const subtitle = computed(() => {
   switch (props.current) {
     case 'search':
-      return '实时搜索闲鱼商品，即查即看；遇到满意条件可一键开启全自动后台蹲守'
+      return '实时搜索闲鱼商品，即查即看；满意的搜索条件可一键转为自动搜货'
     case 'results':
-      return '后台雷达自动巡检、智能评分并拦截风险后的优质货源'
+      return '按关键词自动搜货并经 AI 分析后的低价好货；看中的商品可加入价格监控'
     case 'tasks':
-      return '配置自动化巡检关键词与策略，系统定时发现低价货源并推送到好货看板'
+      return '设置关键词与筛选条件，系统定时搜索、AI 分析，并把好货推送到好货看板'
+    case 'watch':
+      return '盯住看中的单件商品：记录价格走势，到达目标价时提醒你，商品售出或下架自动停止'
   }
+  return ''
 })
 
 function switchTab(path: string) {

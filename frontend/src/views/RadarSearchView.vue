@@ -255,7 +255,7 @@ function quickResell(it: SearchItem) {
   })
 }
 
-// ---------------------------------------------------------------- 转为监控任务
+// ---------------------------------------------------------------- 转为自动搜货
 const taskModal = reactive({
   open: false,
   saving: false,
@@ -263,9 +263,9 @@ const taskModal = reactive({
 })
 
 function openCreateTask(fromItem?: SearchItem) {
-  const kw = fromItem?.title || searchForm.keyword.trim() || '商品监控'
+  const kw = fromItem?.title || searchForm.keyword.trim() || '好货'
   const t = emptyTask()
-  t.name = `监控：${kw.slice(0, 16)}`
+  t.name = `自动搜货：${kw.slice(0, 16)}`
   t.keywords = [searchForm.keyword.trim() || kw.slice(0, 20)]
   t.min_price = searchForm.min_price ?? null
   t.max_price = searchForm.max_price ?? null
@@ -291,14 +291,19 @@ async function saveTask() {
   taskModal.saving = true
   try {
     await createTask(taskModal.form)
-    ElMessage.success('已成功转为监控任务！后台将定期自动巡检')
+    ElMessage.success('已保存为自动搜货，搜到的好货会出现在好货看板')
     taskModal.open = false
   } catch (e: unknown) {
     const err = e as { response?: { data?: { detail?: string } }; message?: string }
-    ElMessage.error(err.response?.data?.detail || '保存监控任务失败')
+    ElMessage.error(err.response?.data?.detail || '保存自动搜货失败')
   } finally {
     taskModal.saving = false
   }
+}
+
+/** 看中某一件：带着商品去价格监控，自动打开添加弹窗 */
+function watchPrice(it: SearchItem) {
+  router.push({ path: '/radar/watch', query: { add: it.item_id, title: it.title, price: it.price ?? undefined } })
 }
 
 onMounted(() => {
@@ -319,7 +324,7 @@ onMounted(() => {
     <RadarNav current="search">
       <template #actions>
         <el-button v-if="searchForm.keyword.trim()" type="primary" :icon="Bell" @click="openCreateTask()">
-          把当前搜索转为监控任务
+          把当前搜索转为自动搜货
         </el-button>
       </template>
     </RadarNav>
@@ -380,7 +385,7 @@ onMounted(() => {
           </div>
         </div>
 
-        <!-- 右侧转监控快捷按钮 -->
+        <!-- 右侧转自动搜货快捷按钮 -->
         <div class="gf-header-actions">
           <button
             v-if="searchForm.keyword.trim()"
@@ -389,7 +394,7 @@ onMounted(() => {
             @click="openCreateTask()"
           >
             <el-icon><Bell /></el-icon>
-            <span>转自动监控任务</span>
+            <span>转自动搜货</span>
           </button>
         </div>
       </div>
@@ -617,7 +622,7 @@ onMounted(() => {
           </div>
           <h3 class="welcome-title">输入关键词，立即探索闲鱼一手好货</h3>
           <p class="welcome-desc">
-            无需像以前那样先建监控任务等待！直接输入商品名称或型号，秒级同步闲鱼全量最新挂牌底价、成色与卖家信誉。
+            无需先建自动搜货等待！直接输入商品名称或型号，秒级同步闲鱼全量最新挂牌底价、成色与卖家信誉。
           </p>
 
           <!-- 热门探索专区分类药丸矩阵 (充实下半部分空间，美观实用) -->
@@ -723,7 +728,7 @@ onMounted(() => {
                   <el-icon><TopRight /></el-icon>
                 </button>
               </a>
-              <button type="button" class="gf-hover-btn ghost" @click="openCreateTask(it)">监控此款</button>
+              <button type="button" class="gf-hover-btn ghost" @click="watchPrice(it)">价格监控</button>
             </div>
           </div>
         </div>
@@ -770,7 +775,7 @@ onMounted(() => {
                 <a :href="safeItemLink(row as SearchItem)" target="_blank" rel="noopener" class="ml-s">
                   <el-button size="small" link>去闲鱼</el-button>
                 </a>
-                <el-button size="small" link type="warning" @click="openCreateTask(row as SearchItem)">监控</el-button>
+                <el-button size="small" link type="warning" @click="watchPrice(row as SearchItem)">价格监控</el-button>
               </div>
             </template>
           </el-table-column>
@@ -860,19 +865,19 @@ onMounted(() => {
                 一键转手发品
               </el-button>
             </div>
-            <el-button size="large" :icon="Bell" class="mt-s full" @click="openCreateTask(detail.data.item)">
-              监控此款商品价格
+            <el-button size="large" :icon="Bell" class="mt-s full" @click="watchPrice(detail.data.item)">
+              监控这件商品的价格
             </el-button>
           </div>
         </template>
       </div>
     </el-drawer>
 
-    <!-- 一键转监控任务弹窗 -->
-    <el-dialog v-model="taskModal.open" title="保存为自动监控任务" width="560px" destroy-on-close>
+    <!-- 一键转自动搜货弹窗 -->
+    <el-dialog v-model="taskModal.open" title="保存为自动搜货" width="560px" destroy-on-close>
       <el-form label-position="top">
-        <el-form-item label="任务名称" required>
-          <el-input v-model="taskModal.form.name" placeholder="例如：监控 M1 Air 笔记本" />
+        <el-form-item label="名称" required>
+          <el-input v-model="taskModal.form.name" placeholder="例如：M1 Air 笔记本" />
         </el-form-item>
         <el-form-item label="搜索关键词" required>
           <el-input
@@ -905,7 +910,7 @@ onMounted(() => {
       </el-form>
       <template #footer>
         <el-button @click="taskModal.open = false">取消</el-button>
-        <el-button type="primary" :loading="taskModal.saving" @click="saveTask">立即保存并启动监控</el-button>
+        <el-button type="primary" :loading="taskModal.saving" @click="saveTask">保存并开始自动搜货</el-button>
       </template>
     </el-dialog>
   </div>

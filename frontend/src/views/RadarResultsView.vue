@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { CopyDocument, DataAnalysis, Download, Link, Plus, Refresh, Search, TrendCharts, Upload } from '@element-plus/icons-vue'
+import { Bell, CopyDocument, DataAnalysis, Download, Link, Plus, Refresh, Search, TrendCharts, Upload } from '@element-plus/icons-vue'
 import {
   exportResults,
   listResults,
@@ -148,6 +148,14 @@ function quickResell(r: ResultOut) {
   })
 }
 
+/** 看中了：带着商品去价格监控，自动打开添加弹窗 */
+function watchPrice(r: ResultOut) {
+  router.push({
+    path: '/radar/watch',
+    query: { add: r.item_id, title: r.item.title, price: r.item.price ?? undefined },
+  })
+}
+
 const historyOption = computed(() => ({
   grid: { left: 48, right: 16, top: 24, bottom: 32 },
   tooltip: { trigger: 'axis', valueFormatter: (v: number) => `¥${v}` },
@@ -176,7 +184,7 @@ const historyOption = computed(() => ({
 
     <el-card shadow="never" class="filters">
       <div class="toolbar">
-        <el-select v-model="filters.task_id" clearable placeholder="全部任务" class="f-task" @change="load()">
+        <el-select v-model="filters.task_id" clearable placeholder="全部自动搜货" class="f-task" @change="load()">
           <el-option v-for="t in tasks" :key="t.id" :value="t.id" :label="t.name" />
         </el-select>
         <el-select v-model="filters.verdict" class="f-sel" @change="load()">
@@ -204,7 +212,7 @@ const historyOption = computed(() => ({
         <el-empty description="当前暂无符合条件的好货">
           <div class="empty-actions">
             <el-button type="primary" :icon="Search" @click="router.push('/radar/search')">前往实时搜货</el-button>
-            <el-button :icon="Plus" @click="router.push('/radar/tasks')">去监控任务查看 / 立即运行</el-button>
+            <el-button :icon="Plus" @click="router.push('/radar/tasks')">新建 / 运行自动搜货</el-button>
           </div>
         </el-empty>
       </div>
@@ -263,6 +271,7 @@ const historyOption = computed(() => ({
           <div class="links">
             <el-button size="small" link type="warning" :icon="DataAnalysis" @click="openAnalysis(r)">商品/商家分析</el-button>
             <el-button size="small" link :icon="TrendCharts" @click="openHistory(r)">价格走势</el-button>
+            <el-button size="small" link type="primary" :icon="Bell" @click="watchPrice(r)">价格监控</el-button>
             <el-button size="small" link type="success" :icon="Upload" @click="quickResell(r)">转手发品</el-button>
             <el-button size="small" link type="primary" :icon="Link" tag="a" :href="itemLink(r)" target="_blank">打开</el-button>
           </div>

@@ -684,8 +684,8 @@ function healthColor(h: number) {
               <div class="workflow-card" @click="router.push('/radar/tasks')">
                 <div class="wf-icon-wrap icon-purple">🎯</div>
                 <div class="wf-content">
-                  <div class="wf-name">自动监控任务</div>
-                  <div class="wf-desc">将心仪商品配置为后台定时巡检任务，支持 AI 智能质检、成色评估与降价提醒。</div>
+                  <div class="wf-name">自动搜货 · 价格监控</div>
+                  <div class="wf-desc">按关键词定时搜货并 AI 质检，好货推送到看板；看中的单品加入价格监控，到价即提醒。</div>
                 </div>
                 <el-icon class="wf-arrow"><Right /></el-icon>
               </div>

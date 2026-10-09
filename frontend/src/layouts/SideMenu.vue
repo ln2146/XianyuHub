@@ -22,7 +22,7 @@ import {
 const props = defineProps<{ active: string; collapsed: boolean }>()
 
 const activeMenu = computed(() => {
-  if (props.active.startsWith('/radar')) return '/radar/search'
+  if (props.active.startsWith('/radar')) return '/radar/results'
   return props.active
 })
 </script>
@@ -42,7 +42,7 @@ const activeMenu = computed(() => {
     </el-menu-item>
 
     <!-- 选品雷达（统一工作台入口） -->
-    <el-menu-item index="/radar/search">
+    <el-menu-item index="/radar/results">
       <el-icon class="menu-icon-primary"><Aim /></el-icon>
       <template #title><span>选品雷达</span></template>
     </el-menu-item>
