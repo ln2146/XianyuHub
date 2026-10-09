@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { CopyDocument, Download, Link, Refresh, Search, TrendCharts } from '@element-plus/icons-vue'
+import { CopyDocument, Download, Link, Refresh, Search, TrendCharts, Upload } from '@element-plus/icons-vue'
 import {
   exportResults,
   listResults,
@@ -19,6 +19,7 @@ import RadarNav from '@/components/RadarNav.vue'
 import { copyText, fmtMoney, fmtRelative, fmtTime, itemUrl, markMap, verdictMap } from '@/utils/format'
 
 const route = useRoute()
+const router = useRouter()
 
 const tasks = ref<TaskOut[]>([])
 const results = ref<ResultOut[]>([])
@@ -123,6 +124,20 @@ async function openHistory(r: ResultOut) {
   } finally {
     history.loading = false
   }
+}
+
+function quickResell(r: ResultOut) {
+  const p = r.item.price || 0
+  const suggestedPrice = Math.round(p * 1.15) || p
+  router.push({
+    path: '/goods/publish',
+    query: {
+      from: 'resell',
+      title: r.item.title,
+      price: suggestedPrice || undefined,
+      hint: `原低价捡漏入手，原价 ${p}，成色完好，转手诚出`,
+    },
+  })
 }
 
 const historyOption = computed(() => ({
@@ -232,6 +247,7 @@ const historyOption = computed(() => ({
           </div>
           <div class="links">
             <el-button size="small" link :icon="TrendCharts" @click="openHistory(r)">价格走势</el-button>
+            <el-button size="small" link type="success" :icon="Upload" @click="quickResell(r)">转手发品</el-button>
             <el-button size="small" link type="primary" :icon="Link" tag="a" :href="itemLink(r)" target="_blank">打开</el-button>
           </div>
         </div>

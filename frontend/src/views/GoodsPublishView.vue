@@ -6,6 +6,7 @@
  * 也可以切换为“手动填写”。
  */
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Check, EditPen, Loading, MagicStick, Refresh, Warning } from '@element-plus/icons-vue'
 import {
@@ -31,6 +32,7 @@ import { draftStatusMap, fmtMoney, fmtTime, itemUrl } from '@/utils/format'
 
 const accounts = useAccountsStore()
 const isMobile = useMobile()
+const route = useRoute()
 
 // ---------------------------------------------------------------- 状态
 type Mode = 'ai' | 'review' | 'manual'
@@ -362,6 +364,20 @@ onMounted(async () => {
   loadDrafts()
   await accounts.load().catch(() => undefined)
   if (!form.account_id) form.account_id = accounts.list[0]?.id ?? null
+
+  const q = route.query
+  if (q.from === 'resell') {
+    if (typeof q.title === 'string' && q.title.trim()) {
+      form.title = q.title.trim().slice(0, 60)
+    }
+    if (q.price) {
+      form.price = Number(q.price)
+    }
+    if (typeof q.hint === 'string' && q.hint.trim()) {
+      gen.hint = q.hint.trim()
+    }
+    ElMessage.success('已自动带入雷达好货信息，补充实拍商品图后即可一键 AI 生成！')
+  }
 })
 onBeforeUnmount(() => window.clearInterval(timer))
 </script>

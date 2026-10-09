@@ -11,6 +11,7 @@ import {
   Refresh,
   Search,
   TopRight,
+  Upload,
   User,
 } from '@element-plus/icons-vue'
 import {
@@ -209,6 +210,20 @@ function safeItemLink(it: SearchItem | null) {
   if (!it) return '#'
   if (it.link) return it.link
   return `https://www.goofish.com/item?id=${it.item_id}`
+}
+
+function quickResell(it: SearchItem) {
+  const p = it.price || 0
+  const suggestedPrice = Math.round(p * 1.15) || p
+  router.push({
+    path: '/goods/publish',
+    query: {
+      from: 'resell',
+      title: it.title,
+      price: suggestedPrice || undefined,
+      hint: `原低价捡漏入手，原价 ${p}，成色完好，转手诚出`,
+    },
+  })
 }
 
 // ---------------------------------------------------------------- 转为监控任务
@@ -494,8 +509,9 @@ onMounted(() => {
 
             <div class="card-hover-actions" @click.stop>
               <el-button size="small" type="primary" plain @click="openDetail(it)">详情</el-button>
-              <a :href="safeItemLink(it)" target="_blank" rel="noopener">
-                <el-button size="small" :icon="TopRight">去闲鱼</el-button>
+              <el-button size="small" type="success" plain :icon="Upload" @click="quickResell(it)">转手发品</el-button>
+              <a :href="safeItemLink(it)" target="_blank" rel="noopener" class="card-link-btn">
+                <el-button size="small" :icon="TopRight" style="width: 100%">去闲鱼</el-button>
               </a>
               <el-button size="small" :icon="Bell" @click="openCreateTask(it)">监控此款</el-button>
             </div>
@@ -536,10 +552,11 @@ onMounted(() => {
               <span class="muted small">{{ fmtRelative(row.publish_time) || '-' }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="180" fixed="right">
+          <el-table-column label="操作" width="230" fixed="right">
             <template #default="{ row }">
               <div @click.stop>
                 <el-button size="small" type="primary" link @click="openDetail(row as SearchItem)">详情</el-button>
+                <el-button size="small" type="success" link :icon="Upload" @click="quickResell(row as SearchItem)">转手发品</el-button>
                 <a :href="safeItemLink(row as SearchItem)" target="_blank" rel="noopener" class="ml-s">
                   <el-button size="small" link>去闲鱼</el-button>
                 </a>
@@ -622,12 +639,17 @@ onMounted(() => {
 
           <!-- 底部操作按钮 -->
           <div class="detail-drawer-footer">
-            <a :href="safeItemLink(detail.data.item)" target="_blank" rel="noopener" class="full-btn">
-              <el-button type="primary" size="large" class="full">
-                前往闲鱼沟通 / 购买
-                <el-icon class="el-icon--right"><TopRight /></el-icon>
+            <div class="footer-btn-group">
+              <a :href="safeItemLink(detail.data.item)" target="_blank" rel="noopener" class="half-btn">
+                <el-button type="primary" size="large" class="full">
+                  去闲鱼购买
+                  <el-icon class="el-icon--right"><TopRight /></el-icon>
+                </el-button>
+              </a>
+              <el-button type="success" size="large" :icon="Upload" class="half-btn" @click="quickResell(detail.data.item)">
+                一键转手发品
               </el-button>
-            </a>
+            </div>
             <el-button size="large" :icon="Bell" class="mt-s full" @click="openCreateTask(detail.data.item)">
               监控此款商品价格
             </el-button>
@@ -940,14 +962,18 @@ onMounted(() => {
   left: 0;
   right: 0;
   background: rgba(255, 255, 255, 0.96);
-  padding: 8px 12px;
+  padding: 8px 10px;
   border-top: 1px solid #ebeef5;
-  justify-content: space-between;
+  grid-template-columns: 1fr 1fr;
   gap: 6px;
   backdrop-filter: blur(4px);
 }
-.item-card:hover .card-hover-actions {
+.card-hover-actions .card-link-btn {
+  text-decoration: none;
   display: flex;
+}
+.item-card:hover .card-hover-actions {
+  display: grid;
 }
 
 /* 列表模式 */
@@ -1058,6 +1084,14 @@ onMounted(() => {
   margin-top: 24px;
   padding-top: 16px;
   border-top: 1px solid #ebeef5;
+}
+.footer-btn-group {
+  display: flex;
+  gap: 12px;
+}
+.half-btn {
+  flex: 1;
+  text-decoration: none;
 }
 .full-btn {
   text-decoration: none;
