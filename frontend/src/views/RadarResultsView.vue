@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { CopyDocument, Download, Link, Refresh, Search, TrendCharts, Upload } from '@element-plus/icons-vue'
+import { CopyDocument, Download, Link, Plus, Refresh, Search, TrendCharts, Upload } from '@element-plus/icons-vue'
 import {
   exportResults,
   listResults,
@@ -192,7 +192,14 @@ const historyOption = computed(() => ({
     </el-card>
 
     <div v-loading="loading" class="grid">
-      <el-empty v-if="!loading && !results.length" description="暂无结果，去「监控任务」运行一次试试" class="empty" />
+      <div v-if="!loading && !results.length" class="empty-state-box">
+        <el-empty description="当前暂无符合条件的好货">
+          <div class="empty-actions">
+            <el-button type="primary" :icon="Search" @click="router.push('/radar/search')">前往实时搜货</el-button>
+            <el-button :icon="Plus" @click="router.push('/radar/tasks')">去监控任务查看 / 立即运行</el-button>
+          </div>
+        </el-empty>
+      </div>
       <el-card v-for="r in results" :key="r.id" shadow="hover" class="card" :body-style="{ padding: '0' }">
         <div class="img-wrap">
           <el-image :src="r.item.image_url" fit="cover" lazy class="img" referrerpolicy="no-referrer">
@@ -424,6 +431,18 @@ const historyOption = computed(() => ({
 .links {
   display: flex;
   justify-content: space-between;
+}
+.empty-state-box {
+  grid-column: 1 / -1;
+  padding: 40px 0;
+  display: flex;
+  justify-content: center;
+}
+.empty-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 12px;
 }
 @media (max-width: 768px) {
   .f-task,

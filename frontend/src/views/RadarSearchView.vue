@@ -465,7 +465,15 @@ onMounted(() => {
       </el-card>
 
       <!-- 搜索无结果 -->
-      <el-empty v-else-if="searched && !loading && !items.length && !searchError" description="没有找到符合条件的商品，换个词试试？" />
+      <div v-else-if="searched && !loading && !items.length && !searchError" class="no-result-box">
+        <el-empty description="没有找到符合条件的商品，试试调整筛选或点击热门搜索词：">
+          <div class="quick-try" style="margin-top: 12px; flex-wrap: wrap;">
+            <el-button v-for="k in hotKeywords.slice(0, 6)" :key="k" size="small" round @click="onQuickSearch(k)">
+              {{ k }}
+            </el-button>
+          </div>
+        </el-empty>
+      </div>
 
       <!-- 网格卡片模式 -->
       <div v-else-if="viewMode === 'grid'" class="items-grid">

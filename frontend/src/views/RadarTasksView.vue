@@ -2,7 +2,7 @@
 import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { MagicStick, Plus, Refresh } from '@element-plus/icons-vue'
+import { MagicStick, Plus, Refresh, Search } from '@element-plus/icons-vue'
 import {
   createTask,
   deleteTask,
@@ -232,7 +232,17 @@ function statsText(s: Record<string, unknown>) {
 
     <el-card shadow="never">
       <div class="table-wrap">
-        <el-table v-loading="loading" :data="tasks" empty-text="还没有监控任务，点击「新建监控任务」，可以用一句话描述让 AI 帮你生成">
+        <el-table v-loading="loading" :data="tasks">
+          <template #empty>
+            <div class="table-empty-box">
+              <el-empty description="还没有设置监控任务，可以用一句话描述让 AI 帮你生成">
+                <div class="empty-btn-group">
+                  <el-button type="primary" :icon="Plus" @click="openCreate">新建监控任务</el-button>
+                  <el-button :icon="Search" @click="router.push('/radar/search')">先去实时搜货</el-button>
+                </div>
+              </el-empty>
+            </div>
+          </template>
           <el-table-column label="任务" min-width="200">
             <template #default="{ row }">
               <div class="name">
@@ -597,6 +607,15 @@ function statsText(s: Record<string, unknown>) {
 }
 .ml-s {
   margin-left: 6px;
+}
+.table-empty-box {
+  padding: 30px 0;
+}
+.empty-btn-group {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 12px;
 }
 @media (max-width: 768px) {
   .nl {
