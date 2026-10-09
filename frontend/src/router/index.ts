@@ -20,11 +20,13 @@ const routes: RouteRecordRaw[] = [
     children: [
       { path: 'dashboard', component: () => import('@/views/DashboardView.vue'), meta: { title: '总览' } },
       { path: 'accounts', component: () => import('@/views/AccountsView.vue'), meta: { title: '账号配置' } },
-      { path: 'radar', redirect: '/radar/results' },
+      { path: 'radar', redirect: '/radar/smart' },
+      { path: 'radar/smart', component: () => import('@/views/RadarSmartView.vue'), meta: { title: '选品雷达 · 智能搜索' } },
       { path: 'radar/search', component: () => import('@/views/RadarSearchView.vue'), meta: { title: '选品雷达 · 实时搜货' } },
-      { path: 'radar/tasks', component: () => import('@/views/RadarTasksView.vue'), meta: { title: '选品雷达 · 自动搜货' } },
-      { path: 'radar/results', component: () => import('@/views/RadarResultsView.vue'), meta: { title: '选品雷达 · 好货看板' } },
       { path: 'radar/watch', component: () => import('@/views/RadarWatchView.vue'), meta: { title: '选品雷达 · 价格监控' } },
+      // 旧地址（自动搜货 / 好货看板）已合并为智能搜索
+      { path: 'radar/tasks', redirect: (to) => ({ path: '/radar/smart', query: to.query }) },
+      { path: 'radar/results', redirect: (to) => ({ path: '/radar/smart', query: to.query }) },
       { path: 'messages/inbox', component: () => import('@/views/InboxView.vue'), meta: { title: '收件箱' } },
       { path: 'messages/rules', component: () => import('@/views/ReplyRulesView.vue'), meta: { title: '回复规则' } },
       { path: 'goods/items', component: () => import('@/views/GoodsItemsView.vue'), meta: { title: '商品管理' } },

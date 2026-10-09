@@ -99,7 +99,7 @@ function onCommand(cmd: string) {
       </el-header>
       <el-main class="main">
         <router-view v-slot="{ Component, route }">
-          <keep-alive :include="['RadarSearchView', 'RadarTasksView', 'RadarResultsView', 'RadarWatchView']">
+          <keep-alive :include="['RadarSmartView', 'RadarSearchView', 'RadarWatchView']">
             <component :is="Component" :key="route.path" />
           </keep-alive>
         </router-view>

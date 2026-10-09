@@ -62,7 +62,7 @@ const searchForm = reactive({
 const hotKeywords = ['MacBook M1', 'iPhone 15', 'Switch OLED', 'PS5', '显卡 RTX', 'iPad Air', 'AirPods Pro', '机械键盘']
 
 // 快捷筛选：与闲鱼网页版同一组勾选项，全部作为接口参数提交。
-// 个人闲置 / 包邮 用独立字段保存，转自动搜货时一并带上
+// 个人闲置 / 包邮 用独立字段保存，转智能搜索时一并带上
 const quickExtra = ref<string[]>([])
 
 function isQuickOn(key: string) {
@@ -284,7 +284,7 @@ function quickResell(it: SearchItem) {
   })
 }
 
-// ---------------------------------------------------------------- 转为自动搜货
+// ---------------------------------------------------------------- 转为智能搜索
 const taskModal = reactive({
   open: false,
   saving: false,
@@ -294,7 +294,7 @@ const taskModal = reactive({
 function openCreateTask(fromItem?: SearchItem) {
   const kw = fromItem?.title || searchForm.keyword.trim() || '好货'
   const t = emptyTask()
-  t.name = `自动搜货：${kw.slice(0, 16)}`
+  t.name = `${kw.slice(0, 16)}`
   t.keywords = [searchForm.keyword.trim() || kw.slice(0, 20)]
   t.min_price = searchForm.min_price ?? null
   t.max_price = searchForm.max_price ?? null
@@ -320,11 +320,11 @@ async function saveTask() {
   taskModal.saving = true
   try {
     await createTask(taskModal.form)
-    ElMessage.success('已保存为自动搜货，搜到的好货会出现在好货看板')
+    ElMessage.success('已保存为智能搜索，结果在「智能搜索」页查看')
     taskModal.open = false
   } catch (e: unknown) {
     const err = e as { response?: { data?: { detail?: string } }; message?: string }
-    ElMessage.error(err.response?.data?.detail || '保存自动搜货失败')
+    ElMessage.error(err.response?.data?.detail || '保存智能搜索失败')
   } finally {
     taskModal.saving = false
   }
@@ -395,7 +395,7 @@ onActivated(() => {
       <div class="gf-header-actions">
         <button v-if="searchForm.keyword.trim()" type="button" class="gf-task-convert-btn" @click="openCreateTask()">
           <el-icon><Bell /></el-icon>
-          <span>转自动搜货</span>
+          <span>转智能搜索</span>
         </button>
       </div>
     </div>
@@ -559,7 +559,7 @@ onActivated(() => {
           </div>
           <h3 class="welcome-title">输入关键词，立即探索闲鱼一手好货</h3>
           <p class="welcome-desc">
-            无需先建自动搜货等待！直接输入商品名称或型号，秒级同步闲鱼全量最新挂牌底价、成色与卖家信誉。
+            无需先建智能搜索任务再等结果！直接输入商品名称或型号，秒级同步闲鱼全量最新挂牌底价、成色与卖家信誉。
           </p>
 
           <!-- 热门探索专区分类药丸矩阵 (充实下半部分空间，美观实用) -->
@@ -816,8 +816,8 @@ onActivated(() => {
       </div>
     </el-drawer>
 
-    <!-- 一键转自动搜货弹窗 -->
-    <el-dialog v-model="taskModal.open" title="保存为自动搜货" width="560px" destroy-on-close>
+    <!-- 一键转智能搜索弹窗 -->
+    <el-dialog v-model="taskModal.open" title="保存为智能搜索" width="560px" destroy-on-close>
       <el-form label-position="top">
         <el-form-item label="名称" required>
           <el-input v-model="taskModal.form.name" placeholder="例如：M1 Air 笔记本" />
@@ -853,7 +853,7 @@ onActivated(() => {
       </el-form>
       <template #footer>
         <el-button @click="taskModal.open = false">取消</el-button>
-        <el-button type="primary" :loading="taskModal.saving" @click="saveTask">保存并开始自动搜货</el-button>
+        <el-button type="primary" :loading="taskModal.saving" @click="saveTask">保存并开始智能搜索</el-button>
       </template>
     </el-dialog>
   </div>

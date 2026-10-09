@@ -160,7 +160,7 @@ const kpis = computed(() => {
       icon: DataLine,
       color: '#06b6d4',
       bg: 'rgba(6, 182, 212, 0.1)',
-      path: '/radar/results',
+      path: '/radar/smart',
     },
   ]
 })
@@ -681,20 +681,20 @@ function healthColor(h: number) {
                 <el-icon class="wf-arrow"><Right /></el-icon>
               </div>
 
-              <div class="workflow-card" @click="router.push('/radar/tasks')">
+              <div class="workflow-card" @click="router.push('/radar/smart')">
                 <div class="wf-icon-wrap icon-purple">🎯</div>
                 <div class="wf-content">
-                  <div class="wf-name">自动搜货 · 价格监控</div>
-                  <div class="wf-desc">按关键词定时搜货并 AI 质检，好货推送到看板；看中的单品加入价格监控，到价即提醒。</div>
+                  <div class="wf-name">智能搜索 · 价格监控</div>
+                  <div class="wf-desc">按关键词定时搜货并 AI 质检，结果就在同一页；看中的单品加入价格监控，到价即提醒。</div>
                 </div>
                 <el-icon class="wf-arrow"><Right /></el-icon>
               </div>
 
-              <div class="workflow-card" @click="router.push('/radar/results')">
+              <div class="workflow-card" @click="router.push('/radar/smart')">
                 <div class="wf-icon-wrap icon-emerald">💎</div>
                 <div class="wf-content">
                   <div class="wf-name">好货一键转手发品</div>
-                  <div class="wf-desc">从好货看板中发现具有套利空间的捡漏品，点击一键带入加价率直接生成带货文案。</div>
+                  <div class="wf-desc">从智能搜索结果中发现具有套利空间的捡漏品，点击一键带入加价率直接生成带货文案。</div>
                 </div>
                 <el-icon class="wf-arrow"><Right /></el-icon>
               </div>

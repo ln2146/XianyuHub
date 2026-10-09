@@ -153,7 +153,7 @@ const trustMap: Record<InsightOut['trust_level'], { label: string; type: TagType
 }
 
 const sourceLabel: Record<ItemAnalysis['sample_source'], string> = {
-  task: '监控任务近 30 天样本',
+  task: '该智能搜索近 30 天样本',
   keyword: '关键词匹配的市场商品库',
   none: '无样本',
 }

@@ -45,7 +45,7 @@ async function load(silent = false) {
 }
 
 function checkRouteAdd() {
-  // 从好货看板 / 实时搜货带过来的商品：直接打开添加弹窗
+  // 从智能搜索 / 实时搜货带过来的商品：直接打开添加弹窗
   const add = route.query.add
   if (typeof add === 'string' && add) {
     const price = Number(route.query.price) || null
@@ -286,10 +286,10 @@ const historyOption = computed(() => {
       <div v-if="!loading && !shown.length" class="empty-box">
         <el-empty :description="watches.length ? '该状态下暂无监控' : '还没有监控的商品'">
           <template v-if="!watches.length">
-            <p class="muted small empty-tip">在好货看板或实时搜货里看中一件商品，点「价格监控」；也可以直接粘贴闲鱼商品链接。</p>
+            <p class="muted small empty-tip">在智能搜索或实时搜货里看中一件商品，点「价格监控」；也可以直接粘贴闲鱼商品链接。</p>
             <div class="empty-actions">
               <el-button type="primary" :icon="Plus" @click="openCreate()">粘贴链接添加</el-button>
-              <el-button @click="router.push('/radar/results')">去好货看板挑选</el-button>
+              <el-button @click="router.push('/radar/smart')">去智能搜索挑选</el-button>
             </div>
           </template>
         </el-empty>
