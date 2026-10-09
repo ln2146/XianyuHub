@@ -79,6 +79,8 @@ export interface ResultItem {
   seller_zhima: string
   publish_time: string | null
   tags: string[]
+  images: string[]
+  desc: string
 }
 
 export interface ResultOut {

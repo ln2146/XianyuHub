@@ -6,12 +6,9 @@ import {
   Bell,
   CaretRight,
   CopyDocument,
-  DataAnalysis,
   Delete,
   Download,
   Edit,
-  Link,
-  MagicStick,
   MoreFilled,
   Plus,
   Refresh,
@@ -38,7 +35,8 @@ import {
   type UserMark,
 } from '@/api/buyer'
 import EChart from '@/components/EChart.vue'
-import ItemAnalysisPanel from '@/components/ItemAnalysisPanel.vue'
+import ItemCard, { type CardItem, type CardMenuItem } from '@/components/ItemCard.vue'
+import ItemDrawer, { type DrawerItem } from '@/components/ItemDrawer.vue'
 import ListPager from '@/components/ListPager.vue'
 import RadarNav from '@/components/RadarNav.vue'
 import SmartTaskDialog from '@/components/SmartTaskDialog.vue'
@@ -272,11 +270,50 @@ async function doExport() {
   }
 }
 
-function dealType(label: string): 'success' | 'warning' | 'danger' | 'info' {
-  if (label === '高性价比') return 'success'
-  if (label === '值得关注') return 'warning'
-  if (label === '价格偏高') return 'danger'
-  return 'info'
+// 搜索结果 → 统一商品卡片
+function toCard(r: ResultOut): CardItem {
+  const v = verdictMap[r.verdict || (r.stage === 'filtered' ? 'filtered' : '')]
+  return {
+    title: r.item.title,
+    image: r.item.image_url,
+    price: r.item.price,
+    origPrice: r.item.orig_price,
+    // “样本不足”没有信息量，不展示
+    priceNote: r.deal_label && r.deal_label !== '样本不足' ? r.deal_label : '',
+    wantCnt: r.item.want_cnt,
+    area: r.item.area,
+    sellerNick: r.item.seller_nick,
+    sellerTag: r.item.seller_zhima,
+    textBadges: r.item.tags?.includes('包邮') ? ['包邮'] : [],
+    badge: v
+      ? {
+          label: v.label + (r.confidence !== null && r.verdict ? ` ${Math.round(r.confidence * 100)}%` : ''),
+          type: v.type === 'primary' ? 'info' : v.type,
+        }
+      : null,
+    note: r.reason || r.filter_reasons.join('；'),
+    subline: (filters.task_id ? '' : `${taskName.value(r.task_id)} · `) + fmtRelative(r.created_at),
+  }
+}
+
+function cardMenu(r: ResultOut): CardMenuItem[] {
+  return [
+    { key: 'seen', label: r.mark === 'seen' ? '取消「已看」' : '标记为已看' },
+    { key: 'bought', label: r.mark === 'bought' ? '取消「已买」' : '标记为已买' },
+    { key: 'ignored', label: '不感兴趣' },
+    { key: 'history', label: '价格走势', divided: true },
+    { key: 'watch', label: '加入价格监控' },
+    { key: 'resell', label: '转手发品' },
+    { key: 'open', label: '去闲鱼查看', divided: true },
+  ]
+}
+
+function onCardAction(r: ResultOut, key: string) {
+  if (key === 'seen' || key === 'bought' || key === 'ignored') mark(r, key)
+  else if (key === 'history') openHistory(r)
+  else if (key === 'watch') watchPrice(r)
+  else if (key === 'resell') quickResell(r)
+  else if (key === 'open') window.open(itemLink(r), '_blank', 'noopener')
 }
 
 function itemLink(r: ResultOut) {
@@ -308,10 +345,34 @@ const historyOption = computed(() => ({
   ],
 }))
 
-const analysis = reactive({ open: false, result: null as ResultOut | null, tab: 'item' as 'item' | 'seller' | 'ai' })
-function openAnalysis(r: ResultOut, tab: 'item' | 'seller' | 'ai' = 'item') {
-  Object.assign(analysis, { open: true, result: r, tab })
+// 详情抽屉：图片、描述来自已存的商品库，不额外请求闲鱼
+const detail = reactive({ open: false, result: null as ResultOut | null })
+function openDetail(r: ResultOut) {
+  Object.assign(detail, { open: true, result: r })
 }
+const drawerBase = computed<DrawerItem | null>(() => {
+  const r = detail.result
+  if (!r) return null
+  return {
+    title: r.item.title,
+    image: r.item.image_url,
+    images: r.item.images,
+    price: r.item.price,
+    origPrice: r.item.orig_price,
+    wantCnt: r.item.want_cnt,
+    browseCnt: r.item.browse_cnt,
+    area: r.item.area,
+    sellerNick: r.item.seller_nick,
+    desc: r.item.desc,
+    link: itemLink(r),
+  }
+})
+const markOptions: { key: UserMark; label: string }[] = [
+  { key: 'favorite', label: '收藏' },
+  { key: 'seen', label: '已看' },
+  { key: 'bought', label: '已买' },
+  { key: 'ignored', label: '不感兴趣' },
+]
 
 function quickResell(r: ResultOut) {
   const p = r.item.price || 0
@@ -354,71 +415,59 @@ onBeforeUnmount(stopTimer)
     <RadarNav current="smart">
       <template #actions>
         <el-button :icon="Refresh" :loading="loading" @click="loadTasks(true); load(page)">刷新</el-button>
-        <el-button :icon="Download" :loading="exporting" @click="doExport">导出 CSV</el-button>
+        <el-button :icon="Download" :loading="exporting" @click="doExport">导出</el-button>
       </template>
     </RadarNav>
 
-    <!-- 快速新建：输入关键词回车 -->
+    <!-- 新建：一个入口。输入关键词回车；弹窗里也可以一句话描述需求让 AI 生成 -->
     <div class="quick">
       <el-input
         v-model="quickKw"
         size="large"
         clearable
-        placeholder="输入想买的东西，例如：iPhone 13 128G、宜家书桌……回车新建智能搜索"
         :prefix-icon="Search"
-        class="quick-input"
+        placeholder="想买什么？例如：iPhone 13 128G、宜家书桌，回车新建智能搜索"
         @keyup.enter="quickCreate"
       />
       <el-button size="large" type="primary" :icon="Plus" @click="quickCreate">新建智能搜索</el-button>
-      <el-button size="large" :icon="MagicStick" @click="openCreate()">一句话生成</el-button>
     </div>
 
     <div class="layout">
-      <!-- 左栏：搜索任务 -->
+      <!-- 左栏：我的搜索 -->
       <aside v-loading="tasksLoading" class="tasks">
         <div class="tasks-head">
           <span>我的搜索</span>
-          <span class="muted small">{{ tasks.length }} 个</span>
+          <span class="muted small">{{ tasks.length }}</span>
         </div>
-
         <button type="button" class="task all" :class="{ active: !filters.task_id }" @click="selectTask(undefined)">
           <span class="t-name">全部结果</span>
-          <span v-if="totalRecommend" class="t-badge">{{ totalRecommend }}</span>
+          <span v-if="totalRecommend" class="t-count" title="推荐数量">{{ totalRecommend }}</span>
         </button>
-
-        <div v-if="!tasksLoading && !tasks.length" class="tasks-empty muted small">
-          还没有智能搜索。在上方输入关键词回车，系统会定时搜索闲鱼并用 AI 挑出好货。
-        </div>
-
+        <p v-if="!tasksLoading && !tasks.length" class="tasks-empty">
+          还没有智能搜索。在上方输入想买的东西，系统会定时搜索闲鱼并用 AI 挑出好货。
+        </p>
         <div
           v-for="t in tasks"
           :key="t.id"
           class="task"
-          :class="{ active: filters.task_id === t.id, disabled: !t.enabled }"
+          :class="{ active: filters.task_id === t.id }"
           role="button"
           tabindex="0"
           @click="selectTask(t.id)"
           @keyup.enter="selectTask(t.id)"
         >
           <div class="t-row">
+            <span class="dot" :class="t.running ? 'running' : t.paused_reason || (t.last_status && t.last_status !== 'ok') ? 'bad' : t.enabled ? 'on' : 'off'" />
             <span class="t-name ellipsis">{{ t.name }}</span>
-            <el-tag v-if="t.running" size="small" type="primary" effect="dark">搜索中</el-tag>
-            <span v-else-if="t.result_counts.recommend" class="t-badge">{{ t.result_counts.recommend }}</span>
+            <span v-if="t.running" class="t-state">搜索中</span>
+            <span v-else-if="t.result_counts.recommend" class="t-count" title="推荐数量">{{ t.result_counts.recommend }}</span>
           </div>
-          <div class="t-kw ellipsis small">{{ t.keywords.join(' · ') }}</div>
-          <div class="t-meta small">
-            <span>{{ cronText(t) }}</span>
-            <template v-if="t.last_run_at">
-              <span>·</span>
-              <el-tag v-if="t.last_status && t.last_status !== 'ok'" size="small" :type="statusLabel[t.last_status]?.type || 'info'" effect="plain">
-                {{ statusLabel[t.last_status]?.label || t.last_status }}
-              </el-tag>
-              <span>{{ fmtRelative(t.last_run_at) }}</span>
-            </template>
+          <div class="t-meta ellipsis">
+            {{ cronText(t) }}<template v-if="t.last_run_at"> · {{ statusLabel[t.last_status || '']?.label && t.last_status !== 'ok' ? statusLabel[t.last_status || ''].label + ' · ' : '' }}{{ fmtRelative(t.last_run_at) }}</template>
           </div>
-          <div v-if="t.paused_reason" class="t-paused small">已自动暂停：{{ t.paused_reason }}</div>
+          <div v-if="t.paused_reason" class="t-paused">已暂停：{{ t.paused_reason }}</div>
           <div class="t-ops" @click.stop>
-            <el-button size="small" type="primary" link :icon="CaretRight" :loading="busy[`run-${t.id}`]" :disabled="t.running" @click="run(t)">立即搜索</el-button>
+            <el-button size="small" link type="primary" :icon="CaretRight" :loading="busy[`run-${t.id}`]" :disabled="t.running" @click="run(t)">搜索</el-button>
             <el-button size="small" link :icon="Edit" @click="openEdit(t)">编辑</el-button>
             <el-switch
               :model-value="t.enabled"
@@ -430,11 +479,11 @@ onBeforeUnmount(stopTimer)
               @change="(v: string | number | boolean) => toggle(t, !!v)"
             />
             <el-dropdown trigger="click" @command="(c: string) => onTaskCommand(t, c)">
-              <el-button size="small" link :icon="MoreFilled" />
+              <el-button size="small" link :icon="MoreFilled" aria-label="更多" />
               <template #dropdown>
                 <el-dropdown-menu>
                   <el-dropdown-item command="market" :icon="TrendCharts">行情统计</el-dropdown-item>
-                  <el-dropdown-item command="delete" :icon="Delete" divided><span class="err">删除</span></el-dropdown-item>
+                  <el-dropdown-item command="delete" :icon="Delete" divided><span class="danger">删除</span></el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -444,105 +493,50 @@ onBeforeUnmount(stopTimer)
 
       <!-- 右栏：结果 -->
       <section class="results">
-        <el-card shadow="never" class="filters">
-          <div class="toolbar">
-            <div class="scope">
-              <b>{{ currentTask ? currentTask.name : '全部结果' }}</b>
-              <span class="muted small">共 {{ total }} 件</span>
-            </div>
-            <el-select v-model="filters.verdict" class="f-sel" @change="load()">
-              <el-option value="default" label="优质精选（推荐 + 需核验）" />
-              <el-option value="recommend" label="💎 仅超值捡漏" />
-              <el-option value="conditional" label="⚠️ 仅需核验" />
-              <el-option value="reject" label="🚫 不推荐" />
-              <el-option value="filtered" label="已筛除" />
-              <el-option value="all" label="全部状态" />
-            </el-select>
-            <el-select v-model="filters.mark" clearable placeholder="全部标记" class="f-sel" @change="load()">
-              <el-option v-for="(label, k) in markMap" :key="k" :value="k" :label="label" />
-            </el-select>
-            <el-select v-model="filters.sort" class="f-sel" @change="load()">
-              <el-option value="deal" label="性价比最高" />
-              <el-option value="newest" label="最新发现" />
-              <el-option value="price_asc" label="价格从低到高" />
-            </el-select>
-            <el-input v-model="filters.q" placeholder="标题关键词" clearable class="f-q" :prefix-icon="Search" @keyup.enter="load()" @clear="load()" />
+        <div class="filter-bar">
+          <div class="scope">
+            <b class="ellipsis">{{ currentTask ? currentTask.name : '全部结果' }}</b>
+            <span class="muted small">{{ total }} 件</span>
           </div>
-        </el-card>
+          <el-select v-model="filters.verdict" class="f-sel" @change="load()">
+            <el-option value="default" label="推荐 + 需核验" />
+            <el-option value="recommend" label="仅推荐" />
+            <el-option value="conditional" label="仅需核验" />
+            <el-option value="reject" label="不推荐" />
+            <el-option value="filtered" label="已筛除" />
+            <el-option value="all" label="全部" />
+          </el-select>
+          <el-select v-model="filters.mark" clearable placeholder="全部标记" class="f-sel" @change="load()">
+            <el-option v-for="(label, k) in markMap" :key="k" :value="k" :label="label" />
+          </el-select>
+          <el-select v-model="filters.sort" class="f-sel" @change="load()">
+            <el-option value="newest" label="最新发现" />
+            <el-option value="deal" label="性价比最高" />
+            <el-option value="price_asc" label="价格从低到高" />
+          </el-select>
+          <el-input v-model="filters.q" placeholder="标题关键词" clearable class="f-q" :prefix-icon="Search" @keyup.enter="load()" @clear="load()" />
+        </div>
 
         <div v-loading="loading" class="grid">
-          <div v-if="!loading && !results.length" class="empty-state-box">
-            <el-empty :description="tasks.length ? (currentTask?.running ? '正在搜索，结果马上就来…' : '暂无符合条件的好货') : '输入关键词，开始你的第一个智能搜索'">
-              <div class="empty-actions">
-                <el-button v-if="currentTask && !currentTask.running" type="primary" :icon="CaretRight" @click="run(currentTask)">立即搜索</el-button>
-                <el-button v-else-if="!tasks.length" type="primary" :icon="Plus" @click="openCreate()">新建智能搜索</el-button>
-                <el-button :icon="Search" @click="router.push('/radar/search')">先去实时搜货看看</el-button>
-              </div>
-            </el-empty>
-          </div>
-          <el-card v-for="r in results" :key="r.id" shadow="hover" class="card" :body-style="{ padding: '0' }">
-            <div class="img-wrap">
-              <el-image :src="r.item.image_url" fit="cover" lazy class="img" referrerpolicy="no-referrer">
-                <template #error><div class="img-err">无图</div></template>
-              </el-image>
-              <el-tag v-if="r.verdict || r.stage === 'filtered'" class="verdict" :type="verdictMap[r.verdict || 'filtered']?.type" effect="dark" size="small">
-                {{ verdictMap[r.verdict || 'filtered']?.label }}
-                <template v-if="r.confidence !== null"> · {{ Math.round(r.confidence * 100) }}%</template>
-              </el-tag>
-              <el-tag v-if="r.mark !== 'none'" class="mark" size="small" type="info" effect="dark">{{ markMap[r.mark] }}</el-tag>
-            </div>
-            <div class="body">
-              <a :href="itemLink(r)" target="_blank" rel="noopener" class="title">{{ r.item.title }}</a>
-              <div class="price-row">
-                <span class="price">{{ fmtMoney(r.item.price) }}</span>
-                <span v-if="r.item.orig_price" class="orig">{{ fmtMoney(r.item.orig_price) }}</span>
-                <el-tag size="small" :type="dealType(r.deal_label)" effect="plain">{{ r.deal_label }}</el-tag>
-              </div>
-              <div class="meta muted small">
-                {{ r.item.area || '未知地区' }} · {{ r.item.seller_nick || '卖家' }}
-                <template v-if="r.item.seller_zhima"> · {{ r.item.seller_zhima }}</template>
-                <template v-if="r.item.want_cnt"> · {{ r.item.want_cnt }} 人想要</template>
-              </div>
-              <div class="meta muted small">
-                <template v-if="!filters.task_id">{{ taskName(r.task_id) }} · </template>{{ fmtRelative(r.created_at) }}
-              </div>
-
-              <div v-if="r.reason || r.filter_reasons.length" class="reason">
-                {{ r.reason || r.filter_reasons.join('；') }}
-              </div>
-              <div v-if="r.risk_tags.length" class="tags">
-                <el-tag v-for="tg in r.risk_tags" :key="tg" size="small" type="danger" effect="light">{{ tg }}</el-tag>
-              </div>
-              <div v-if="r.need_confirm.length" class="confirm">
-                <div class="small label">需确认</div>
-                <ul>
-                  <li v-for="c in r.need_confirm" :key="c">{{ c }}</li>
-                </ul>
-              </div>
-              <div v-if="r.questions.length" class="questions">
-                <div class="q-head">
-                  <span class="small label">可以问卖家</span>
-                  <el-button link size="small" :icon="CopyDocument" @click="copyText(r.questions.join('\n'))">复制全部</el-button>
-                </div>
-                <div v-for="q in r.questions" :key="q" class="q" title="点击复制" @click="copyText(q)">{{ q }}</div>
-              </div>
-            </div>
-            <div class="actions">
-              <div class="marks">
-                <el-button size="small" :type="r.mark === 'favorite' ? 'warning' : 'default'" @click="mark(r, 'favorite')">收藏</el-button>
-                <el-button size="small" :type="r.mark === 'seen' ? 'primary' : 'default'" @click="mark(r, 'seen')">已看</el-button>
-                <el-button size="small" :type="r.mark === 'ignored' ? 'info' : 'default'" @click="mark(r, 'ignored')">不感兴趣</el-button>
-                <el-button size="small" :type="r.mark === 'bought' ? 'success' : 'default'" @click="mark(r, 'bought')">已买</el-button>
-              </div>
-              <div class="links">
-                <el-button size="small" link type="warning" :icon="DataAnalysis" @click="openAnalysis(r)">商品/商家分析</el-button>
-                <el-button size="small" link :icon="TrendCharts" @click="openHistory(r)">价格走势</el-button>
-                <el-button size="small" link type="primary" :icon="Bell" @click="watchPrice(r)">价格监控</el-button>
-                <el-button size="small" link type="success" :icon="Upload" @click="quickResell(r)">转手发品</el-button>
-                <el-button size="small" link type="primary" :icon="Link" tag="a" :href="itemLink(r)" target="_blank">打开</el-button>
-              </div>
-            </div>
-          </el-card>
+          <el-empty
+            v-if="!loading && !results.length"
+            class="empty"
+            :image-size="80"
+            :description="tasks.length ? (currentTask?.running ? '正在搜索，结果马上就来…' : '暂无符合条件的商品') : '在上方输入想买的东西，开始第一个智能搜索'"
+          >
+            <el-button v-if="currentTask && !currentTask.running" type="primary" :icon="CaretRight" @click="run(currentTask)">立即搜索</el-button>
+            <el-button v-else-if="!tasks.length" @click="router.push('/radar/search')">先去实时搜货看看</el-button>
+          </el-empty>
+          <ItemCard
+            v-for="r in results"
+            :key="r.id"
+            :item="toCard(r)"
+            :starred="r.mark === 'favorite'"
+            :menu="cardMenu(r)"
+            @open="openDetail(r)"
+            @star="mark(r, 'favorite')"
+            @action="(k: string) => onCardAction(r, k)"
+          />
         </div>
 
         <ListPager
@@ -559,12 +553,57 @@ onBeforeUnmount(stopTimer)
 
     <SmartTaskDialog v-model="dialog.open" :task="dialog.task" :preset="dialog.preset" @saved="onSaved" />
 
-    <el-drawer v-model="analysis.open" size="560px" destroy-on-close>
-      <template #header>
-        <div class="ellipsis drawer-title">{{ analysis.result?.item.title || '商品分析' }}</div>
+    <ItemDrawer v-model="detail.open" :item-id="detail.result?.item_id || ''" :base="drawerBase" :task-id="detail.result?.task_id">
+      <template #verdict>
+        <section v-if="detail.result" class="verdict">
+          <div class="v-head">
+            <span class="v-title">AI 判定</span>
+            <el-tag v-if="detail.result.verdict" :type="verdictMap[detail.result.verdict]?.type" size="small">
+              {{ verdictMap[detail.result.verdict]?.label }}
+              <template v-if="detail.result.confidence !== null"> · 置信度 {{ Math.round(detail.result.confidence * 100) }}%</template>
+            </el-tag>
+            <el-tag v-else size="small" type="info">已筛除</el-tag>
+          </div>
+          <p v-if="detail.result.reason || detail.result.filter_reasons.length" class="v-reason">
+            {{ detail.result.reason || detail.result.filter_reasons.join('；') }}
+          </p>
+          <div v-if="detail.result.risk_tags.length" class="v-tags">
+            <el-tag v-for="tg in detail.result.risk_tags" :key="tg" size="small" type="danger">{{ tg }}</el-tag>
+          </div>
+          <div v-if="detail.result.need_confirm.length" class="v-block">
+            <div class="v-label">需要向卖家确认</div>
+            <ul>
+              <li v-for="c in detail.result.need_confirm" :key="c">{{ c }}</li>
+            </ul>
+          </div>
+          <div v-if="detail.result.questions.length" class="v-block">
+            <div class="v-label">
+              可以这样问卖家
+              <el-button link size="small" :icon="CopyDocument" @click="copyText(detail.result.questions.join('\n'))">复制全部</el-button>
+            </div>
+            <button v-for="q in detail.result.questions" :key="q" type="button" class="v-q" title="点击复制" @click="copyText(q)">{{ q }}</button>
+          </div>
+          <div class="v-marks">
+            <span class="v-label">标记</span>
+            <el-button
+              v-for="m in markOptions"
+              :key="m.key"
+              size="small"
+              :type="detail.result.mark === m.key ? 'primary' : 'default'"
+              :plain="detail.result.mark === m.key"
+              @click="mark(detail.result, m.key)"
+            >
+              {{ m.label }}
+            </el-button>
+          </div>
+        </section>
       </template>
-      <ItemAnalysisPanel v-if="analysis.result" :item-id="analysis.result.item_id" :task-id="analysis.result.task_id" :initial-tab="analysis.tab" />
-    </el-drawer>
+      <template #actions>
+        <el-button v-if="detail.result" :icon="TrendCharts" @click="openHistory(detail.result)">价格走势</el-button>
+        <el-button v-if="detail.result" :icon="Bell" @click="watchPrice(detail.result)">加入价格监控</el-button>
+        <el-button v-if="detail.result" :icon="Upload" @click="quickResell(detail.result)">转手发品</el-button>
+      </template>
+    </ItemDrawer>
 
     <el-dialog v-model="history.open" title="价格走势" width="640px">
       <div class="muted small ellipsis">{{ history.title }}</div>
@@ -593,134 +632,136 @@ onBeforeUnmount(stopTimer)
 </template>
 
 <style scoped>
-/* 快速新建 */
 .quick {
   display: flex;
-  gap: 8px;
-  padding: 14px;
-  border-radius: 12px;
-  background: linear-gradient(120deg, rgba(30, 158, 106, 0.1), rgba(30, 158, 106, 0.02) 60%, rgba(64, 158, 255, 0.06));
-  border: 1px solid rgba(30, 158, 106, 0.15);
+  gap: var(--xh-space-2);
 }
-.quick-input {
-  flex: 1;
+.quick .el-button {
+  flex-shrink: 0;
 }
-.quick .el-button + .el-button {
-  margin-left: 0;
-}
-
-/* 两栏布局 */
 .layout {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
-  gap: 12px;
+  grid-template-columns: 264px minmax(0, 1fr);
+  gap: var(--xh-space-4);
   align-items: start;
-  margin-top: 12px;
 }
 
-/* 左栏任务 */
+/* 左栏：我的搜索 */
 .tasks {
   position: sticky;
   top: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--xh-space-2);
   max-height: calc(100vh - 140px);
+  min-height: 80px;
   overflow-y: auto;
   padding: 2px;
-  min-height: 80px;
 }
 .tasks-head {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
+  padding: 0 var(--xh-space-1);
   font-weight: 600;
-  padding: 0 4px;
+  color: var(--xh-text);
 }
 .tasks-empty {
-  padding: 12px;
+  margin: 0;
+  padding: var(--xh-space-3);
+  border: 1px dashed var(--xh-border-strong);
+  border-radius: var(--xh-radius-md);
+  font-size: var(--xh-fs-xs);
   line-height: 1.6;
-  background: #fff;
-  border: 1px dashed var(--xh-border, #e5e7eb);
-  border-radius: 10px;
+  color: var(--xh-muted);
 }
 .task {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid var(--xh-border, #e5e7eb);
-  background: #fff;
-  cursor: pointer;
+  gap: var(--xh-space-1);
+  padding: 10px var(--xh-space-3);
+  border: 1px solid var(--xh-border);
+  border-radius: var(--xh-radius-md);
+  background: var(--xh-card);
   text-align: left;
-  transition: all 0.18s ease;
+  font: inherit;
+  cursor: pointer;
   outline: none;
+  transition: border-color 0.15s;
 }
 .task:hover {
-  border-color: rgba(30, 158, 106, 0.5);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  border-color: var(--xh-primary-border);
 }
 .task.active {
-  border-color: var(--xh-primary, #1e9e6a);
-  background: rgba(30, 158, 106, 0.05);
-  box-shadow: 0 0 0 2px rgba(30, 158, 106, 0.12);
+  border-color: var(--xh-primary);
+  background: var(--xh-primary-soft);
+}
+.task:focus-visible {
+  outline: 2px solid var(--xh-primary);
+  outline-offset: 1px;
 }
 .task.all {
   flex-direction: row;
-  justify-content: space-between;
   align-items: center;
-  font: inherit;
-}
-.task.disabled .t-name {
-  color: #606266;
+  justify-content: space-between;
 }
 .t-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  justify-content: space-between;
+  gap: var(--xh-space-2);
 }
 .t-name {
-  font-weight: 600;
-  color: var(--xh-text, #1f2329);
+  flex: 1;
   min-width: 0;
+  font-weight: 600;
+  color: var(--xh-text);
 }
-.t-badge {
+.dot {
+  width: 8px;
+  height: 8px;
   flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--xh-disabled);
+}
+.dot.on {
+  background: var(--xh-success);
+}
+.dot.running {
+  background: var(--xh-primary);
+  box-shadow: 0 0 0 3px var(--xh-primary-soft);
+}
+.dot.bad {
+  background: var(--xh-danger);
+}
+.t-state {
+  font-size: var(--xh-fs-xs);
+  color: var(--xh-primary);
+}
+.t-count {
   min-width: 20px;
   padding: 0 6px;
-  height: 20px;
-  line-height: 20px;
-  border-radius: 10px;
-  text-align: center;
-  font-size: 12px;
-  font-weight: 600;
+  border-radius: var(--xh-radius-pill);
+  background: var(--xh-primary);
   color: #fff;
-  background: var(--xh-primary, #1e9e6a);
-}
-.t-kw {
-  color: #606266;
+  font-size: var(--xh-fs-xs);
+  line-height: 18px;
+  text-align: center;
 }
 .t-meta {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--xh-muted, #8a919f);
-  flex-wrap: wrap;
+  padding-left: 16px;
+  font-size: var(--xh-fs-xs);
+  color: var(--xh-muted);
 }
 .t-paused {
-  color: var(--el-color-danger);
-  line-height: 1.4;
+  padding-left: 16px;
+  font-size: var(--xh-fs-xs);
+  color: var(--xh-danger);
 }
 .t-ops {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-top: 2px;
-  padding-top: 6px;
-  border-top: 1px dashed var(--xh-border, #e5e7eb);
-  cursor: default;
+  gap: var(--xh-space-1);
+  padding-left: 12px;
 }
 .t-ops .el-button + .el-button {
   margin-left: 0;
@@ -728,194 +769,120 @@ onBeforeUnmount(stopTimer)
 .t-ops .el-switch {
   margin-left: auto;
 }
-.err {
-  color: var(--el-color-danger);
+.danger {
+  color: var(--xh-danger);
 }
 
-/* 右栏结果 */
+/* 右栏：结果 */
 .results {
-  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--xh-space-3);
+  min-width: 0;
 }
-.filters :deep(.el-card__body) {
-  padding: 12px;
-}
-.toolbar {
+.filter-bar {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
   align-items: center;
+  gap: var(--xh-space-2);
+  padding: 10px var(--xh-space-3);
+  background: var(--xh-card);
+  border: 1px solid var(--xh-border);
+  border-radius: var(--xh-radius-md);
 }
 .scope {
   display: flex;
   align-items: baseline;
-  gap: 8px;
-  margin-right: auto;
+  gap: var(--xh-space-2);
   min-width: 0;
+  margin-right: auto;
 }
 .f-sel {
-  width: 150px;
+  width: 136px;
 }
 .f-q {
   width: 180px;
 }
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 12px;
-  min-height: 120px;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: var(--xh-space-4);
+  min-height: 160px;
 }
-.card {
+.empty {
+  grid-column: 1 / -1;
+}
+
+/* 抽屉：AI 判定 */
+.verdict {
   display: flex;
   flex-direction: column;
+  gap: var(--xh-space-2);
+  padding: var(--xh-space-3);
+  border: 1px solid var(--xh-border);
+  border-radius: var(--xh-radius-md);
 }
-.card :deep(.el-card__body) {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-}
-.img-wrap {
-  position: relative;
-  aspect-ratio: 4 / 3;
-  background: #f2f3f5;
-}
-.img {
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-.img-err {
+.v-head {
   display: flex;
   align-items: center;
-  justify-content: center;
-  height: 100%;
-  color: var(--xh-muted);
+  gap: var(--xh-space-2);
 }
-.verdict {
-  position: absolute;
-  left: 8px;
-  top: 8px;
-}
-.mark {
-  position: absolute;
-  right: 8px;
-  top: 8px;
-}
-.body {
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  flex: 1;
-}
-.title {
+.v-title {
   font-weight: 600;
   color: var(--xh-text);
-  text-decoration: none;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  line-height: 1.4;
 }
-.title:hover {
-  color: var(--xh-primary);
+.v-reason {
+  margin: 0;
+  font-size: var(--xh-fs-sm);
+  line-height: 1.6;
+  color: var(--xh-text-2);
 }
-.price-row {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-.price {
-  color: #f56c6c;
-  font-size: 20px;
-  font-weight: 700;
-}
-.orig {
-  color: var(--xh-muted);
-  text-decoration: line-through;
-  font-size: 12px;
-}
-.reason {
-  font-size: 13px;
-  line-height: 1.5;
-  background: #f7f8fa;
-  border-radius: 6px;
-  padding: 8px;
-}
-.tags {
+.v-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--xh-space-1);
 }
-.label {
-  font-weight: 600;
-  color: #606266;
-}
-.confirm ul {
-  margin: 4px 0 0;
+.v-block ul {
+  margin: var(--xh-space-1) 0 0;
   padding-left: 18px;
-  font-size: 13px;
-  color: #e6a23c;
+  font-size: var(--xh-fs-sm);
+  line-height: 1.7;
+  color: var(--xh-text-2);
 }
-.q-head {
+.v-label {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  justify-content: space-between;
+  font-size: var(--xh-fs-xs);
+  font-weight: 600;
+  color: var(--xh-muted);
 }
-.q {
-  font-size: 13px;
-  padding: 6px 8px;
-  margin-top: 4px;
-  background: var(--el-color-primary-light-9);
-  border-radius: 6px;
+.v-q {
+  display: block;
+  width: 100%;
+  margin-top: var(--xh-space-1);
+  padding: 6px var(--xh-space-2);
+  border: none;
+  border-radius: var(--xh-radius-sm);
+  background: var(--xh-primary-soft);
+  color: var(--xh-text);
+  font-size: var(--xh-fs-sm);
+  text-align: left;
   cursor: pointer;
 }
-.q:hover {
+.v-q:hover {
   background: var(--el-color-primary-light-8);
 }
-.actions {
-  border-top: 1px solid var(--xh-border);
-  padding: 8px 12px;
+.v-marks {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.marks {
-  display: flex;
-  gap: 4px;
   flex-wrap: wrap;
+  align-items: center;
+  gap: var(--xh-space-2);
+  padding-top: var(--xh-space-2);
+  border-top: 1px dashed var(--xh-border);
 }
-.marks .el-button + .el-button {
+.v-marks .el-button + .el-button {
   margin-left: 0;
-}
-.links {
-  display: flex;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-.links .el-button + .el-button {
-  margin-left: 0;
-}
-.drawer-title {
-  font-weight: 600;
-  color: var(--xh-text);
-}
-.empty-state-box {
-  grid-column: 1 / -1;
-  padding: 40px 0;
-  display: flex;
-  justify-content: center;
-}
-.empty-actions {
-  display: flex;
-  gap: 12px;
-  justify-content: center;
-  margin-top: 12px;
 }
 
 @media (max-width: 900px) {
@@ -931,15 +898,13 @@ onBeforeUnmount(stopTimer)
   .quick {
     flex-wrap: wrap;
   }
-  .quick-input {
-    flex-basis: 100%;
-  }
   .f-sel,
   .f-q {
     width: calc(50% - 4px);
   }
   .grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--xh-space-2);
   }
 }
 </style>

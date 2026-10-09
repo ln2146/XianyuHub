@@ -433,39 +433,39 @@ const historyOption = computed(() => {
   align-items: flex-start;
   gap: 2px;
   padding: 10px 14px;
-  border-radius: 10px;
-  border: 1px solid var(--xh-border, #e5e7eb);
-  background: #fff;
+  border-radius: var(--xh-radius-md);
+  border: 1px solid var(--xh-border);
+  background: var(--xh-card);
   cursor: pointer;
   transition: all 0.18s ease;
   text-align: left;
 }
 .sum-item:hover {
-  border-color: var(--xh-primary, #1e9e6a);
+  border-color: var(--xh-primary);
   transform: translateY(-1px);
 }
 .sum-item.active {
-  border-color: var(--xh-primary, #1e9e6a);
-  box-shadow: 0 0 0 2px rgba(30, 158, 106, 0.12);
+  border-color: var(--xh-primary);
+  box-shadow: 0 0 0 2px var(--xh-primary-soft);
 }
 .sum-num {
-  font-size: 20px;
+  font-size: var(--xh-fs-xl);
   font-weight: 700;
-  color: var(--xh-text, #1f2329);
+  color: var(--xh-text);
   line-height: 1.2;
 }
 .sum-label {
-  font-size: 12px;
-  color: var(--xh-muted, #8a919f);
+  font-size: var(--xh-fs-xs);
+  color: var(--xh-muted);
 }
 .s-watching .sum-num {
-  color: #1e9e6a;
+  color: var(--xh-primary);
 }
 .s-triggered .sum-num {
-  color: #e6a23c;
+  color: var(--xh-warning-text);
 }
 .s-ended .sum-num {
-  color: #c0c4cc;
+  color: var(--xh-disabled);
 }
 
 .grid {
@@ -502,16 +502,16 @@ const historyOption = computed(() => {
   height: 100%;
 }
 .c-watching {
-  border-top-color: #1e9e6a;
+  border-top-color: var(--xh-primary);
 }
 .c-triggered {
-  border-top-color: #e6a23c;
+  border-top-color: var(--xh-warning);
 }
 .c-paused {
-  border-top-color: #c0c4cc;
+  border-top-color: var(--xh-disabled);
 }
 .c-ended {
-  border-top-color: #f56c6c;
+  border-top-color: var(--xh-danger);
   opacity: 0.75;
 }
 .head {
@@ -522,16 +522,16 @@ const historyOption = computed(() => {
 .thumb {
   width: 72px;
   height: 72px;
-  border-radius: 8px;
+  border-radius: var(--xh-radius-sm);
   flex-shrink: 0;
-  background: #f2f3f5;
+  background: var(--xh-fill);
 }
 .img-err {
   display: flex;
   align-items: center;
   justify-content: center;
   height: 100%;
-  font-size: 12px;
+  font-size: var(--xh-fs-xs);
   color: var(--xh-muted);
 }
 .head-main {
@@ -560,7 +560,7 @@ const historyOption = computed(() => {
   flex-wrap: wrap;
 }
 .note {
-  color: #606266;
+  color: var(--xh-text-2);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -577,27 +577,27 @@ const historyOption = computed(() => {
   gap: 8px;
 }
 .p-label {
-  font-size: 12px;
+  font-size: var(--xh-fs-xs);
   color: var(--xh-muted);
 }
 .p-val {
-  font-size: 22px;
+  font-size: var(--xh-fs-xl);
   font-weight: 700;
-  color: #f56c6c;
+  color: var(--xh-price);
 }
 .p-change {
-  font-size: 12px;
+  font-size: var(--xh-fs-xs);
   font-weight: 600;
   padding: 1px 6px;
-  border-radius: 10px;
+  border-radius: var(--xh-radius-md);
 }
 .p-change.down {
-  color: #1e9e6a;
-  background: rgba(30, 158, 106, 0.1);
+  color: var(--xh-primary);
+  background: var(--xh-primary-soft);
 }
 .p-change.up {
-  color: #f56c6c;
-  background: rgba(245, 108, 108, 0.1);
+  color: var(--xh-danger);
+  background: var(--el-color-danger-light-9);
 }
 .p-meta {
   display: flex;
@@ -608,8 +608,8 @@ const historyOption = computed(() => {
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 13px;
-  color: #606266;
+  font-size: var(--xh-fs-sm);
+  color: var(--xh-text-2);
   margin-top: 2px;
 }
 .prog {
@@ -641,9 +641,9 @@ const historyOption = computed(() => {
   margin-left: 6px;
 }
 .cur-price {
-  color: #f56c6c;
+  color: var(--xh-price);
   font-weight: 700;
-  font-size: 16px;
+  font-size: var(--xh-fs-lg);
 }
 .ml {
   margin-left: 8px;

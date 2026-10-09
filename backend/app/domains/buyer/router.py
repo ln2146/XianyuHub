@@ -317,6 +317,8 @@ async def list_results(
                 "seller_zhima": m.seller_zhima,
                 "publish_time": m.publish_time,
                 "tags": m.tags or [],
+                "images": m.images or [],
+                "desc": (m.desc or "")[:2000],
             },
         )
         for r, m in rows

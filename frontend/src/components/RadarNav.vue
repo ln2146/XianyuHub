@@ -1,7 +1,8 @@
 <script setup lang="ts">
+// 选品雷达页头：一行 = 标题 + 分段页签 + 右侧操作（说明文字收进提示图标）
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Aim, Bell, MagicStick, Search } from '@element-plus/icons-vue'
+import { Aim, Bell, InfoFilled, MagicStick, Search } from '@element-plus/icons-vue'
 
 const props = defineProps<{
   current: 'smart' | 'search' | 'watch'
@@ -10,179 +11,141 @@ const props = defineProps<{
 const router = useRouter()
 const route = useRoute()
 
-// 找货（智能搜索 / 实时搜货）+ 盯价（价格监控）
 const tabs = [
   { id: 'smart', label: '智能搜索', icon: MagicStick, path: '/radar/smart' },
   { id: 'search', label: '实时搜货', icon: Search, path: '/radar/search' },
   { id: 'watch', label: '价格监控', icon: Bell, path: '/radar/watch' },
 ] as const
 
-const subtitle = computed(() => {
-  switch (props.current) {
-    case 'smart':
-      return '按关键词定时搜索闲鱼，AI 帮你挑出低价好货；看中的商品可加入价格监控'
-    case 'search':
-      return '实时搜索闲鱼商品，即查即看；满意的搜索条件可一键转为智能搜索'
-    case 'watch':
-      return '盯住看中的单件商品：记录价格走势，到达目标价时提醒你，商品售出或下架自动停止'
-  }
-  return ''
-})
+const hint = computed(
+  () =>
+    ({
+      smart: '按关键词定时搜索闲鱼，AI 帮你挑出低价好货；看中的商品可加入价格监控',
+      search: '实时搜索闲鱼商品，即查即看；满意的搜索条件可一键转为智能搜索',
+      watch: '盯住看中的单件商品：记录价格走势，到达目标价时提醒你，商品售出或下架自动停止',
+    })[props.current],
+)
 
 function switchTab(path: string) {
-  if (route.path !== path) {
-    router.push(path)
-  }
+  if (route.path !== path) router.push(path)
 }
 </script>
 
 <template>
-  <div class="radar-nav-wrap">
-    <div class="radar-header">
-      <div class="header-left">
-        <div class="title-row">
-          <span class="hub-icon"><el-icon><Aim /></el-icon></span>
-          <h2 class="title">选品雷达</h2>
-        </div>
-        <div class="sub">{{ subtitle }}</div>
-      </div>
-      <div class="header-actions">
-        <slot name="actions" />
-      </div>
+  <div class="radar-nav">
+    <div class="title">
+      <el-icon class="title-icon"><Aim /></el-icon>
+      <h2>选品雷达</h2>
+      <el-tooltip :content="hint" placement="bottom-start">
+        <el-icon class="hint"><InfoFilled /></el-icon>
+      </el-tooltip>
     </div>
 
-    <!-- 顶部统一工作台导航选项卡 -->
-    <div class="radar-tabs">
+    <nav class="tabs" aria-label="选品雷达">
       <button
         v-for="t in tabs"
         :key="t.id"
         type="button"
-        class="tab-btn"
+        class="tab"
         :class="{ active: current === t.id }"
+        :aria-current="current === t.id ? 'page' : undefined"
         @click="switchTab(t.path)"
       >
-        <el-icon class="tab-icon"><component :is="t.icon" /></el-icon>
-        <span class="tab-label">{{ t.label }}</span>
+        <el-icon><component :is="t.icon" /></el-icon>
+        <span>{{ t.label }}</span>
       </button>
+    </nav>
+
+    <div class="actions">
+      <slot name="actions" />
     </div>
   </div>
 </template>
 
 <style scoped>
-.radar-nav-wrap {
+.radar-nav {
   display: flex;
-  flex-direction: column;
-  gap: 14px;
-  margin-bottom: 2px;
-}
-
-.radar-header {
-  display: flex;
+  align-items: center;
   flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: var(--xh-space-3) var(--xh-space-4);
 }
-
-.header-left {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.title-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.hub-icon {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(30, 158, 106, 0.12);
-  color: var(--xh-primary, #1e9e6a);
-  font-size: 17px;
-}
-
 .title {
-  margin: 0;
-  font-size: 19px;
-  font-weight: 700;
-  color: var(--xh-text, #1f2329);
-  letter-spacing: 0.2px;
-}
-
-.sub {
-  color: var(--xh-muted, #8a919f);
-  font-size: 13px;
-  line-height: 1.4;
-}
-
-.header-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
+  gap: var(--xh-space-2);
 }
-
-/* 工作台选项卡 */
-.radar-tabs {
+.title h2 {
+  margin: 0;
+  font-size: var(--xh-fs-xl);
+  font-weight: 600;
+  color: var(--xh-text);
+}
+.title-icon {
+  font-size: var(--xh-fs-xl);
+  color: var(--xh-primary);
+}
+.hint {
+  font-size: var(--xh-fs-md);
+  color: var(--xh-disabled);
+  cursor: help;
+}
+.hint:hover {
+  color: var(--xh-muted);
+}
+.tabs {
   display: inline-flex;
-  align-items: center;
-  background: #eef2f0;
+  gap: 2px;
   padding: 3px;
-  border-radius: 10px;
-  gap: 3px;
-  align-self: flex-start;
-  user-select: none;
+  border-radius: var(--xh-radius-md);
+  background: var(--xh-fill-strong);
 }
-
-.tab-btn {
+.tab {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 16px;
-  border-radius: 7px;
+  height: 30px;
+  padding: 0 var(--xh-space-3);
   border: none;
+  border-radius: 8px;
   background: transparent;
-  color: #4b5563;
-  font-size: 13.5px;
+  color: var(--xh-text-2);
+  font-size: var(--xh-fs-sm);
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.18s ease;
-  line-height: 20px;
+  transition:
+    background 0.15s,
+    color 0.15s;
 }
-
-.tab-btn:hover {
-  color: #111827;
-  background: rgba(255, 255, 255, 0.6);
+.tab:hover {
+  color: var(--xh-text);
 }
-
-.tab-btn.active {
-  background: #ffffff;
-  color: var(--xh-primary, #1e9e6a);
+.tab.active {
+  background: var(--xh-card);
+  color: var(--xh-primary);
   font-weight: 600;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  box-shadow: var(--xh-shadow-1);
 }
-
-.tab-icon {
-  font-size: 15px;
+.tab:focus-visible {
+  outline: 2px solid var(--xh-primary);
+  outline-offset: 1px;
 }
-
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--xh-space-2);
+  margin-left: auto;
+}
+.actions :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
 @media (max-width: 768px) {
-  .radar-tabs {
+  .tabs {
+    order: 3;
     width: 100%;
-    justify-content: space-between;
   }
-  .tab-btn {
+  .tab {
     flex: 1;
     justify-content: center;
-    padding: 6px 8px;
-    font-size: 12.5px;
   }
 }
 </style>
