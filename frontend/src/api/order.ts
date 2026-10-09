@@ -133,3 +133,69 @@ export const listBlacklist = () => http.get<BlacklistEntry[]>('/orders-blacklist
 export const addBlacklist = (buyer_id: string, reason: string) =>
   http.post<{ buyer_id: string }>('/orders-blacklist', { buyer_id, reason }).then((r) => r.data)
 export const removeBlacklist = (id: number) => http.delete(`/orders-blacklist/${id}`)
+
+// ---------------------------------------------------------------- 买家分析（该不该卖给他）
+export interface BuyerChatSignal {
+  key: string
+  label: string
+  count: number
+  evidence: string[]
+  advice: string
+}
+
+export interface BuyerAnalysis {
+  buyer_id: string
+  nick: string
+  avatar: string
+  profile_error: string
+  buyer_credit: string
+  seller_credit: string
+  item_cnt: number | null
+  rate_cnt: number | null
+  as_buyer: number
+  as_buyer_positive: number
+  as_buyer_negative: number
+  negative_hits: [string, number][]
+  positive_hits: [string, number][]
+  negative_reviews: { content: string; rate: number | null; created_at: string; hits: string[] }[]
+  chat_signals: BuyerChatSignal[]
+  bargain_rounds: number
+  history: {
+    orders: number
+    completed: number
+    refunded: number
+    closed: number
+    total_amount: number
+    blacklisted: boolean
+    blacklist_reason: string
+  }
+  score: number
+  level: string
+  verdict: 'sell' | 'caution' | 'decline'
+  highlights: string[]
+  risks: string[]
+  precautions: string[]
+  analyzed_at: string
+}
+
+export interface BuyerInsight {
+  verdict: 'sell' | 'caution' | 'decline'
+  summary: string
+  chat_assessment: string
+  risk_points: string[]
+  precautions: string[]
+  suggested_reply: string
+}
+
+export interface BuyerRiskTarget {
+  conv_id?: number
+  order_pk?: number
+  refresh?: boolean
+}
+
+export const buyerRiskAnalysis = (body: BuyerRiskTarget) =>
+  http.post<BuyerAnalysis>('/buyer-risk/analysis', body, { timeout: 120_000 }).then((r) => r.data)
+export const buyerRiskInsight = (body: BuyerRiskTarget) =>
+  http
+    .post<{ analysis: BuyerAnalysis; ai: BuyerInsight }>('/buyer-risk/insight', body, { timeout: 180_000 })
+    .then((r) => r.data)

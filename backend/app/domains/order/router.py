@@ -9,7 +9,10 @@ from app.core.crypto import get_vault
 from app.core.deps import CurrentUser, SessionDep
 from app.core.pagination import set_total
 from app.domains.account.service import accessible_account_ids, get_account_for
+from app.domains.buyer.pipeline import load_seller_profile
+from app.domains.message.models import ChatMessage, Conversation
 from app.domains.order import service
+from app.domains.order.buyer_risk import BuyerAnalysis, BuyerInsightOut, ShopHistory, analyze_buyer, buyer_insight
 from app.domains.order.models import (
     ORDER_STATE_LABELS,
     BuyerBlacklist,
@@ -22,6 +25,7 @@ from app.domains.order.models import (
 )
 from app.domains.system.audit import record_audit
 from app.goofish.errors import GoofishError
+from app.intelligence.llm import LLMError, LLMUnavailable, get_llm
 
 router = APIRouter(tags=["orders"])
 
@@ -399,3 +403,122 @@ async def remove_blacklist(entry_id: int, user: CurrentUser, session: SessionDep
     if row and row.owner_id == user.id:
         await session.delete(row)
         await session.commit()
+
+
+# ---------------------------------------------------------------- 买家分析（该不该卖给他）
+class BuyerRiskIn(BaseModel):
+    conv_id: int | None = None
+    order_pk: int | None = None
+    refresh: bool = False
+
+
+async def _buyer_context(session, user, body: BuyerRiskIn) -> tuple[int, str, Conversation | None]:  # noqa: ANN001
+    """按会话或订单定位买家：返回 (账号 ID, 买家 ID, 会话)。"""
+    conv = None
+    if body.conv_id is not None:
+        conv = await session.get(Conversation, body.conv_id)
+        if conv is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "会话不存在")
+        await get_account_for(session, user, conv.account_id)
+        account_id, buyer_id = conv.account_id, conv.peer_id
+    elif body.order_pk is not None:
+        order = await _own_order(session, user, body.order_pk)
+        account_id, buyer_id = order.account_id, order.buyer_id
+        if buyer_id:
+            conv = (
+                await session.execute(
+                    select(Conversation)
+                    .where(Conversation.account_id == account_id, Conversation.peer_id == buyer_id)
+                    .order_by(Conversation.last_message_at.desc().nulls_last())
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+    else:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "需要 conv_id 或 order_pk")
+    if not buyer_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "未获取到买家 ID")
+    return account_id, buyer_id, conv
+
+
+async def _shop_history(session, user, buyer_id: str) -> ShopHistory:  # noqa: ANN001
+    stmt = select(Order.status, func.count(), func.coalesce(func.sum(Order.amount), 0)).where(
+        Order.buyer_id == buyer_id
+    )
+    allowed = await accessible_account_ids(session, user)
+    if allowed is not None:
+        stmt = stmt.where(Order.account_id.in_(allowed))
+    h = ShopHistory()
+    for st, n, amount in await session.execute(stmt.group_by(Order.status)):
+        h.orders += n
+        if st == OrderState.COMPLETED:
+            h.completed += n
+            h.total_amount += float(amount or 0)
+        elif st in (OrderState.REFUNDING, OrderState.REFUNDED):
+            h.refunded += n
+        elif st == OrderState.CLOSED:
+            h.closed += n
+    black = (
+        await session.execute(
+            select(BuyerBlacklist).where(BuyerBlacklist.owner_id == user.id, BuyerBlacklist.buyer_id == buyer_id)
+        )
+    ).scalar_one_or_none()
+    if black is not None:
+        h.blacklisted, h.blacklist_reason = True, black.reason
+    return h
+
+
+async def _chat(session, conv: Conversation | None) -> list[dict[str, Any]]:  # noqa: ANN001
+    if conv is None:
+        return []
+    rows = await session.execute(
+        select(ChatMessage)
+        .where(ChatMessage.conversation_id == conv.id, ChatMessage.is_system.is_(False))
+        .order_by(ChatMessage.id.desc())
+        .limit(200)
+    )
+    return [{"direction": m.direction, "text": m.text or ""} for m in reversed(list(rows.scalars()))]
+
+
+async def _analyze(session, user, body: BuyerRiskIn) -> tuple[BuyerAnalysis, list[dict[str, Any]]]:  # noqa: ANN001
+    account_id, buyer_id, conv = await _buyer_context(session, user, body)
+    profile, error = None, ""
+    try:
+        profile = await load_seller_profile(buyer_id, account_id, refresh=body.refresh)
+    except GoofishError as e:  # 拉不到主页时仍基于聊天和本店记录给出结论
+        error = str(e)[:120]
+    chat = await _chat(session, conv)
+    analysis = analyze_buyer(
+        buyer_id,
+        profile,
+        messages=[m["text"] for m in chat if m["direction"] == "in" and m["text"]],
+        bargain_rounds=conv.bargain_rounds if conv else 0,
+        history=await _shop_history(session, user, buyer_id),
+        profile_error=error,
+    )
+    if conv is not None and not analysis.nick:
+        analysis.nick = conv.peer_name
+    return analysis, chat
+
+
+@router.post("/buyer-risk/analysis", response_model=BuyerAnalysis)
+async def buyer_risk_analysis(body: BuyerRiskIn, user: CurrentUser, session: SessionDep) -> BuyerAnalysis:
+    """规则分析：买家主页（缓存 24 小时）+ 当前聊天 + 本店交易记录。"""
+    analysis, _ = await _analyze(session, user, body)
+    return analysis
+
+
+class BuyerInsightResp(BaseModel):
+    analysis: BuyerAnalysis
+    ai: BuyerInsightOut
+
+
+@router.post("/buyer-risk/insight", response_model=BuyerInsightResp)
+async def buyer_risk_insight(body: BuyerRiskIn, user: CurrentUser, session: SessionDep) -> BuyerInsightResp:
+    analysis, chat = await _analyze(session, user, body)
+    try:
+        ai = await buyer_insight(get_llm(), analysis, chat)
+    except LLMUnavailable as e:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, f"大模型不可用：{e}") from e
+    except LLMError as e:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(e)) from e
+    return BuyerInsightResp(analysis=analysis, ai=ai)

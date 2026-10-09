@@ -145,20 +145,24 @@ DEALER_WORDS = (
 )
 
 
-_NEGATION = re.compile(r"(没|无|不|未|别|毫无)$")
+_NEGATION = re.compile(r"(没|无|不|未|别|毫无|不会|不要|不给|不会给|不想|绝不|从不)$")
 
 
-def negative_hits(text: str) -> list[str]:
-    """负面关键词命中；“没有问题”“无瑕疵”这类被否定的不算。"""
+def keyword_hits(text: str, words: tuple[str, ...]) -> list[str]:
+    """关键词命中；被否定的不算（“没有问题”“无瑕疵”“不会给差评”）。"""
     hits = []
-    for w in NEGATIVE_WORDS:
+    for w in words:
         start = text.find(w)
         while start != -1:
-            if not _NEGATION.search(text[max(0, start - 2) : start]):
+            if not _NEGATION.search(text[max(0, start - 3) : start]):
                 hits.append(w)
                 break
             start = text.find(w, start + 1)
     return hits
+
+
+def negative_hits(text: str) -> list[str]:
+    return keyword_hits(text, NEGATIVE_WORDS)
 
 
 def _rating_time(r: SellerRating) -> datetime | None:

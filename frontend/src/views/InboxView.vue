@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft, Cpu, Promotion, Refresh, Search } from '@element-plus/icons-vue'
+import { ArrowLeft, Cpu, Promotion, Refresh, Search, UserFilled } from '@element-plus/icons-vue'
 import {
   handleSuggestion,
   listConversations,
@@ -16,6 +16,7 @@ import {
   type ReplyPlan,
   type Suggestion,
 } from '@/api/message'
+import BuyerRiskPanel from '@/components/BuyerRiskPanel.vue'
 import JsonBlock from '@/components/JsonBlock.vue'
 import { useAccountsStore } from '@/stores/accounts'
 import { useRealtimeStore, type RealtimeEvent } from '@/stores/realtime'
@@ -123,6 +124,13 @@ function select(c: Conversation) {
 
 // ---------------------------------------------------------------- 发送
 const draft = ref('')
+
+// 买家分析：该不该卖给他（到手刀 / 仅退款 / 站外交易等风险）
+const buyerRiskOpen = ref(false)
+function useSuggestedReply(text: string) {
+  draft.value = text
+  buyerRiskOpen.value = false
+}
 const sending = ref(false)
 
 async function send() {
@@ -341,6 +349,7 @@ const showThread = computed(() => !isMobile.value || !!currentId.value)
               </div>
               <el-button size="small" type="primary" class="full" @click="applyTakeover(takeoverMinutes)">确定接管</el-button>
             </el-popover>
+            <el-button size="small" type="danger" plain :icon="UserFilled" @click="buyerRiskOpen = true">买家分析</el-button>
             <el-button size="small" :icon="Cpu" @click="openTrial">试运行</el-button>
           </div>
         </header>
@@ -426,6 +435,10 @@ const showThread = computed(() => !isMobile.value || !!currentId.value)
         </el-collapse>
       </template>
     </el-dialog>
+
+    <el-drawer v-model="buyerRiskOpen" :title="`买家分析 · ${current?.peer_name || '买家'}`" size="520px" destroy-on-close>
+      <BuyerRiskPanel v-if="current" :conv-id="current.id" @use-reply="useSuggestedReply" />
+    </el-drawer>
   </div>
 </template>
 

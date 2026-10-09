@@ -16,11 +16,18 @@ import {
   type Order,
   type PoolOut,
 } from '@/api/order'
+import BuyerRiskPanel from '@/components/BuyerRiskPanel.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import ListPager from '@/components/ListPager.vue'
 import { useAccountsStore } from '@/stores/accounts'
 import { useMobile } from '@/composables/useMobile'
 import { NEEDS_ACTION_STATUSES, fmtMoney, fmtTime, itemUrl, orderStatusMap } from '@/utils/format'
+
+// 买家分析：发货前看看这个买家靠不靠谱
+const buyerRisk = reactive({ open: false, order: null as Order | null })
+function openBuyerRisk(o: Order) {
+  Object.assign(buyerRisk, { open: true, order: o })
+}
 
 const route = useRoute()
 const router = useRouter()
@@ -361,6 +368,7 @@ async function openDetail(o: Order) {
             <template #default="{ row }">
               <div class="ops">
                 <el-button size="small" @click="openDetail(row as Order)">详情</el-button>
+                <el-button v-if="row.buyer_id" size="small" type="danger" plain @click="openBuyerRisk(row as Order)">买家</el-button>
                 <el-button v-if="needsLink(row as Order)" size="small" type="warning" plain @click="openQuickBind(row as Order)">
                   关联发货
                 </el-button>
@@ -522,6 +530,10 @@ async function openDetail(o: Order) {
         </div>
       </template>
     </el-dialog>
+
+    <el-drawer v-model="buyerRisk.open" :title="`买家分析 · ${buyerRisk.order?.buyer_nick || buyerRisk.order?.buyer_id || ''}`" size="520px" destroy-on-close>
+      <BuyerRiskPanel v-if="buyerRisk.order" :order-pk="buyerRisk.order.id" />
+    </el-drawer>
   </div>
 </template>
 
