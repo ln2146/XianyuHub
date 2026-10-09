@@ -114,7 +114,7 @@ function healthColor(h: number) {
                   <el-progress :percentage="row.health" :color="healthColor(row.health)" :stroke-width="8" />
                 </template>
               </el-table-column>
-              <el-table-column label="IM" width="80">
+              <el-table-column label="消息连接" width="90">
                 <template #default="{ row }">
                   <el-tag :type="row.im_connected ? 'success' : 'info'" size="small">{{ row.im_connected ? '在线' : '离线' }}</el-tag>
                 </template>
@@ -206,7 +206,7 @@ function healthColor(h: number) {
         <el-card shadow="never" class="block">
           <template #header><span>系统</span></template>
           <el-descriptions :column="1" size="small" border>
-            <el-descriptions-item label="IM 网关">
+            <el-descriptions-item label="消息服务">
               <el-tag :type="data?.system.im_running ? 'success' : 'info'" size="small">{{ data?.system.im_running ? '运行中' : '未运行' }}</el-tag>
             </el-descriptions-item>
             <el-descriptions-item label="选品任务">{{ data?.monitor_tasks ?? 0 }} 个</el-descriptions-item>

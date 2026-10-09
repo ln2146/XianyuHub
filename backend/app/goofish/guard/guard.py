@@ -126,7 +126,7 @@ class RiskGuard:
         if rt.state in (AccountState.CIRCUIT_OPEN, AccountState.COOLDOWN):
             if rt.state == AccountState.CIRCUIT_OPEN or now < rt.cooldown_until:
                 raise RiskBlockedError(
-                    "账号处于风控熔断 / 冷却中",
+                    "账号被平台限制或处于暂停保护期，暂不执行操作",
                     state=rt.state,
                     retry_after=max(0.0, rt.cooldown_until - now),
                 )

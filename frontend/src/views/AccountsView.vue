@@ -73,8 +73,8 @@ async function withBusy(key: string, fn: () => Promise<void>) {
 function probe(a: Account) {
   return withBusy(`probe-${a.id}`, async () => {
     const r = await probeAccount(a.id)
-    if (r.ok) ElMessage.success('探活成功，登录态有效')
-    else ElMessage.warning(`探活失败，当前状态：${accountStatusMap[r.status]?.label || r.status}`)
+    if (r.ok) ElMessage.success('登录状态正常')
+    else ElMessage.warning(`登录检查未通过，当前状态：${accountStatusMap[r.status]?.label || r.status}`)
     await load()
   })
 }
@@ -82,7 +82,7 @@ function probe(a: Account) {
 async function resolve(a: Account) {
   await ElMessageBox.confirm(
     '请确认已在闲鱼 App / 网页完成滑块、短信或人脸等验证。确认后账号将恢复为正常状态，自动化任务会重新开始执行。',
-    '标记风控已处理',
+    '标记已完成验证',
     { type: 'warning', confirmButtonText: '我已处理' },
   )
   await withBusy(`resolve-${a.id}`, async () => {
@@ -404,7 +404,7 @@ onBeforeUnmount(stopQrPoll)
     <div class="page-head">
       <div>
         <h2>账号中心</h2>
-        <div class="sub">管理闲鱼账号的登录态、风控状态与自动化开关。所有自动化默认关闭，需在「设置」中逐项开启。</div>
+        <div class="sub">管理闲鱼账号的登录状态、是否被平台限制以及各项自动化开关。所有自动化默认关闭，需在「设置」中逐项开启。</div>
       </div>
       <div class="toolbar">
         <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
@@ -413,7 +413,7 @@ onBeforeUnmount(stopQrPoll)
       </div>
     </div>
 
-    <el-alert v-if="!im.running" type="info" show-icon :closable="false" title="IM 网关未运行：收发消息、自动回复和自动发货暂不可用（检查后端 worker 配置）。" />
+    <el-alert v-if="!im.running" type="info" show-icon :closable="false" title="消息服务未运行：收发消息、自动回复和自动发货暂不可用（请检查后端 worker 配置）。" />
 
     <el-card shadow="never">
       <div class="table-wrap">
@@ -425,7 +425,7 @@ onBeforeUnmount(stopQrPoll)
                 <div class="acc-info">
                   <div class="acc-name">{{ row.nickname || row.unb }}</div>
                   <div class="muted small">
-                    {{ row.remark || 'UNB ' + row.unb }}
+                    {{ row.remark || '账号 ID ' + row.unb }}
                     <el-tag v-if="row.has_proxy" size="small" effect="plain" class="ml">代理</el-tag>
                   </div>
                 </div>
@@ -441,10 +441,12 @@ onBeforeUnmount(stopQrPoll)
           <el-table-column label="健康度" width="150">
             <template #default="{ row }">
               <el-progress :percentage="row.health_score" :color="healthColor(row.health_score)" :stroke-width="8" />
-              <div v-if="row.strikes" class="muted small">风控计数 {{ row.strikes }}</div>
+              <el-tooltip v-if="row.strikes" content="触发平台限制的累计次数，次数越多，每次暂停保护的时间越长" placement="top">
+                <div class="muted small">异常次数 {{ row.strikes }}</div>
+              </el-tooltip>
             </template>
           </el-table-column>
-          <el-table-column label="IM" width="80">
+          <el-table-column label="消息连接" width="90">
             <template #default="{ row }">
               <el-tag :type="imConnected(row.id) ? 'success' : 'info'" size="small">{{ imConnected(row.id) ? '在线' : '离线' }}</el-tag>
             </template>
@@ -458,7 +460,7 @@ onBeforeUnmount(stopQrPoll)
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="最近探活 / 错误" min-width="180">
+          <el-table-column label="最近检查 / 错误" min-width="180">
             <template #default="{ row }">
               <div class="small">{{ fmtTime(row.last_probe_at) }}</div>
               <el-tooltip v-if="row.last_error" :content="row.last_error" placement="top">
@@ -471,14 +473,16 @@ onBeforeUnmount(stopQrPoll)
             <template #default="{ row }">
               <div class="ops">
                 <el-button size="small" type="primary" plain @click="openSettings(row as Account)">设置</el-button>
-                <el-button size="small" :loading="busy[`probe-${row.id}`]" @click="probe(row as Account)">探活</el-button>
+                <el-tooltip content="用一次只读请求确认账号仍处于登录状态" placement="top">
+                  <el-button size="small" :loading="busy[`probe-${row.id}`]" @click="probe(row as Account)">检查登录</el-button>
+                </el-tooltip>
                 <el-button
                   v-if="row.status === 'circuit_open' || row.status === 'cooldown'"
                   size="small"
                   type="warning"
                   :loading="busy[`resolve-${row.id}`]"
                   @click="resolve(row as Account)"
-                >已处理风控</el-button>
+                >我已完成验证</el-button>
                 <el-dropdown trigger="click">
                   <el-button size="small">更多</el-button>
                   <template #dropdown>
@@ -536,7 +540,7 @@ onBeforeUnmount(stopQrPoll)
           <el-input v-model="cookie.proxy" placeholder="http://user:pass@host:port" />
         </el-form-item>
         <el-form-item>
-          <el-checkbox v-model="cookie.verify">导入前校验登录态（推荐）</el-checkbox>
+          <el-checkbox v-model="cookie.verify">导入前检查登录状态（推荐）</el-checkbox>
         </el-form-item>
       </el-form>
       <template #footer>

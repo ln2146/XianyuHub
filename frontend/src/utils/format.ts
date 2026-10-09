@@ -31,8 +31,8 @@ export function fmtMoney(v: number | null | undefined): string {
 
 export const accountStatusMap: Record<string, { label: string; type: TagType }> = {
   active: { label: '正常', type: 'success' },
-  cooldown: { label: '冷却中', type: 'warning' },
-  circuit_open: { label: '风控熔断', type: 'danger' },
+  cooldown: { label: '暂停保护中', type: 'warning' },
+  circuit_open: { label: '被平台限制', type: 'danger' },
   need_login: { label: '需重新登录', type: 'info' },
   disabled: { label: '已停用', type: 'info' },
 }
