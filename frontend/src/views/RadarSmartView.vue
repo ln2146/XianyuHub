@@ -312,9 +312,39 @@ function toCard(r: ResultOut): CardItem {
   }
 }
 
+// ---------------------------------------------------------------- 对比：同款多个候选并排看
+const COMPARE_MAX = 4
+const compare = ref<ResultOut[]>([])
+const compareOpen = ref(false)
+const inCompare = (r: ResultOut) => compare.value.some((x) => x.id === r.id)
+function toggleCompare(r: ResultOut) {
+  if (inCompare(r)) compare.value = compare.value.filter((x) => x.id !== r.id)
+  else if (compare.value.length >= COMPARE_MAX) ElMessage.warning(`最多同时对比 ${COMPARE_MAX} 件`)
+  else compare.value = [...compare.value, r]
+}
+const compareRows: { label: string; value: (r: ResultOut) => string }[] = [
+  { label: '价格', value: (r) => fmtMoney(r.item.price) },
+  { label: '性价比', value: (r) => (r.deal_label && r.deal_label !== '样本不足' ? r.deal_label : '—') },
+  {
+    label: 'AI 判定',
+    value: (r) =>
+      r.verdict
+        ? `${verdictMap[r.verdict]?.label || r.verdict}${r.confidence !== null ? ` · ${Math.round(r.confidence * 100)}%` : ''}`
+        : '已筛除',
+  },
+  { label: '理由', value: (r) => r.reason || r.filter_reasons.join('；') || '—' },
+  { label: '风险', value: (r) => r.risk_tags.join('、') || '—' },
+  { label: '需确认', value: (r) => r.need_confirm.join('；') || '—' },
+  { label: '地区', value: (r) => r.item.area || '—' },
+  { label: '卖家', value: (r) => [r.item.seller_nick, r.item.seller_zhima].filter(Boolean).join(' · ') || '—' },
+  { label: '想要', value: (r) => (r.item.want_cnt ? `${r.item.want_cnt} 人` : '—') },
+  { label: '发现时间', value: (r) => fmtRelative(r.created_at) },
+]
+
 function cardMenu(r: ResultOut): CardMenuItem[] {
   return [
-    { key: 'seen', label: r.mark === 'seen' ? '取消「已看」' : '标记为已看' },
+    { key: 'compare', label: inCompare(r) ? '移出对比' : '加入对比' },
+    { key: 'seen', label: r.mark === 'seen' ? '取消「已看」' : '标记为已看', divided: true },
     { key: 'bought', label: r.mark === 'bought' ? '取消「已买」' : '标记为已买' },
     { key: 'ignored', label: '不感兴趣' },
     { key: 'history', label: '价格走势', divided: true },
@@ -325,7 +355,8 @@ function cardMenu(r: ResultOut): CardMenuItem[] {
 }
 
 function onCardAction(r: ResultOut, key: string) {
-  if (key === 'seen' || key === 'bought' || key === 'ignored') mark(r, key)
+  if (key === 'compare') toggleCompare(r)
+  else if (key === 'seen' || key === 'bought' || key === 'ignored') mark(r, key)
   else if (key === 'history') openHistory(r)
   else if (key === 'watch') watchPrice(r)
   else if (key === 'resell') quickResell(r)
@@ -566,6 +597,32 @@ onBeforeUnmount(stopTimer)
         />
       </section>
     </div>
+
+    <!-- 对比栏 -->
+    <div v-if="compare.length" class="compare-bar">
+      <span>已选 <b>{{ compare.length }}</b> / {{ COMPARE_MAX }} 件</span>
+      <el-image v-for="r in compare" :key="r.id" :src="r.item.image_url" fit="cover" class="compare-thumb" referrerpolicy="no-referrer" />
+      <el-button type="primary" size="small" :disabled="compare.length < 2" @click="compareOpen = true">开始对比</el-button>
+      <el-button size="small" link @click="compare = []">清空</el-button>
+    </div>
+
+    <el-dialog v-model="compareOpen" title="对比" width="min(1080px, 96vw)" top="5vh">
+      <div class="compare-table" :style="{ gridTemplateColumns: `88px repeat(${compare.length}, minmax(180px, 1fr))` }">
+        <div class="ct-label" />
+        <div v-for="r in compare" :key="`h${r.id}`" class="ct-head">
+          <el-image :src="r.item.image_url" fit="cover" class="ct-img" referrerpolicy="no-referrer" />
+          <a :href="itemLink(r)" target="_blank" rel="noopener" class="ct-title">{{ r.item.title }}</a>
+          <div class="ct-ops">
+            <el-button size="small" link type="primary" @click="compareOpen = false; openDetail(r)">详情</el-button>
+            <el-button size="small" link @click="toggleCompare(r)">移除</el-button>
+          </div>
+        </div>
+        <template v-for="row in compareRows" :key="row.label">
+          <div class="ct-label">{{ row.label }}</div>
+          <div v-for="r in compare" :key="`${row.label}${r.id}`" class="ct-cell" :class="{ price: row.label === '价格' }">{{ row.value(r) }}</div>
+        </template>
+      </div>
+    </el-dialog>
 
     <SmartTaskDialog v-model="dialog.open" :task="dialog.task" :preset="dialog.preset" :nl="dialog.nl" @saved="onSaved" />
 
@@ -904,6 +961,77 @@ onBeforeUnmount(stopTimer)
   margin-left: 0;
 }
 
+/* 对比 */
+.compare-bar {
+  position: sticky;
+  bottom: var(--xh-space-3);
+  z-index: 10;
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: var(--xh-space-2);
+  padding: var(--xh-space-2) var(--xh-space-4);
+  background: var(--xh-card);
+  border: 1px solid var(--xh-primary-border);
+  border-radius: var(--xh-radius-pill);
+  box-shadow: var(--xh-shadow-2);
+  font-size: var(--xh-fs-sm);
+}
+.compare-thumb {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--xh-radius-sm);
+}
+.compare-table {
+  display: grid;
+  border-top: 1px solid var(--xh-border);
+  font-size: var(--xh-fs-sm);
+}
+.compare-table > div {
+  padding: var(--xh-space-2);
+  border-bottom: 1px solid var(--xh-border);
+}
+.ct-label {
+  color: var(--xh-muted);
+  font-size: var(--xh-fs-xs);
+}
+.ct-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ct-img {
+  width: 120px;
+  height: 120px;
+  border-radius: var(--xh-radius-sm);
+  background: var(--xh-fill);
+}
+.ct-title {
+  color: var(--xh-text);
+  font-weight: 500;
+  line-height: 1.4;
+  text-decoration: none;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.ct-title:hover {
+  color: var(--xh-primary);
+}
+.ct-ops .el-button + .el-button {
+  margin-left: var(--xh-space-2);
+}
+.ct-cell {
+  line-height: 1.6;
+  color: var(--xh-text-2);
+}
+.ct-cell.price {
+  color: var(--xh-price);
+  font-weight: 700;
+  font-size: var(--xh-fs-lg);
+}
 @media (max-width: 900px) {
   .layout {
     grid-template-columns: 1fr;
