@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  :root { --fg:#1f2937; --muted:#6b7280; --bg:#fff; --border:#e5e7eb; --accent:#0ea5e9; --ok:#16a34a; --bad:#dc2626; }
+  @media (prefers-color-scheme: dark) { :root { --fg:#e5e7eb; --muted:#9ca3af; --bg:#111827; --border:#374151; } }
+  body { width: 320px; margin: 0; padding: 14px; font: 13px/1.5 -apple-system, "PingFang SC", sans-serif; color: var(--fg); background: var(--bg); }
+  h1 { font-size: 15px; margin: 0 0 8px; }
+  .status { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 10px; }
+  .ok { color: var(--ok); } .bad { color: var(--bad); }
+  label { display: block; color: var(--muted); margin: 8px 0 2px; }
+  input { width: 100%; box-sizing: border-box; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: transparent; color: var(--fg); }
+  button { width: 100%; margin-top: 8px; padding: 8px; border: 0; border-radius: 6px; background: var(--accent); color: #fff; cursor: pointer; font-size: 13px; }
+  button.secondary { background: transparent; color: var(--fg); border: 1px solid var(--border); }
+  .hint { color: var(--muted); font-size: 12px; margin-top: 10px; }
+  #msg { margin-top: 8px; min-height: 18px; }
+</style>
+</head>
+<body>
+  <h1>🐟 鱼塘管家 · 登录态助手</h1>
+  <div class="status" id="status">检测中…</div>
+  <button id="copy" class="secondary">复制登录态（JSON）</button>
+  <label for="server">鱼塘管家地址</label>
+  <input id="server" placeholder="http://127.0.0.1:8080">
+  <label for="token">API 令牌（管理台 → 系统 → 生成令牌）</label>
+  <input id="token" type="password" placeholder="粘贴 API 令牌">
+  <button id="send">发送到鱼塘管家</button>
+  <div id="msg"></div>
+  <p class="hint">请先在本浏览器打开 goofish.com 并登录。登录态等同账号密码，只发送到你自己的服务器，切勿分享给他人。</p>
+  <script src="popup.js"></script>
+</body>
+</html>
