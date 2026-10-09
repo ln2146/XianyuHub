@@ -14,6 +14,7 @@ import {
   Operation,
   Setting,
   Tickets,
+  Tools,
   Upload,
   User,
 } from '@element-plus/icons-vue'
@@ -31,7 +32,7 @@ const activeMenu = computed(() => {
     class="side-menu"
     :default-active="activeMenu"
     :collapse="collapsed"
-    :default-openeds="['messages', 'goods', 'orders']"
+    :default-openeds="['messages', 'goods', 'orders', 'settings']"
     router
   >
     <!-- 核心业务区 -->
@@ -94,29 +95,31 @@ const activeMenu = computed(() => {
       </el-menu-item>
     </el-sub-menu>
 
-    <!-- 分隔线与配置/系统管理区域 -->
+    <!-- 分隔线与系统配置 -->
     <div class="menu-divider" />
-    <div v-if="!collapsed" class="menu-group-title">配置与系统</div>
 
-    <el-menu-item index="/accounts">
-      <el-icon class="menu-icon-primary"><User /></el-icon>
-      <template #title><span>账号配置</span></template>
-    </el-menu-item>
-
-    <el-menu-item index="/llm">
-      <el-icon class="menu-icon-primary"><MagicStick /></el-icon>
-      <template #title><span>模型配置</span></template>
-    </el-menu-item>
-
-    <el-menu-item index="/notify">
-      <el-icon class="menu-icon-primary"><Bell /></el-icon>
-      <template #title><span>通知设置</span></template>
-    </el-menu-item>
-
-    <el-menu-item index="/system">
-      <el-icon class="menu-icon-primary"><Setting /></el-icon>
-      <template #title><span>系统设置</span></template>
-    </el-menu-item>
+    <el-sub-menu index="settings">
+      <template #title>
+        <el-icon class="menu-icon-primary"><Setting /></el-icon>
+        <span>系统配置</span>
+      </template>
+      <el-menu-item index="/accounts">
+        <el-icon class="sub-icon"><User /></el-icon>
+        <template #title><span>账号配置</span></template>
+      </el-menu-item>
+      <el-menu-item index="/llm">
+        <el-icon class="sub-icon"><MagicStick /></el-icon>
+        <template #title><span>模型配置</span></template>
+      </el-menu-item>
+      <el-menu-item index="/notify">
+        <el-icon class="sub-icon"><Bell /></el-icon>
+        <template #title><span>通知设置</span></template>
+      </el-menu-item>
+      <el-menu-item index="/system">
+        <el-icon class="sub-icon"><Tools /></el-icon>
+        <template #title><span>系统设置</span></template>
+      </el-menu-item>
+    </el-sub-menu>
   </el-menu>
 </template>
 
@@ -215,14 +218,6 @@ const activeMenu = computed(() => {
   height: 1px;
   background: #f0f2f5;
   margin: 12px 16px 8px;
-}
-
-.menu-group-title {
-  padding: 6px 18px 4px;
-  font-size: 11px;
-  font-weight: 600;
-  color: #9ca3af;
-  letter-spacing: 0.5px;
 }
 
 /* 折叠状态调整 */
