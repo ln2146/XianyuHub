@@ -1,15 +1,20 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete, Plus, Refresh, Search } from '@element-plus/icons-vue'
 import { getMarket, listItems, offlineItem, polishItem, syncItems, updateItem, type MarketView, type MyItem } from '@/api/goods'
+import { listBindings, listPools, type BindingOut, type PoolOut } from '@/api/order'
 import MarketPanel from '@/components/MarketPanel.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import { useAccountsStore } from '@/stores/accounts'
+import { useAuthStore } from '@/stores/auth'
 import { useMobile } from '@/composables/useMobile'
 import { fmtMoney, fmtRelative, fmtTime, goodsStatusMap, itemUrl } from '@/utils/format'
 
+const router = useRouter()
 const accounts = useAccountsStore()
+const auth = useAuthStore()
 const isMobile = useMobile()
 const items = ref<MyItem[]>([])
 const loading = ref(false)
@@ -32,8 +37,42 @@ async function load() {
 
 onMounted(async () => {
   load()
+  loadDelivery()
   await accounts.load().catch(() => undefined)
 })
+
+// ---------------------------------------------------------------- 自动发货关联
+const bindings = ref<BindingOut[]>([])
+const pools = ref<PoolOut[]>([])
+
+async function loadDelivery() {
+  try {
+    ;[bindings.value, pools.value] = await Promise.all([listBindings(), listPools()])
+  } catch {
+    /* 仅用于展示，失败不影响商品列表 */
+  }
+}
+
+const poolNameById = computed(() => new Map(pools.value.map((p) => [p.id, p.name])))
+const bindingsByItem = computed(() => {
+  const m = new Map<string, BindingOut[]>()
+  for (const b of bindings.value) m.set(b.item_id, [...(m.get(b.item_id) || []), b])
+  return m
+})
+
+/** 商品的自动发货状态；null 表示无法判断（非本人账号，关联属于账号所有者） */
+function deliveryOf(it: MyItem): { names: string[] } | null {
+  const acc = accounts.list.find((a) => a.id === it.account_id)
+  if (acc && acc.owner_id !== auth.user?.id) return null
+  const matched = (bindingsByItem.value.get(it.item_id) || []).filter(
+    (b) => b.account_id === null || b.account_id === it.account_id,
+  )
+  return { names: [...new Set(matched.map((b) => poolNameById.value.get(b.pool_id) || `#${b.pool_id}`))] }
+}
+
+function goDelivery(it: MyItem) {
+  router.push({ path: '/orders/cards', query: { tab: 'bindings', item_id: it.item_id } })
+}
 
 async function sync() {
   if (!filter.account_id) {
@@ -238,6 +277,20 @@ async function queryMarket() {
               <span v-else class="muted small">未填写</span>
             </template>
           </el-table-column>
+          <el-table-column label="自动发货" min-width="130">
+            <template #default="{ row }">
+              <template v-if="deliveryOf(row as MyItem)">
+                <el-tooltip v-if="deliveryOf(row as MyItem)!.names.length" content="点击修改发货内容" placement="top">
+                  <el-tag size="small" type="success" effect="plain" class="clickable ellipsis-tag" @click="goDelivery(row as MyItem)">
+                    {{ deliveryOf(row as MyItem)!.names.join('、') }}
+                  </el-tag>
+                </el-tooltip>
+                <el-button v-else-if="row.is_virtual" size="small" type="warning" plain @click="goDelivery(row as MyItem)">去设置</el-button>
+                <el-button v-else size="small" link type="primary" @click="goDelivery(row as MyItem)">设置</el-button>
+              </template>
+              <span v-else class="muted small">-</span>
+            </template>
+          </el-table-column>
           <el-table-column label="同步 / 擦亮" width="140">
             <template #default="{ row }">
               <div class="small">{{ fmtRelative(row.synced_at) || '-' }}</div>
@@ -326,6 +379,17 @@ async function queryMarket() {
 <style scoped>
 .filters :deep(.el-card__body) {
   padding: 12px;
+}
+.clickable {
+  cursor: pointer;
+}
+.ellipsis-tag {
+  max-width: 100%;
+}
+.ellipsis-tag :deep(.el-tag__content) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .w120 {
   width: 120px;
