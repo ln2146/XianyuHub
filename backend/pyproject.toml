@@ -28,6 +28,9 @@ dependencies = [
 
 [project.optional-dependencies]
 browser = ["playwright>=1.45"]
+mcp = [
+    "mcp>=1.2",
+]
 
 [dependency-groups]
 dev = [

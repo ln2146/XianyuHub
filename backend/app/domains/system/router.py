@@ -8,6 +8,7 @@ from sqlalchemy import select
 from app.core.deps import AdminUser, CurrentUser, SessionDep
 from app.core.security import create_access_token, hash_password, verify_password
 from app.domains.system import service
+from app.domains.system.audit import record_audit
 from app.domains.system.models import AuditLog, Role, User
 
 router = APIRouter(tags=["system"])
@@ -89,6 +90,21 @@ async def change_password(body: PasswordChange, user: CurrentUser, session: Sess
     assert db_user is not None
     db_user.password_hash = hash_password(body.new_password)
     await session.commit()
+
+
+class ApiTokenIn(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+    days: int = Field(default=90, ge=1, le=365)
+
+
+@router.post("/auth/api-token")
+async def create_api_token(body: ApiTokenIn, user: CurrentUser) -> dict[str, Any]:
+    """为 MCP Server / 脚本生成长期令牌（与当前用户同权限）。令牌只显示一次，请妥善保存。"""
+    token = create_access_token(user.id, user.role, expires_minutes=body.days * 24 * 60)
+    await record_audit(
+        "auth.api_token", user_id=user.id, actor_type="human", detail={"name": body.name, "days": body.days}
+    )
+    return {"token": token, "expires_in_days": body.days}
 
 
 @router.get("/users", response_model=list[UserOut])
