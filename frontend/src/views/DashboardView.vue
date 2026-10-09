@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRealtimeStore } from '@/stores/realtime'
 import { useRouter } from 'vue-router'
 import {
+  Aim,
   Box,
   ChatDotRound,
   CircleCheck,
@@ -16,6 +17,7 @@ import {
   Right,
   Search,
   Setting,
+  Timer,
   Tools,
   User,
   UserFilled,
@@ -186,6 +188,42 @@ function healthColor(h: number) {
   if (h >= 80) return '#10b981'
   if (h >= 50) return '#f59e0b'
   return '#ef4444'
+}
+
+interface JobMeta {
+  title: string
+  desc: string
+  category: string
+  tagType: 'success' | 'warning' | 'primary' | 'info'
+}
+
+const jobMetaMap: Record<string, JobMeta> = {
+  'goods.publish_due': { title: '待发商品定时发布', desc: '按时自动发布已排期商品', category: '商品', tagType: 'primary' },
+  'order.sync': { title: '订单数据实时同步', desc: '持续同步付款/退款状态', category: '订单', tagType: 'success' },
+  'order.retry_failed': { title: '失败发货自动重试', desc: '异常订单自动重试卡密下发', category: '发货', tagType: 'warning' },
+  'buyer.price_watch': { title: '关注商品降价监控', desc: '全天候轮询降价与到价预警', category: '监控', tagType: 'primary' },
+  'account.keepalive': { title: '闲鱼账号心跳保活', desc: '保持闲鱼登录 Session 存活', category: '账号', tagType: 'info' },
+  'goods.polish_all': { title: '全量商品每日擦亮', desc: '自动批量擦亮提升宝贝曝光', category: '商品', tagType: 'primary' },
+}
+
+function getJobMeta(id: string): JobMeta {
+  return jobMetaMap[id] || {
+    title: id,
+    desc: '系统常规后台调度任务',
+    category: '调度',
+    tagType: 'info',
+  }
+}
+
+function fmtJobNextRun(v: string | null | undefined): string {
+  if (!v) return '就绪中'
+  const d = new Date(v)
+  if (Number.isNaN(d.getTime())) return v
+  const p = (n: number) => String(n).padStart(2, '0')
+  const now = new Date()
+  const isToday = d.toDateString() === now.toDateString()
+  const timeStr = `${p(d.getHours())}:${p(d.getMinutes())}`
+  return isToday ? `今日 ${timeStr}` : `${p(d.getMonth() + 1)}-${p(d.getDate())} ${timeStr}`
 }
 </script>
 
@@ -709,16 +747,19 @@ function healthColor(h: number) {
             <div class="panel-box llm-panel">
               <div class="panel-header">
                 <div class="title-with-subtitle">
-                  <span class="panel-title">AI 大模型服务引擎</span>
+                  <div class="title-row-compact">
+                    <span class="panel-title">AI 大模型服务引擎</span>
+                    <span v-if="llm" class="status-indicator-tag" :class="llm.available ? 'success' : 'danger'">
+                      <span :class="llm.available ? 'pulse-dot-green' : 'pulse-dot-red'" />
+                      {{ llm.available ? '引擎正常' : '连接异常' }}
+                    </span>
+                  </div>
                   <span class="panel-desc">驱动买家意图接待、自动发货决策与商品真伪鉴定</span>
                 </div>
                 <div class="panel-action-group">
-                  <el-tag v-if="llm" :type="llm.available ? 'success' : 'danger'" size="small" effect="light">
-                    {{ llm.available ? '🟢 引擎连接正常' : '🔴 连接异常' }}
-                  </el-tag>
                   <button type="button" class="mini-capsule-btn primary" @click="router.push('/llm')">
                     <el-icon><Setting /></el-icon>
-                    <span>模型配置中心</span>
+                    <span>模型配置</span>
                     <el-icon class="arrow-ico"><Right /></el-icon>
                   </button>
                 </div>
@@ -778,53 +819,85 @@ function healthColor(h: number) {
             <div class="panel-box system-panel">
               <div class="panel-header">
                 <div class="title-with-subtitle">
-                  <span class="panel-title">系统后台常驻进程与调度</span>
-                  <span class="panel-desc">WebSocket 实时推送通道与定时巡检队列</span>
+                  <div class="title-row-compact">
+                    <span class="panel-title">后台服务与调度</span>
+                    <span class="status-indicator-tag success">
+                      <span class="pulse-dot-green" />
+                      常驻正常
+                    </span>
+                  </div>
+                  <span class="panel-desc">WebSocket 实时推送通道与定时巡检任务队列</span>
                 </div>
                 <div class="panel-action-group">
                   <button type="button" class="mini-capsule-btn primary" @click="router.push('/system')">
                     <el-icon><Tools /></el-icon>
-                    <span>系统调度设置</span>
+                    <span>调度设置</span>
                     <el-icon class="arrow-ico"><Right /></el-icon>
                   </button>
                 </div>
               </div>
 
               <div class="panel-body">
-                <div class="service-pulse-row">
-                  <div class="pulse-card">
-                    <div class="pulse-icon">📡</div>
-                    <div>
-                      <div class="pulse-name">IM 消息实时长连接守护</div>
-                      <div class="pulse-sub">实时监听买家咨询并触发秒级自动回复</div>
+                <!-- 核心长连接与扫描守护卡片 (双列平铺) -->
+                <div class="daemon-cards-grid">
+                  <div class="daemon-card" :class="{ active: data?.system.im_running }">
+                    <div class="daemon-icon-wrap im-theme">
+                      <el-icon :size="18"><ChatDotRound /></el-icon>
                     </div>
-                    <el-tag :type="data?.system.im_running ? 'success' : 'info'" size="small" effect="dark" class="ml-auto">
-                      {{ data?.system.im_running ? '运行中' : '未启动' }}
-                    </el-tag>
+                    <div class="daemon-info">
+                      <div class="daemon-title-row">
+                        <span class="daemon-name">IM 消息长连接</span>
+                        <span class="daemon-status-pill" :class="data?.system.im_running ? 'running' : 'stopped'">
+                          <span class="dot" />
+                          {{ data?.system.im_running ? '监听中' : '未启动' }}
+                        </span>
+                      </div>
+                      <div class="daemon-desc">买家即时沟通与秒级自动回复</div>
+                    </div>
                   </div>
 
-                  <div class="pulse-card">
-                    <div class="pulse-icon">🎯</div>
-                    <div>
-                      <div class="pulse-name">选品监控定时扫描引擎</div>
-                      <div class="pulse-sub">全天候异步巡检闲鱼新上架好货</div>
+                  <div class="daemon-card active">
+                    <div class="daemon-icon-wrap radar-theme">
+                      <el-icon :size="18"><Aim /></el-icon>
                     </div>
-                    <el-tag size="small" type="primary" effect="plain" class="ml-auto">
-                      {{ data?.monitor_tasks ?? 0 }} 个任务生效
-                    </el-tag>
+                    <div class="daemon-info">
+                      <div class="daemon-title-row">
+                        <span class="daemon-name">选品监控定时引擎</span>
+                        <span class="daemon-status-pill running">
+                          <span class="dot" />
+                          {{ data?.monitor_tasks ?? 0 }} 个生效
+                        </span>
+                      </div>
+                      <div class="daemon-desc">全天候异步巡检闲鱼新上架好货</div>
+                    </div>
                   </div>
                 </div>
 
-                <!-- 定时调度队列 -->
+                <!-- 定时调度队列 (Cron 任务) -->
                 <div v-if="data?.system.jobs.length" class="jobs-block">
                   <div class="jobs-header-row">
-                    <span>常驻定时调度队列 (Cron 任务)</span>
-                    <span class="small-muted">共 {{ data.system.jobs.length }} 个常驻任务</span>
+                    <div class="jobs-header-left">
+                      <el-icon class="jobs-ico"><Timer /></el-icon>
+                      <span class="jobs-title">常驻自动化巡检队列</span>
+                    </div>
+                    <span class="jobs-count-badge">已就绪 {{ data.system.jobs.length }} 项任务</span>
                   </div>
+
                   <div class="jobs-scroll-container">
-                    <div v-for="j in data.system.jobs.slice(0, 6)" :key="j.id" class="job-item-row">
-                      <span class="job-name mono ellipsis">{{ j.id }}</span>
-                      <span class="job-time small-muted mono">下次执行：{{ fmtTime(j.next_run) }}</span>
+                    <div v-for="j in data.system.jobs.slice(0, 6)" :key="j.id" class="job-item-card">
+                      <div class="job-main-info">
+                        <span class="job-category-tag" :class="getJobMeta(j.id).tagType">
+                          {{ getJobMeta(j.id).category }}
+                        </span>
+                        <div class="job-names-wrap">
+                          <span class="job-display-name">{{ getJobMeta(j.id).title }}</span>
+                          <span class="job-code-name mono">{{ j.id }}</span>
+                        </div>
+                      </div>
+                      <div class="job-next-run">
+                        <span class="time-label">下次执行</span>
+                        <span class="time-val mono">{{ fmtJobNextRun(j.next_run) }}</span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1211,17 +1284,67 @@ function healthColor(h: number) {
 }
 .title-with-subtitle {
   display: flex;
-  align-items: baseline;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.title-row-compact {
+  display: flex;
+  align-items: center;
   gap: 8px;
 }
 .panel-title {
   font-size: 14.5px;
   font-weight: 600;
   color: #1e293b;
+  white-space: nowrap;
 }
 .panel-desc {
-  font-size: 11px;
+  font-size: 11.5px;
   color: #94a3b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.status-indicator-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 1px 7px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.status-indicator-tag.success {
+  background: #ecfdf5;
+  color: #059669;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+.status-indicator-tag.danger {
+  background: #fef2f2;
+  color: #dc2626;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+.pulse-dot-green {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+  animation: pulseGreen 2s infinite;
+}
+@keyframes pulseGreen {
+  0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+  70% { box-shadow: 0 0 0 4px rgba(16, 185, 129, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+.pulse-dot-red {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ef4444;
 }
 
 /* 现代化胶囊操作按钮组（告别丑陋的裸露链接） */
@@ -2000,39 +2123,153 @@ function healthColor(h: number) {
 .small-muted { font-size: 11px; color: #94a3b8; }
 .small-bold { font-size: 11px; font-weight: 600; }
 
-.service-pulse-row {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+/* 核心后台长连接与扫描守护卡片 (双列平铺) */
+.daemon-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
   margin-bottom: 12px;
 }
-.pulse-card {
+.daemon-card {
   display: flex;
   align-items: center;
   gap: 10px;
-  background: #f8fafc;
-  border: 1px solid #eef2f6;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
-  padding: 8px 12px;
+  padding: 10px 12px;
+  transition: all 0.2s ease;
+  position: relative;
+  overflow: hidden;
 }
-.pulse-icon { font-size: 20px; }
-.pulse-name { font-size: 12.5px; font-weight: 600; color: #1e293b; }
-.pulse-sub { font-size: 11px; color: #94a3b8; }
-.ml-auto { margin-left: auto; }
+.daemon-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  transform: translateY(-1px);
+}
+.daemon-card.active {
+  background: linear-gradient(180deg, #ffffff 0%, #fbfdfe 100%);
+}
+.daemon-icon-wrap {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+.daemon-card:hover .daemon-icon-wrap {
+  transform: scale(1.05);
+}
+.daemon-icon-wrap.im-theme {
+  background: rgba(16, 185, 129, 0.1);
+  color: #059669;
+}
+.daemon-icon-wrap.radar-theme {
+  background: rgba(14, 165, 233, 0.1);
+  color: #0284c7;
+}
+.daemon-info {
+  flex: 1;
+  min-width: 0;
+}
+.daemon-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 3px;
+  gap: 4px;
+}
+.daemon-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e293b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.daemon-desc {
+  font-size: 11px;
+  color: #94a3b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.daemon-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+.daemon-status-pill.running {
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+.daemon-status-pill.running .dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #10b981;
+}
+.daemon-status-pill.stopped {
+  background: #f1f5f9;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+}
+.daemon-status-pill.stopped .dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #94a3b8;
+}
 
+/* 常驻自动化巡检队列 (Cron 任务卡片化) */
 .jobs-block {
   flex: 1;
   display: flex;
   flex-direction: column;
   min-height: 0;
+  background: #ffffff;
+  border: 1px solid #eef2f6;
+  border-radius: 8px;
+  padding: 10px 12px;
 }
 .jobs-header-row {
   display: flex;
   justify-content: space-between;
-  font-size: 11.5px;
+  align-items: center;
+  margin-bottom: 8px;
+  flex-shrink: 0;
+}
+.jobs-header-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.jobs-ico {
+  font-size: 14px;
+  color: #64748b;
+}
+.jobs-title {
+  font-size: 12.5px;
   font-weight: 600;
-  color: #475569;
-  margin-bottom: 6px;
+  color: #334155;
+}
+.jobs-count-badge {
+  font-size: 11px;
+  color: #059669;
+  background: #ecfdf5;
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-weight: 500;
 }
 .jobs-scroll-container {
   flex: 1;
@@ -2040,17 +2277,90 @@ function healthColor(h: number) {
   display: flex;
   flex-direction: column;
   gap: 5px;
+  padding-right: 2px;
 }
-.job-item-row {
+.job-item-card {
   display: flex;
   justify-content: space-between;
   align-items: center;
   background: #f8fafc;
-  padding: 5px 8px;
-  border-radius: 4px;
-  font-size: 11px;
+  border: 1px solid #f1f5f9;
+  padding: 6px 10px;
+  border-radius: 6px;
+  transition: all 0.15s ease;
 }
-.job-name { color: #334155; max-width: 160px; }
+.job-item-card:hover {
+  background: #f1f5f9;
+  border-color: #e2e8f0;
+}
+.job-main-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.job-category-tag {
+  font-size: 10.5px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.job-category-tag.primary {
+  background: #eff6ff;
+  color: #2563eb;
+  border: 1px solid rgba(37, 99, 235, 0.15);
+}
+.job-category-tag.success {
+  background: #ecfdf5;
+  color: #059669;
+  border: 1px solid rgba(16, 185, 129, 0.15);
+}
+.job-category-tag.warning {
+  background: #fffbeb;
+  color: #d97706;
+  border: 1px solid rgba(217, 119, 6, 0.15);
+}
+.job-category-tag.info {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+}
+.job-names-wrap {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.job-display-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1e293b;
+  white-space: nowrap;
+}
+.job-code-name {
+  font-size: 11px;
+  color: #94a3b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+}
+.job-next-run {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.time-label {
+  font-size: 10.5px;
+  color: #94a3b8;
+}
+.time-val {
+  font-size: 11.5px;
+  color: #475569;
+  font-weight: 500;
+}
 
 .ml-s { margin-left: 6px; }
 .mt-s { margin-top: 10px; }
