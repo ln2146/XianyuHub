@@ -18,7 +18,7 @@ from app.domains.account.models import XyAccount
 from app.domains.goods.models import DraftStatus, ItemStatus, MyItem, PublishDraftRecord
 from app.domains.system.audit import record_audit
 from app.goofish.dto import SearchQuery
-from app.goofish.errors import GoofishError
+from app.goofish.errors import GoofishError, RiskBlockedError, RiskControlError
 from app.goofish.publish import PublishDraft, ShippingMode
 from app.intelligence.llm import ImageInput, LLMGateway, Tier
 from app.intelligence.pricing import PriceSuggestion, market_stats, suggest_price
@@ -96,7 +96,52 @@ async def sync_items(account_id: int, max_pages: int = 10) -> dict[str, int]:
             if item_id not in seen and item.status == ItemStatus.ON_SALE:
                 item.status = ItemStatus.OFFLINE
         await s.commit()
-    return {"total": len(rows), "created": created, "updated": updated}
+    stats = await refresh_listing_stats(account_id)
+    return {"total": len(rows), "created": created, "updated": updated, "stats": stats}
+
+
+STATS_PER_SYNC = 10  # 每次同步最多补全的商品数：详情接口受风控限速，分多次同步逐步补全
+
+
+async def refresh_listing_stats(account_id: int, limit: int = STATS_PER_SYNC) -> int:
+    """按“最久没更新”优先，从商品详情补全想要数、浏览量和发布时间。遇到风控立即停止。"""
+    gateway = get_runtime().gateway
+    async with session_factory()() as s:
+        targets = [
+            i.item_id
+            for i in (
+                await s.execute(
+                    select(MyItem)
+                    .where(MyItem.account_id == account_id, MyItem.status == ItemStatus.ON_SALE)
+                    .order_by(MyItem.stats_at.is_not(None), MyItem.stats_at)
+                    .limit(limit)
+                )
+            ).scalars()
+        ]
+    done = 0
+    for item_id in targets:
+        try:
+            detail = await gateway.get_item_detail(item_id, account_id)
+        except (RiskBlockedError, RiskControlError):
+            logger.warning("补全商品数据时触发风控，本次停止 account={}", account_id)
+            break
+        except GoofishError as e:
+            logger.info("补全商品数据失败 item={}：{}", item_id, e)
+            continue
+        async with session_factory()() as s:
+            item = (
+                await s.execute(select(MyItem).where(MyItem.account_id == account_id, MyItem.item_id == item_id))
+            ).scalar_one_or_none()
+            if item is None:
+                continue
+            d = detail.item
+            item.want_cnt = d.want_cnt if d.want_cnt is not None else item.want_cnt
+            item.browse_cnt = d.browse_cnt if d.browse_cnt is not None else item.browse_cnt
+            item.publish_time = d.publish_time or item.publish_time
+            item.stats_at = datetime.now(UTC)
+            await s.commit()
+        done += 1
+    return done
 
 
 # ---------------------------------------------------------------- 定价

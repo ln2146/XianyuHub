@@ -43,10 +43,17 @@ async def test_sync_items_and_floor_price(admin_client):
             }
         )
     )
+    detail = respx.post(url__regex=r".*mtop\.taobao\.idle\.pc\.detail.*").mock(
+        return_value=ok({"itemDO": {"itemId": 701, "wantCnt": 3, "browseCnt": 420, "gmtCreate": 1759900000000}})
+    )
     r = await admin_client.post(f"/api/v1/goods/accounts/{acc_id}/sync")
-    assert r.json() == {"total": 2, "created": 2, "updated": 0}
+    # 同步后补全在售商品的数据（已售的不查）
+    assert r.json() == {"total": 2, "created": 2, "updated": 0, "stats": 1}
+    assert detail.call_count == 1
     items = (await admin_client.get("/api/v1/goods/items?status=on_sale")).json()
     assert [i["item_id"] for i in items] == ["701"]
+    assert items[0]["want_cnt"] == 3 and items[0]["browse_cnt"] == 420
+    assert items[0]["publish_time"] and items[0]["stats_at"]
 
     r = await admin_client.patch(f"/api/v1/goods/items/{items[0]['id']}", json={"floor_price": 2000})
     assert r.status_code == 400

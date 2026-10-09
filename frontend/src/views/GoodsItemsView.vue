@@ -173,7 +173,7 @@ async function sync() {
   try {
     const r = await syncItems(filter.account_id)
     const summary = Object.entries(r)
-      .map(([k, v]) => `${{ total: '共', created: '新增', updated: '更新', removed: '移除' }[k] || k} ${v}`)
+      .map(([k, v]) => `${{ total: '共', created: '新增', updated: '更新', removed: '移除', stats: '补全数据' }[k] || k} ${v}`)
       .join('，')
     ElMessage.success(`同步完成：${summary || '无变化'}`)
     await load()
@@ -305,6 +305,23 @@ async function queryMarket() {
     market.loading = false
   }
 }
+
+// ---------------------------------------------------------------- 商品数据：想要 / 浏览 / 在架天数
+function daysListed(row: MyItem) {
+  if (!row.publish_time) return null
+  return Math.max(0, Math.floor((Date.now() - new Date(row.publish_time).getTime()) / 86_400_000))
+}
+
+/** 冷门 / 热门提示：只在数据足够时给出，不做无依据的判断 */
+function listingHint(row: MyItem): { label: string; type: 'warning' | 'success'; tip: string } | null {
+  const days = daysListed(row)
+  if (row.status !== 'on_sale' || days === null || row.want_cnt == null) return null
+  if (days >= 30 && row.want_cnt <= 2)
+    return { label: '冷门', type: 'warning', tip: `已挂 ${days} 天只有 ${row.want_cnt} 人想要，可以考虑降价，或补充实拍图和描述后重新编辑` }
+  if (days <= 7 && row.want_cnt >= 10)
+    return { label: '热门', type: 'success', tip: `${days} 天内 ${row.want_cnt} 人想要，关注度高，可以坚持价格` }
+  return null
+}
 </script>
 
 <template>
@@ -369,6 +386,18 @@ async function queryMarket() {
           </el-table-column>
           <el-table-column label="状态" width="90">
             <template #default="{ row }"><StatusTag :value="row.status" :map="goodsStatusMap" /></template>
+          </el-table-column>
+          <el-table-column label="数据" min-width="150">
+            <template #default="{ row }">
+              <div v-if="row.stats_at" class="stats">
+                <span>想要 {{ row.want_cnt ?? '—' }} · 浏览 {{ row.browse_cnt ?? '—' }}</span>
+                <span class="muted">在架 {{ daysListed(row as MyItem) ?? '—' }} 天</span>
+                <el-tooltip v-if="listingHint(row as MyItem)" :content="listingHint(row as MyItem)!.tip">
+                  <el-tag size="small" :type="listingHint(row as MyItem)!.type">{{ listingHint(row as MyItem)!.label }}</el-tag>
+                </el-tooltip>
+              </div>
+              <span v-else class="muted small" title="每次同步补全最多 10 个商品的数据">待同步补全</span>
+            </template>
           </el-table-column>
           <el-table-column label="议价策略" min-width="150">
             <template #default="{ row }">
@@ -779,5 +808,12 @@ async function queryMarket() {
     gap: 12px;
     align-items: flex-end;
   }
+}
+.stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
+  font-size: var(--xh-fs-xs);
 }
 </style>

@@ -45,6 +45,10 @@ class ItemOut(BaseModel):
     is_virtual: bool
     synced_at: datetime | None
     last_polished_at: datetime | None
+    want_cnt: int | None = None
+    browse_cnt: int | None = None
+    publish_time: datetime | None = None
+    stats_at: datetime | None = None
 
 
 class ItemUpdate(BaseModel):

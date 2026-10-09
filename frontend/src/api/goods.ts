@@ -18,6 +18,11 @@ export interface MyItem {
   is_virtual: boolean
   synced_at: string | null
   last_polished_at: string | null
+  want_cnt?: number | null
+  browse_cnt?: number | null
+  publish_time?: string | null
+  /** 数据最近一次从商品详情补全的时间；为空表示还没补全 */
+  stats_at?: string | null
 }
 
 export interface ItemUpdate {

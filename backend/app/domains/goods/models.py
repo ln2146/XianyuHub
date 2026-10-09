@@ -37,6 +37,10 @@ class MyItem(IdMixin, TimestampMixin, Base):
     knowledge: Mapped[str] = mapped_column(Text, default="")
     is_virtual: Mapped[bool] = mapped_column(Boolean, default=False)
     want_cnt: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 商品数据（同步时从商品详情补全，帮助判断哪些商品该降价 / 重新编辑）
+    browse_cnt: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    publish_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    stats_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_polished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
