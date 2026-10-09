@@ -96,16 +96,24 @@ class RiskGuard:
         await self._notify(key, reason or f"state->{state}")
 
     async def trip(self, key: str, reason: str, punish_url: str | None = None) -> None:
-        """触发熔断：进入 CIRCUIT_OPEN，并按 strikes 计算冷却时长。"""
+        """触发保护：有验证链接进入 CIRCUIT_OPEN 等待人工；无验证链接进入 COOLDOWN 短期避险。"""
         s = get_settings()
         rt = self._rt[key]
         rt.strikes += 1
         rt.last_error = reason
         rt.punish_url = punish_url
-        cooldown = min(s.guard_cooldown_base_seconds * 2 ** (rt.strikes - 1), s.guard_cooldown_max_seconds)
-        rt.cooldown_until = time.time() + cooldown
-        rt.state = AccountState.CIRCUIT_OPEN
-        logger.warning("风控熔断 key={} strikes={} 冷却 {}s 原因={}", key, rt.strikes, cooldown, reason)
+        if punish_url:
+            # 真实平台安全惩罚 / 滑块验证：进入 CIRCUIT_OPEN，需要人工到闲鱼网页完成验证
+            cooldown = min(s.guard_cooldown_base_seconds * 2 ** (rt.strikes - 1), s.guard_cooldown_max_seconds)
+            rt.cooldown_until = time.time() + cooldown
+            rt.state = AccountState.CIRCUIT_OPEN
+            logger.warning("风控熔断（需人工验证）key={} strikes={} 冷却 {}s 原因={}", key, rt.strikes, cooldown, reason)
+        else:
+            # 接口限流 / 挤爆报错：无滑块，进入短暂保护期，倒计时结束后自动自愈，不锁死全局业务
+            cooldown = min(120 * 2 ** (rt.strikes - 1), 600)
+            rt.cooldown_until = time.time() + cooldown
+            rt.state = AccountState.COOLDOWN
+            logger.warning("风控限流避险（自动冷却）key={} strikes={} 冷却 {}s 原因={}", key, rt.strikes, cooldown, reason)
         await self._notify(key, reason)
 
     async def resolve(self, key: str) -> None:

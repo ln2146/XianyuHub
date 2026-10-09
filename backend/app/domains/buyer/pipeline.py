@@ -3,6 +3,7 @@
 import asyncio
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+import random
 from typing import Any
 
 from loguru import logger
@@ -221,8 +222,14 @@ async def _collect_and_evaluate(task: MonitorTask, stats: RunStats) -> None:
         rules.max_price = task.max_price
 
     seen: dict[str, MarketItem] = {}
+    first_search = True
     for keyword in task.keywords:
         for page in range(1, max(1, task.max_pages) + 1):
+            if not first_search:
+                # 降低搜索速度：两次请求之间随机延时 2.5 ~ 4.2 秒，模拟真实浏览节奏，降低被平台限流的概率
+                await asyncio.sleep(random.uniform(2.5, 4.2))
+            first_search = False
+
             q = SearchQuery(
                 keyword=keyword,
                 page=page,
@@ -282,7 +289,13 @@ async def _collect_and_evaluate(task: MonitorTask, stats: RunStats) -> None:
         return
 
     llm = get_llm()
+    first_cand = True
     for item_id in candidates:
+        if not first_cand:
+            # 候选商品详情拉取间隔：1.8 ~ 3.2 秒，防止频繁调用 detail 接口触发风控
+            await asyncio.sleep(random.uniform(1.8, 3.2))
+        first_cand = False
+
         try:
             await _evaluate_candidate(task, item_id, rules, price_stats, llm, stats)
         except (RiskBlockedError, RiskControlError):

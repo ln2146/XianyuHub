@@ -39,7 +39,7 @@ class ActionPolicy:
 def policies() -> dict[Action, ActionPolicy]:
     s = get_settings()
     base = {
-        Action.SEARCH: ActionPolicy(rate=s.guard_search_per_min, burst=2, requires_login=False),
+        Action.SEARCH: ActionPolicy(rate=s.guard_search_per_min, burst=1.0, requires_login=False),
         Action.DETAIL: ActionPolicy(rate=s.guard_detail_per_min, burst=2, requires_login=False),
         Action.SELLER_PROFILE: ActionPolicy(rate=3, requires_login=False),
         Action.MY_ITEMS: ActionPolicy(rate=2),
