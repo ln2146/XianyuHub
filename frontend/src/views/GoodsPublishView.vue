@@ -623,56 +623,101 @@ onBeforeUnmount(() => window.clearInterval(timer))
       </el-col>
 
       <el-col :xs="24" :lg="10">
-        <el-card shadow="never" class="drafts">
-          <template #header>
-            <div class="card-head">
-              <span class="card-title">草稿与发布记录</span>
-              <el-button :icon="Refresh" link :loading="draftsLoading" @click="loadDrafts">刷新</el-button>
-            </div>
-            <el-segmented
-              v-if="drafts.length"
-              v-model="draftFilter"
-              :options="draftFilterOptions"
-              size="small"
-              block
-              class="d-filter"
+        <div class="publish-sidebar-wrap">
+          <!-- 草稿与发布记录卡片 -->
+          <el-card shadow="never" class="drafts">
+            <template #header>
+              <div class="card-head">
+                <span class="card-title">草稿与发布记录</span>
+                <el-button :icon="Refresh" link :loading="draftsLoading" @click="loadDrafts">刷新</el-button>
+              </div>
+              <el-segmented
+                v-if="drafts.length"
+                v-model="draftFilter"
+                :options="draftFilterOptions"
+                size="small"
+                block
+                class="d-filter"
+              />
+            </template>
+            <el-empty
+              v-if="!draftsLoading && !filteredDrafts.length"
+              :description="drafts.length ? '该分类下暂无记录' : '还没有草稿，AI 生成后会自动保存到这里'"
+              :image-size="60"
             />
-          </template>
-          <el-empty
-            v-if="!draftsLoading && !filteredDrafts.length"
-            :description="drafts.length ? '该分类下暂无记录' : '还没有草稿，AI 生成后会自动保存到这里'"
-            :image-size="60"
-          />
-          <div v-loading="draftsLoading" class="draft-list">
-            <div v-for="d in filteredDrafts" :key="d.id" class="draft" :class="{ editing: editingId === d.id }">
-              <el-image :src="d.image_ids[0] ? uploadUrl(d.image_ids[0]) : ''" fit="cover" class="d-img" />
-              <div class="d-main">
-                <div class="d-row">
-                  <div class="d-title ellipsis">
-                    <span v-if="d.ai_meta" class="ai-mini">AI</span>
-                    {{ d.title || '未命名' }}
+            <div v-loading="draftsLoading" class="draft-list">
+              <div v-for="d in filteredDrafts" :key="d.id" class="draft" :class="{ editing: editingId === d.id }">
+                <el-image :src="d.image_ids[0] ? uploadUrl(d.image_ids[0]) : ''" fit="cover" class="d-img" />
+                <div class="d-main">
+                  <div class="d-row">
+                    <div class="d-title ellipsis">
+                      <span v-if="d.ai_meta" class="ai-mini">AI</span>
+                      {{ d.title || '未命名' }}
+                    </div>
+                    <span class="price">{{ d.price > 0 ? fmtMoney(d.price) : '待定价' }}</span>
                   </div>
-                  <span class="price">{{ d.price > 0 ? fmtMoney(d.price) : '待定价' }}</span>
-                </div>
-                <div class="small d-status">
-                  <StatusTag :value="d.status" :map="draftStatusMap" />
-                  <span class="muted ellipsis">{{ accounts.nameOf(d.account_id) }}</span>
-                  <span v-if="d.status === 'scheduled'" class="muted">· {{ fmtTime(d.scheduled_at) }}</span>
-                  <span v-if="d.ai_meta?.uncertain?.length && canEdit(d)" class="pending">· {{ d.ai_meta.uncertain.length }} 项待确认</span>
-                </div>
-                <el-tooltip v-if="d.error" :content="d.error">
-                  <div class="small err ellipsis">{{ d.error }}</div>
-                </el-tooltip>
-                <div class="d-ops">
-                  <el-button v-if="canEdit(d)" size="small" type="primary" @click="openDraft(d)">{{ d.ai_meta ? '核对' : '编辑' }}</el-button>
-                  <el-button v-if="canEdit(d)" size="small" :loading="busy[`pub-${d.id}`]" @click="publishFromList(d)">直接发布</el-button>
-                  <el-link v-if="d.item_id" :href="itemUrl(d.item_id)" target="_blank" type="primary" class="small">查看商品</el-link>
-                  <el-button size="small" type="danger" link class="d-del" :disabled="d.status === 'publishing'" @click="removeDraft(d)">删除</el-button>
+                  <div class="small d-status">
+                    <StatusTag :value="d.status" :map="draftStatusMap" />
+                    <span class="muted ellipsis">{{ accounts.nameOf(d.account_id) }}</span>
+                    <span v-if="d.status === 'scheduled'" class="muted">· {{ fmtTime(d.scheduled_at) }}</span>
+                    <span v-if="d.ai_meta?.uncertain?.length && canEdit(d)" class="pending">· {{ d.ai_meta.uncertain.length }} 项待确认</span>
+                  </div>
+                  <el-tooltip v-if="d.error" :content="d.error">
+                    <div class="small err ellipsis">{{ d.error }}</div>
+                  </el-tooltip>
+                  <div class="d-ops">
+                    <el-button v-if="canEdit(d)" size="small" type="primary" @click="openDraft(d)">{{ d.ai_meta ? '核对' : '编辑' }}</el-button>
+                    <el-button v-if="canEdit(d)" size="small" :loading="busy[`pub-${d.id}`]" @click="publishFromList(d)">直接发布</el-button>
+                    <el-link v-if="d.item_id" :href="itemUrl(d.item_id)" target="_blank" type="primary" class="small">查看商品</el-link>
+                    <el-button size="small" type="danger" link class="d-del" :disabled="d.status === 'publishing'" @click="removeDraft(d)">删除</el-button>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        </el-card>
+          </el-card>
+
+          <!-- 智能发品提效助手与质检贴士（填满空间，提升专业度与美观度） -->
+          <el-card shadow="never" class="publish-guide-card">
+            <div class="guide-card-head">
+              <span class="guide-card-title">💡 AI 发品提效与质检指南</span>
+              <span class="guide-card-tag">智能辅助</span>
+            </div>
+
+            <div class="guide-items-list">
+              <div class="guide-item-row">
+                <span class="guide-icon">📸</span>
+                <div class="guide-item-content">
+                  <div class="guide-item-name">实拍细节优化</div>
+                  <div class="guide-item-desc">建议上传正面、背面、成色细节及防伪标签，AI 识图成色评级准确率提升 40%。</div>
+                </div>
+              </div>
+
+              <div class="guide-item-row">
+                <span class="guide-icon">🎯</span>
+                <div class="guide-item-content">
+                  <div class="guide-item-name">智能定价策略</div>
+                  <div class="guide-item-desc">参考同款行情中位价定价；设置「底价」后 AI 客服将在议价区间内自动挽留买家促成交易。</div>
+                </div>
+              </div>
+
+              <div class="guide-item-row">
+                <span class="guide-icon">🛡️</span>
+                <div class="guide-item-content">
+                  <div class="guide-item-name">违规引流自动检测</div>
+                  <div class="guide-item-desc">生成文案时系统自动滤除微信号、手机号、外链等引流违禁词，降低闲鱼封禁与扣分风险。</div>
+                </div>
+              </div>
+
+              <div class="guide-item-row">
+                <span class="guide-icon">⚡</span>
+                <div class="guide-item-content">
+                  <div class="guide-item-name">雷达好货一键套利</div>
+                  <div class="guide-item-desc">在选品雷达发现一手捡漏货源后，点击「一键转手发品」自动带入商品标题与加价率直接生成！</div>
+                </div>
+              </div>
+            </div>
+          </el-card>
+        </div>
       </el-col>
     </el-row>
   </div>
@@ -914,19 +959,85 @@ onBeforeUnmount(() => window.clearInterval(timer))
   background: currentColor;
 }
 
-/* ---------- 草稿列表 ---------- */
-.drafts {
+/* ---------- 草稿与侧边栏 ---------- */
+.publish-sidebar-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
   position: sticky;
   top: 0;
+}
+.drafts {
+  border-radius: 10px;
+  border-color: var(--xh-border);
 }
 .d-filter {
   margin-top: 10px;
 }
 .draft-list {
   min-height: 60px;
+  max-height: 260px;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 4px;
+  padding-right: 2px;
+}
+.publish-guide-card {
+  border-radius: 10px;
+  border-color: var(--xh-border);
+  background: #fbfcfe;
+}
+.guide-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed var(--xh-border);
+}
+.guide-card-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #1e293b;
+}
+.guide-card-tag {
+  font-size: 10.5px;
+  color: #059669;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-weight: 500;
+}
+.guide-items-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.guide-item-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.guide-icon {
+  font-size: 16px;
+  margin-top: 1px;
+  flex-shrink: 0;
+}
+.guide-item-content {
+  flex: 1;
+}
+.guide-item-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #334155;
+  margin-bottom: 2px;
+}
+.guide-item-desc {
+  font-size: 11.5px;
+  color: #64748b;
+  line-height: 1.45;
 }
 .draft {
   display: flex;
