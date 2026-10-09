@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRealtimeStore } from '@/stores/realtime'
 import { useRouter } from 'vue-router'
-import { Refresh } from '@element-plus/icons-vue'
+import { Refresh, Search } from '@element-plus/icons-vue'
 import { getDashboard, type Dashboard } from '@/api/dashboard'
 import StatusTag from '@/components/StatusTag.vue'
 import { NEEDS_ACTION_STATUSES, accountStatusMap, fmtMoney, fmtTime, orderStatusMap } from '@/utils/format'
@@ -11,7 +11,21 @@ const router = useRouter()
 const realtime = useRealtimeStore()
 const data = ref<Dashboard | null>(null)
 const loading = ref(false)
+const quickKeyword = ref('')
 let timer: number | undefined
+
+function goToSearch() {
+  const kw = quickKeyword.value.trim()
+  if (!kw) {
+    router.push('/radar/search')
+    return
+  }
+  router.push({ path: '/radar/search', query: { q: kw } })
+}
+
+function searchByKeyword(kw: string) {
+  router.push({ path: '/radar/search', query: { q: kw } })
+}
 
 async function load() {
   loading.value = true
@@ -93,6 +107,48 @@ function healthColor(h: number) {
         </el-card>
       </el-col>
     </el-row>
+
+    <!-- 闲鱼商品快速找货栏 -->
+    <el-card shadow="never" class="quick-search-card">
+      <div class="search-flex-row">
+        <div class="search-desc">
+          <div class="search-main-title">
+            <el-icon :size="18" class="icon-spark"><Search /></el-icon>
+            <span>闲鱼实时找货</span>
+          </div>
+          <div class="search-sub-title">实时直搜闲鱼商品底价与成色，无需新建监控任务</div>
+        </div>
+        <div class="search-input-wrap">
+          <el-input
+            v-model="quickKeyword"
+            placeholder="输入商品名称/型号（如 iPhone 15、MacBook、Switch），按回车立即搜索"
+            size="large"
+            clearable
+            @keyup.enter="goToSearch"
+          >
+            <template #append>
+              <el-button type="primary" :icon="Search" @click="goToSearch">立即找货</el-button>
+            </template>
+          </el-input>
+        </div>
+      </div>
+      <div class="hot-search-row">
+        <span class="hot-title">热门搜索：</span>
+        <el-tag
+          v-for="k in ['MacBook M1', 'iPhone 15', 'Switch OLED', 'PS5', '显卡 RTX', 'iPad Air', 'AirPods Pro']"
+          :key="k"
+          size="small"
+          effect="plain"
+          class="hot-tag"
+          @click="searchByKeyword(k)"
+        >
+          {{ k }}
+        </el-tag>
+        <el-button link type="primary" size="small" class="more-search-link" @click="router.push('/radar/search')">
+          进入高级商品搜索 &gt;
+        </el-button>
+      </div>
+    </el-card>
 
     <el-row :gutter="12">
       <el-col :xs="24" :lg="16">
@@ -293,5 +349,67 @@ function healthColor(h: number) {
   gap: 8px;
   padding: 4px 0;
   border-bottom: 1px dashed var(--xh-border);
+}
+
+/* 快速找货搜索栏样式 */
+.quick-search-card {
+  margin-bottom: 16px;
+  background: linear-gradient(135deg, #ffffff 0%, #f4fbf7 100%);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  border-radius: 8px;
+}
+.search-flex-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.search-desc {
+  min-width: 220px;
+}
+.search-main-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #1f2937;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.icon-spark {
+  color: var(--xh-primary, #10b981);
+}
+.search-sub-title {
+  font-size: 12px;
+  color: #6b7280;
+  margin-top: 3px;
+}
+.search-input-wrap {
+  flex: 1;
+  min-width: 280px;
+  max-width: 680px;
+}
+.hot-search-row {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.hot-title {
+  font-size: 12px;
+  color: #6b7280;
+}
+.hot-tag {
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.hot-tag:hover {
+  color: var(--xh-primary, #10b981);
+  border-color: var(--xh-primary, #10b981);
+}
+.more-search-link {
+  margin-left: auto;
+  font-size: 12px;
 }
 </style>
