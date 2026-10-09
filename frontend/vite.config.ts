@@ -8,8 +8,8 @@ function packageOf(id: string): string | null {
   return m ? m[1]!.replace(/\\/g, '/') : null
 }
 
-// 开发代理目标：默认本机 8000 端口的后端；端口被占用时用 VITE_API_TARGET=http://127.0.0.1:8001 pnpm dev 覆盖
-const API_TARGET = process.env.VITE_API_TARGET || 'http://127.0.0.1:8000'
+// 开发代理目标：默认本机 8001 端口的后端；若有环境变量则优先使用 VITE_API_TARGET
+const API_TARGET = process.env.VITE_API_TARGET || 'http://127.0.0.1:8001'
 
 type PkgMatcher = (pkg: string) => boolean
 const VUE_PKGS: PkgMatcher = (p) => ['vue', 'vue-router', 'pinia', 'vue-demi'].includes(p) || p.startsWith('@vue/')
