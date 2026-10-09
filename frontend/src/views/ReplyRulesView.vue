@@ -2,7 +2,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { MagicStick, Plus, Refresh, Setting } from '@element-plus/icons-vue'
+import { Check, Plus, Refresh, Setting } from '@element-plus/icons-vue'
 import { createRule, deleteRule, listRules, updateRule, type RuleIn, type RuleOut } from '@/api/message'
 import { updateAccount, type Account } from '@/api/account'
 import { useAccountsStore } from '@/stores/accounts'
@@ -16,6 +16,7 @@ const isMobile = useMobile()
 const rules = ref<RuleOut[]>([])
 const loading = ref(false)
 const busyAccount = reactive<Record<string, boolean>>({})
+const enablingPreset = reactive<Record<string, boolean>>({})
 
 const matchLabel: Record<string, string> = { contains: '包含', exact: '完全匹配', regex: '正则' }
 
@@ -150,6 +151,11 @@ const presetTemplates = [
     keywords: ['是正品吗', '正品不', '保真吗', '支持验货吗'],
     reply: '保证正品保真，实物拍摄，支持官方或第三方验货，请放心下单～',
   },
+  {
+    name: '砍价与最低价应答',
+    keywords: ['少点', '便宜点', '最低多少', '能少吗', '包邮吗', '大刀'],
+    reply: '宝贝标价已经是良心底价啦，成色特别好，如果诚心要可以微调一丢丢，直接拍下优先安排发出哦～',
+  },
 ]
 
 function applyPreset(tpl: (typeof presetTemplates)[0]) {
@@ -164,10 +170,33 @@ function applyPreset(tpl: (typeof presetTemplates)[0]) {
     },
   })
 }
+
+async function quickEnableTemplate(tpl: (typeof presetTemplates)[0]) {
+  enablingPreset[tpl.name] = true
+  try {
+    await createRule({
+      name: tpl.name,
+      account_id: null,
+      item_id: null,
+      keywords: [...tpl.keywords],
+      match: 'contains',
+      reply: tpl.reply,
+      priority: 0,
+      reply_once: false,
+      enabled: true,
+    })
+    ElMessage.success(`已启用模版「${tpl.name}」`)
+    await load()
+  } catch {
+    /* 拦截器提示 */
+  } finally {
+    enablingPreset[tpl.name] = false
+  }
+}
 </script>
 
 <template>
-  <div class="page">
+  <div class="page rules-page">
     <div class="page-head">
       <div>
         <h2>消息中心 · 回复规则</h2>
@@ -238,31 +267,64 @@ function applyPreset(tpl: (typeof presetTemplates)[0]) {
       </div>
     </el-card>
 
-    <!-- 常用规则模版推荐条 -->
-    <div class="preset-bar">
-      <span class="preset-label">
-        <el-icon><MagicStick /></el-icon>
-        <span>快捷添加常用模版：</span>
-      </span>
-      <div class="preset-chips">
-        <el-tag
-          v-for="tpl in presetTemplates"
-          :key="tpl.name"
-          class="preset-tag"
-          effect="plain"
-          type="primary"
-          @click="applyPreset(tpl)"
-        >
-          + {{ tpl.name }}（{{ tpl.keywords.slice(0, 2).join('、') }}）
-        </el-tag>
-      </div>
-    </div>
-
-    <!-- 规则表格 -->
+    <!-- 规则表格区域 (满高自适应，无规则时展示快速冷启动面板) -->
     <el-card shadow="never" class="table-card">
-      <div class="table-wrap">
-        <el-table v-loading="loading" :data="rules" empty-text="还没有规则。可点击上方快捷模版或「新建规则」添加！">
-          <el-table-column label="规则名称" prop="name" min-width="120">
+      <!-- 空规则冷启动推荐面板 -->
+      <div v-if="!loading && !rules.length" class="empty-rules-hero">
+        <div class="hero-top">
+          <div class="hero-pill">⚡ 快速冷启动 · 推荐常用模版</div>
+          <h3 class="hero-title">尚未配置关键词规则，点击即可一键启用</h3>
+          <p class="hero-sub">
+            买家消息命中关键词时，系统将在设定的拟人延迟内优先秒级回复；未命中时无缝流转至 AI 大模型继续智能接待。
+          </p>
+        </div>
+
+        <div class="preset-cards-grid">
+          <div v-for="tpl in presetTemplates" :key="tpl.name" class="preset-card">
+            <div class="pc-head">
+              <span class="pc-icon">💬</span>
+              <span class="pc-name">{{ tpl.name }}</span>
+            </div>
+            <div class="pc-kws">
+              <span class="pc-kw-label">触发关键词：</span>
+              <span v-for="k in tpl.keywords" :key="k" class="pc-kw-pill">{{ k }}</span>
+            </div>
+            <div class="pc-reply">“{{ tpl.reply }}”</div>
+            <div class="pc-actions">
+              <el-button
+                size="small"
+                type="primary"
+                :icon="Check"
+                :loading="enablingPreset[tpl.name]"
+                @click="quickEnableTemplate(tpl)"
+              >
+                一键启用
+              </el-button>
+              <el-button size="small" link type="primary" @click="applyPreset(tpl)">自定义编辑</el-button>
+            </div>
+          </div>
+        </div>
+
+        <div class="rules-guide-tip">
+          <div class="guide-item">
+            <span class="guide-icon">🎯</span>
+            <span class="guide-text"><strong>关键词优先执行</strong>：命中所设词汇即刻应答，比 AI 生成更准确可控。</span>
+          </div>
+          <div class="guide-item">
+            <span class="guide-icon">🤖</span>
+            <span class="guide-text"><strong>AI 全局底座托底</strong>：复杂业务提问未命中规则时，由大模型上下文接管解答。</span>
+          </div>
+          <div class="guide-item">
+            <span class="guide-icon">🛡️</span>
+            <span class="guide-text"><strong>安全拟人控频</strong>：自动施加随机打字时延，避免闲鱼平台判定人机违规。</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 有规则时的表格 -->
+      <div v-else class="table-wrap">
+        <el-table v-loading="loading" :data="rules" height="100%" class="rules-table">
+          <el-table-column label="规则名称" prop="name" min-width="130">
             <template #default="{ row }">
               <span class="font-semibold">{{ row.name || '未命名规则' }}</span>
             </template>
@@ -291,7 +353,7 @@ function applyPreset(tpl: (typeof presetTemplates)[0]) {
               <div class="smaller muted">{{ row.item_id ? `商品: ${row.item_id}` : '全部商品' }}</div>
             </template>
           </el-table-column>
-          <el-table-column label="命中次数" prop="hits" width="90" sortable align="center">
+          <el-table-column label="命中次数" prop="hits" width="95" sortable align="center">
             <template #default="{ row }">
               <el-tag size="small" :type="row.hits > 0 ? 'success' : 'info'" effect="plain">
                 {{ row.hits || 0 }} 次
@@ -312,6 +374,13 @@ function applyPreset(tpl: (typeof presetTemplates)[0]) {
             </template>
           </el-table-column>
         </el-table>
+
+        <div class="table-footer-bar">
+          <span class="footer-tip">
+            🟢 共有 {{ rules.length }} 条关键词回复规则 · 累计触发 {{ rules.reduce((a, b) => a + (b.hits || 0), 0) }} 次 · 优先于 AI 大模型执行
+          </span>
+          <el-button link type="primary" size="small" :icon="Plus" @click="openCreate">新建规则</el-button>
+        </div>
       </div>
     </el-card>
 
@@ -456,40 +525,195 @@ function applyPreset(tpl: (typeof presetTemplates)[0]) {
   font-size: 10px;
   color: var(--xh-muted);
 }
-.preset-bar {
+
+/* 页面满高弹性布局 */
+.rules-page {
+  min-height: calc(100vh - 96px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.table-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  border-radius: 10px;
+  border-color: var(--xh-border);
+  min-height: 0;
+}
+.table-card :deep(.el-card__body) {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 14px 16px;
+}
+.table-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+.rules-table {
+  flex: 1;
+  min-height: 0;
+}
+.table-footer-bar {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 12px;
-  padding: 6px 12px;
-  background: #fff;
-  border: 1px dashed var(--xh-border);
+  justify-content: space-between;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--xh-border);
+  flex-shrink: 0;
+}
+.footer-tip {
+  font-size: 11.5px;
+  color: #94a3b8;
+}
+
+/* 空状态模版冷启动面板 (填满高度，充满质感) */
+.empty-rules-hero {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 24px 28px;
+  background: radial-gradient(circle at 50% 15%, #f0fdf4 0%, #ffffff 75%);
   border-radius: 8px;
 }
-.preset-label {
+.hero-top {
+  text-align: center;
+  margin-bottom: 22px;
+}
+.hero-pill {
+  display: inline-block;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #059669;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  padding: 3px 12px;
+  border-radius: 999px;
+  margin-bottom: 10px;
+}
+.hero-title {
+  font-size: 19px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 8px;
+}
+.hero-sub {
+  font-size: 13px;
+  color: #64748b;
+  max-width: 620px;
+  margin: 0 auto;
+  line-height: 1.55;
+}
+.preset-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 24px;
+}
+@media (max-width: 1024px) {
+  .preset-cards-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+.preset-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 9px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  transition: all 0.18s ease;
+}
+.preset-card:hover {
+  transform: translateY(-2px);
+  border-color: #cbd5e1;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.06);
+}
+.pc-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  font-size: 13.5px;
+  color: #1e293b;
+  margin-bottom: 8px;
+}
+.pc-icon {
+  font-size: 16px;
+}
+.pc-name {
+  font-weight: 600;
+}
+.pc-kws {
   display: flex;
   align-items: center;
   gap: 4px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.pc-kw-label {
+  font-size: 11px;
+  color: #94a3b8;
+}
+.pc-kw-pill {
+  font-size: 11px;
+  background: #f1f5f9;
+  color: #475569;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+.pc-reply {
   font-size: 12px;
-  font-weight: 600;
+  color: #475569;
+  background: #f8fafc;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px dashed #e2e8f0;
+  line-height: 1.45;
+  margin-bottom: 12px;
+  flex: 1;
+}
+.pc-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: auto;
+}
+.rules-guide-tip {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  background: #f8fafc;
+  border: 1px solid #eef2f6;
+  border-radius: 8px;
+  padding: 12px 18px;
+}
+@media (max-width: 768px) {
+  .rules-guide-tip {
+    grid-template-columns: 1fr;
+  }
+}
+.guide-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
   color: #475569;
 }
-.preset-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+.guide-icon {
+  font-size: 16px;
+  flex-shrink: 0;
 }
-.preset-tag {
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-.preset-tag:hover {
-  transform: translateY(-1px);
-}
-.table-card {
-  border-radius: 10px;
-  border-color: var(--xh-border);
+.guide-text strong {
+  color: #1e293b;
 }
 .kw-wrap {
   display: flex;
