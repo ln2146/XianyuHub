@@ -2,7 +2,7 @@
 import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { MagicStick, Plus, Refresh, Search } from '@element-plus/icons-vue'
+import { MagicStick, Plus, Refresh } from '@element-plus/icons-vue'
 import {
   createTask,
   deleteTask,
@@ -19,6 +19,7 @@ import {
 } from '@/api/buyer'
 import { useAccountsStore } from '@/stores/accounts'
 import { useMobile } from '@/composables/useMobile'
+import RadarNav from '@/components/RadarNav.vue'
 import { fmtMoney, fmtTime, fmtRelative } from '@/utils/format'
 
 const router = useRouter()
@@ -190,33 +191,12 @@ function statsText(s: Record<string, unknown>) {
 
 <template>
   <div class="page">
-    <div class="page-head">
-      <div>
-        <h2>选品雷达 · 监控任务</h2>
-        <div class="sub">按关键词定时搜索闲鱼，规则初筛 + AI 判定，好货推送到看板和通知渠道</div>
-      </div>
-      <div class="toolbar">
-        <el-button :icon="Search" @click="router.push('/radar/search')">单次实时搜货</el-button>
+    <RadarNav current="tasks">
+      <template #actions>
         <el-button :icon="Refresh" :loading="loading" @click="load()">刷新</el-button>
         <el-button type="primary" :icon="Plus" @click="openCreate">新建监控任务</el-button>
-      </div>
-    </div>
-
-    <!-- 快捷导流提示 -->
-    <el-alert
-      type="info"
-      :closable="false"
-      show-icon
-      class="mb-m search-guide-alert"
-    >
-      <template #title>
-        <div class="guide-title">
-          <span>想临时查找闲鱼商品或看行情底价？</span>
-          <el-link type="primary" @click="router.push('/radar/search')">直接使用「商品搜索」功能 &gt;</el-link>
-          <span class="muted font-normal ml-s">（无需新建定时任务，即搜即看）</span>
-        </div>
       </template>
-    </el-alert>
+    </RadarNav>
 
     <el-card shadow="never">
       <div class="table-wrap">

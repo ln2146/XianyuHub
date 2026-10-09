@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import {
   Aim,
   Bell,
@@ -11,24 +12,26 @@ import {
   MagicStick,
   Message,
   Operation,
-  Search,
   Setting,
   Tickets,
-  Timer,
-  TrendCharts,
   Upload,
   User,
 } from '@element-plus/icons-vue'
 
-defineProps<{ active: string; collapsed: boolean }>()
+const props = defineProps<{ active: string; collapsed: boolean }>()
+
+const activeMenu = computed(() => {
+  if (props.active.startsWith('/radar')) return '/radar/search'
+  return props.active
+})
 </script>
 
 <template>
   <el-menu
     class="side-menu"
-    :default-active="active"
+    :default-active="activeMenu"
     :collapse="collapsed"
-    :default-openeds="['radar', 'messages', 'goods', 'orders']"
+    :default-openeds="['messages', 'goods', 'orders']"
     router
   >
     <!-- 核心业务区 -->
@@ -37,25 +40,11 @@ defineProps<{ active: string; collapsed: boolean }>()
       <template #title><span>总览</span></template>
     </el-menu-item>
 
-    <!-- 选品雷达 -->
-    <el-sub-menu index="radar">
-      <template #title>
-        <el-icon class="menu-icon-primary"><Aim /></el-icon>
-        <span>选品雷达</span>
-      </template>
-      <el-menu-item index="/radar/search">
-        <el-icon class="sub-icon"><Search /></el-icon>
-        <template #title><span>商品搜索</span></template>
-      </el-menu-item>
-      <el-menu-item index="/radar/results">
-        <el-icon class="sub-icon"><TrendCharts /></el-icon>
-        <template #title><span>好货看板</span></template>
-      </el-menu-item>
-      <el-menu-item index="/radar/tasks">
-        <el-icon class="sub-icon"><Timer /></el-icon>
-        <template #title><span>监控任务</span></template>
-      </el-menu-item>
-    </el-sub-menu>
+    <!-- 选品雷达（统一工作台入口） -->
+    <el-menu-item index="/radar/search">
+      <el-icon class="menu-icon-primary"><Aim /></el-icon>
+      <template #title><span>选品雷达</span></template>
+    </el-menu-item>
 
     <!-- 消息中心 -->
     <el-sub-menu index="messages">

@@ -20,9 +20,10 @@ const routes: RouteRecordRaw[] = [
     children: [
       { path: 'dashboard', component: () => import('@/views/DashboardView.vue'), meta: { title: '总览' } },
       { path: 'accounts', component: () => import('@/views/AccountsView.vue'), meta: { title: '账号配置' } },
-      { path: 'radar/search', component: () => import('@/views/RadarSearchView.vue'), meta: { title: '商品搜索' } },
-      { path: 'radar/tasks', component: () => import('@/views/RadarTasksView.vue'), meta: { title: '监控任务' } },
-      { path: 'radar/results', component: () => import('@/views/RadarResultsView.vue'), meta: { title: '好货看板' } },
+      { path: 'radar', redirect: '/radar/search' },
+      { path: 'radar/search', component: () => import('@/views/RadarSearchView.vue'), meta: { title: '选品雷达 · 商品搜索' } },
+      { path: 'radar/tasks', component: () => import('@/views/RadarTasksView.vue'), meta: { title: '选品雷达 · 监控任务' } },
+      { path: 'radar/results', component: () => import('@/views/RadarResultsView.vue'), meta: { title: '选品雷达 · 好货看板' } },
       { path: 'messages/inbox', component: () => import('@/views/InboxView.vue'), meta: { title: '收件箱' } },
       { path: 'messages/rules', component: () => import('@/views/ReplyRulesView.vue'), meta: { title: '回复规则' } },
       { path: 'goods/items', component: () => import('@/views/GoodsItemsView.vue'), meta: { title: '商品管理' } },

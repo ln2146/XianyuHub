@@ -23,6 +23,7 @@ import {
   type SearchItem,
 } from '@/api/buyer'
 import { useAccountsStore } from '@/stores/accounts'
+import RadarNav from '@/components/RadarNav.vue'
 import { fmtMoney, fmtRelative } from '@/utils/format'
 
 const route = useRoute()
@@ -271,20 +272,13 @@ onMounted(() => {
 
 <template>
   <div class="page">
-    <div class="page-head">
-      <div>
-        <h2>选品雷达 · 商品搜索</h2>
-        <div class="sub">实时搜索闲鱼商品，即查即看，无需创建长期监控任务；遇到满意条件也可一键转为自动监控</div>
-      </div>
-      <div class="toolbar">
-        <el-button v-if="searchForm.keyword.trim()" type="primary" plain :icon="Bell" @click="openCreateTask()">
+    <RadarNav current="search">
+      <template #actions>
+        <el-button v-if="searchForm.keyword.trim()" type="primary" :icon="Bell" @click="openCreateTask()">
           把当前搜索转为监控任务
         </el-button>
-        <router-link to="/radar/tasks">
-          <el-button>管理监控任务</el-button>
-        </router-link>
-      </div>
-    </div>
+      </template>
+    </RadarNav>
 
     <!-- 搜索与筛选大卡片 -->
     <el-card shadow="never" class="search-box-card">
