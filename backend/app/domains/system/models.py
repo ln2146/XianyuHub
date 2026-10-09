@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base, IdMixin, TimestampMixin, utcnow
@@ -48,3 +48,30 @@ class AuditLog(IdMixin, Base):
     success: Mapped[bool] = mapped_column(Boolean, default=True)
     detail: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class LlmProvider(IdMixin, TimestampMixin, Base):
+    """大模型接入配置（全局唯一一份，由管理员在管理台维护）。
+
+    同时最多只有一个 enabled + is_active 的配置生效；没有任何生效配置时回退到环境变量。
+    api_key 与其他凭证一样用 Vault 加密后落库。
+    """
+
+    __tablename__ = "llm_providers"
+
+    name: Mapped[str] = mapped_column(String(64), unique=True)
+    kind: Mapped[str] = mapped_column(String(32))  # anthropic / openai_compatible
+    base_url: Mapped[str] = mapped_column(String(256), default="")
+    api_key_enc: Mapped[str] = mapped_column(Text, default="")
+    # 三个档位分别对应：多模态判定与文案 / 客服回复 / 意图分类与粗筛
+    model_vision: Mapped[str] = mapped_column(String(128), default="")
+    model_chat: Mapped[str] = mapped_column(String(128), default="")
+    model_fast: Mapped[str] = mapped_column(String(128), default="")
+    timeout_seconds: Mapped[float] = mapped_column(Float, default=90.0)
+    anthropic_fallbacks: Mapped[bool] = mapped_column(Boolean, default=True)
+    daily_token_budget: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 为空表示沿用全局设置
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    last_test_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_test_ok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -174,14 +174,21 @@ function healthColor(h: number) {
           <template #header>
             <div class="card-head">
               <span>大模型状态</span>
-              <el-tag v-if="llm" :type="llm.available ? 'success' : 'danger'" size="small">
-                {{ llm.available ? '可用' : '不可用' }}
-              </el-tag>
+              <div>
+                <el-tag v-if="llm" :type="llm.available ? 'success' : 'danger'" size="small">
+                  {{ llm.available ? '可用' : '不可用' }}
+                </el-tag>
+                <el-button size="small" link type="primary" @click="router.push('/llm')">配置</el-button>
+              </div>
             </div>
           </template>
           <template v-if="llm">
             <el-descriptions :column="1" size="small" border>
               <el-descriptions-item label="提供方">{{ llm.provider || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="配置来源">
+                <el-tag v-if="llm.source === 'env'" size="small" type="warning" effect="plain">环境变量</el-tag>
+                <span v-else>{{ llm.source || '-' }}</span>
+              </el-descriptions-item>
               <el-descriptions-item v-for="(m, tier) in llm.models" :key="tier" :label="`模型 ${tier}`">
                 <span class="mono small">{{ m || '-' }}</span>
               </el-descriptions-item>

@@ -75,7 +75,7 @@ AI 选品雷达 · 统一收件箱 · 带底价护栏的 AI 客服 · 虚拟商�
 
 扫码登录 / Cookie 导入 · 登录态探活与续期 · 账号健康度 · 每账号固定代理 · 令牌桶限流 · 风控熔断与指数退避冷却 ·
 8 种通知渠道（企业微信 / 飞书 / 钉钉 / Telegram / Bark / ntfy / Webhook / 邮件）· 角色权限与账号授权 · 操作审计 ·
-数据看板 · **协议自检**（用少量只读请求检查接口字段是否仍正确）· 只读 MCP Server · 浏览器扩展 · 可选的 API / Worker 分离部署
+数据看板 · **协议自检**（用少量只读请求检查接口字段是否仍正确）· **模型接入**（多套 LLM 配置可前端切换，Key 加密存储）· 只读 MCP Server · 浏览器扩展 · 可选的 API / Worker 分离部署
 
 ---
 
@@ -117,7 +117,7 @@ flowchart TB
 | 层 | 选型 |
 |---|---|
 | 后端 | Python 3.12 · FastAPI · Pydantic v2 · SQLAlchemy 2.0 async · Alembic · APScheduler · httpx · websockets · msgpack |
-| 大模型 | Anthropic 官方 SDK（默认 `claude-opus-5-5`，结构化输出 + 拒答回退）或任意 OpenAI 兼容接口（Qwen / DeepSeek / vLLM） |
+| 大模型 | Anthropic 官方 SDK（结构化输出 + 拒答回退）或任意兼容接口（Qwen / DeepSeek / Kimi / GLM / Ollama / vLLM）；在管理台「模型接入」配置与切换 |
 | 前端 | Vue 3 · Vite · TypeScript · Element Plus · Pinia · ECharts |
 | 部署 | Docker Compose · Caddy · PostgreSQL 16 · Redis 7 |
 
@@ -153,7 +153,7 @@ uv sync --all-extras
 cp .env.example .env          # 设置 ADMIN_PASSWORD 等
 uv run python -m app
 
-# 前端（http://localhost:5173，已代理 /api 到 8000）
+# 前端（http://localhost:5173，已代理 /api 到 8000；后端换端口时用 VITE_API_TARGET 指定）
 cd frontend
 pnpm install
 pnpm dev
@@ -178,8 +178,9 @@ docker compose -f docker-compose.yml -f docker-compose.split.yml up -d --build
 
 1. **协议自检**（推荐）：「系统 → 协议自检」，先不选账号跑一次匿名检查，再选上账号检查登录态、IM 和订单接口。字段覆盖率明显偏低说明平台接口有变化，请先不要开启自动化。
 2. **添加闲鱼账号**：「账号中心」→「扫码登录」，用闲鱼 App 扫码；需要身份验证时按提示在浏览器完成。也可以用浏览器扩展导出登录态后「导入 Cookie」。
-3. **配置通知渠道**：「通知设置」添加企业微信 / 飞书 / Telegram 等，点「测试」确认能收到。
-4. **按需开启功能**（所有自动化默认关闭）：
+3. **配置大模型**（要用 AI 功能时）：「模型接入」选择预设（DeepSeek / 通义 / Kimi / GLM / OpenRouter / Ollama 等）填入 API Key，点「测试连接」通过后保存并启用。可保存多套配置随时切换，多模态、对话、快速三个档位可分别指定模型；Key 加密保存且只显示打码值，修改接口地址或类型时需要重新填写 Key；AI 相关的判定与回复在模型不可用时会自动降级为仅规则。
+4. **配置通知渠道**：「通知设置」添加企业微信 / 飞书 / Telegram 等，点「测试」确认能收到。
+5. **按需开启功能**（所有自动化默认关闭）：
    - 买家：「选品雷达」新建任务，或用「一句话生成」
    - 卖家：「商品中心」同步商品并设置底价与知识库 →「账号中心」打开自动回复（建议先用**建议模式**）→「订单发货」配置卡券和绑定后再打开自动发货
 
@@ -197,9 +198,10 @@ docker compose -f docker-compose.yml -f docker-compose.split.yml up -d --build
 | `DATABASE_URL` | SQLite | 生产建议 PostgreSQL |
 | `REDIS_URL` | 空 | 为空时使用进程内限流 |
 | `PROCESS_ROLE` | `all` | `all` 单进程；`api` / `worker` 分离部署（需要 Redis） |
-| `LLM_DEFAULT_PROVIDER` | `anthropic` | 或 `openai_compatible`（需同时设置 `LLM_BASE_URL`） |
+| `LLM_DEFAULT_PROVIDER` | `anthropic` | 兜底配置：管理台「模型接入」里没有任何启用配置时才生效 |
+| `LLM_API_KEY` / `LLM_BASE_URL` | 空 | 同上；首次启动会把它们落成一套「环境变量配置」接入，之后在管理台改 |
 | `LLM_MODEL_VISION / CHAT / FAST` | `claude-opus-5-5` | 分别用于多模态判定与文案、客服回复、意图分类与粗筛 |
-| `LLM_DAILY_TOKEN_BUDGET` | `0` | 每日 token 上限，超出后自动降级为仅规则 |
+| `LLM_DAILY_TOKEN_BUDGET` | `0` | 每日 token 上限，超出后自动降级为仅规则；接入配置里可单独覆盖 |
 | `GUARD_RATE_MULTIPLIER` | `1.0` | 全局限流倍率，小于 1 更保守 |
 | `GUARD_SEARCH_PER_MIN` / `GUARD_MESSAGE_PER_MIN` / `GUARD_PUBLISH_PER_5MIN` | 6 / 20 / 1 | 每账号的搜索、发消息、发布速率 |
 | `GUARD_COOLDOWN_BASE_SECONDS` | `1800` | 风控熔断后的基础冷却时长（按次数指数增长，最长 6 小时） |
@@ -325,6 +327,7 @@ XianyuHub/
 │   │   │   └── publish.py      #   发布请求体
 │   │   ├── intelligence/       # LLM 网关、议价引擎、护栏、价格引擎、意图、规则
 │   │   ├── domains/            # account / buyer / goods / message / order / system
+│   │   │                       #   system：用户 / 审计 / 看板 / 协议自检 / 模型接入（llm.py、llm_router.py）
 │   │   ├── notify/             # 通知渠道
 │   │   ├── workers/            # 调度器、IM 网关
 │   │   ├── mcp_server.py       # MCP Server

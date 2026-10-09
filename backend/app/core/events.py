@@ -24,6 +24,7 @@ class Topics:
     ITEM_PUBLISHED = "item.published"
     BUYER_TASK_CHANGED = "buyer.task.changed"
     DELIVERY_FAILED = "delivery.failed"
+    LLM_CONFIG_CHANGED = "llm.config.changed"
 
 
 class EventBus:

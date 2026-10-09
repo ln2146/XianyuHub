@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Aim, Bell, ChatDotRound, DataBoard, Goods, Setting, Tickets, User } from '@element-plus/icons-vue'
+import { Aim, Bell, ChatDotRound, DataBoard, Goods, MagicStick, Setting, Tickets, User } from '@element-plus/icons-vue'
 
 defineProps<{ active: string; collapsed: boolean }>()
 </script>
@@ -55,6 +55,10 @@ defineProps<{ active: string; collapsed: boolean }>()
     <el-menu-item index="/notify">
       <el-icon><Bell /></el-icon>
       <template #title>通知设置</template>
+    </el-menu-item>
+    <el-menu-item index="/llm">
+      <el-icon><MagicStick /></el-icon>
+      <template #title>模型接入</template>
     </el-menu-item>
     <el-menu-item index="/system">
       <el-icon><Setting /></el-icon>

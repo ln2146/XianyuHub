@@ -4,10 +4,14 @@
   默认开启服务端拒答回退（fallbacks="default"）
 - openai_compatible：通义千问 / DeepSeek / vLLM 等 OpenAI 兼容接口（httpx）
 
+生效配置（LlmConfig）优先取管理台里启用的「模型接入」，没有时回退到 LLM_* 环境变量；
+管理台改动后由 app.domains.system.llm 调用 set_config() 触发网关重建。
+
 调用方只关心 tier（vision / chat / fast）和输出的 Pydantic 模型；
 网关不可用或超出预算时抛出 LLMUnavailable，调用方应降级为仅规则。
 """
 
+import asyncio
 import base64
 import json
 import os
@@ -22,7 +26,7 @@ import httpx
 from loguru import logger
 from pydantic import BaseModel, ValidationError
 
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 
 T = TypeVar("T", bound=BaseModel)
 Effort = Literal["low", "medium", "high"]
@@ -79,6 +83,42 @@ class Usage:
     @property
     def total(self) -> int:
         return self.input_tokens + self.output_tokens
+
+
+@dataclass
+class LlmConfig:
+    """一次调用所需的完整模型配置：数据库中的接入配置，或回退的环境变量。"""
+
+    kind: str = "anthropic"  # anthropic / openai_compatible
+    api_key: str = ""
+    base_url: str = ""
+    model_vision: str = ""  # 多模态判定、商品文案
+    model_chat: str = ""  # 客服回复
+    model_fast: str = ""  # 意图分类、粗筛
+    timeout: float = 90.0
+    fallbacks: bool = True
+    daily_token_budget: int = 0  # 0 表示不限制
+    max_images: int = 4
+    source: str = "env"  # env 或 接入名称，仅用于界面展示
+
+    @classmethod
+    def from_settings(cls, s: Settings) -> "LlmConfig":
+        return cls(
+            kind=s.llm_default_provider,
+            api_key=s.llm_api_key,
+            base_url=s.llm_base_url,
+            model_vision=s.llm_model_vision,
+            model_chat=s.llm_model_chat,
+            model_fast=s.llm_model_fast,
+            timeout=s.llm_timeout_seconds,
+            fallbacks=s.llm_anthropic_fallbacks,
+            daily_token_budget=s.llm_daily_token_budget,
+            max_images=s.llm_max_images,
+            source="env",
+        )
+
+    def model_for(self, tier: Tier) -> str:
+        return {Tier.VISION: self.model_vision, Tier.CHAT: self.model_chat, Tier.FAST: self.model_fast}[tier]
 
 
 class Provider(Protocol):
@@ -151,6 +191,9 @@ class AnthropicProvider:
         # 自定义 base_url（代理 / 网关）可能不支持 fallbacks，此时不发送
         self.fallbacks = fallbacks and not base_url
 
+    async def aclose(self) -> None:
+        await self.client.close()
+
     async def complete(self, *, model, system, messages, images, schema, max_tokens, effort) -> LLMResult:
         content_last: list[dict[str, Any]] = []
         for img in images:
@@ -210,7 +253,7 @@ class AnthropicProvider:
         )
 
 
-class OpenAICompatibleProvider:
+class ChatCompletionsProvider:
     """OpenAI 兼容的 /chat/completions 接口（通义千问、DeepSeek、vLLM 等）。"""
 
     def __init__(self, api_key: str, base_url: str, timeout: float, transport: httpx.AsyncBaseTransport | None = None):
@@ -221,6 +264,9 @@ class OpenAICompatibleProvider:
             timeout=timeout, transport=transport, headers={"Authorization": f"Bearer {api_key}"} if api_key else {}
         )
         self._json_mode = True
+
+    async def aclose(self) -> None:
+        await self.http.aclose()
 
     async def complete(self, *, model, system, messages, images, schema, max_tokens, effort) -> LLMResult:
         sys_text = system
@@ -263,9 +309,12 @@ class OpenAICompatibleProvider:
 
 # ---------------------------------------------------------------------------- gateway
 class LLMGateway:
-    def __init__(self, provider: Provider | None = None) -> None:
-        self.settings = get_settings()
-        self.usage = Usage()
+    def __init__(
+        self, provider: Provider | None = None, config: LlmConfig | None = None, usage: Usage | None = None
+    ) -> None:
+        self.config = config or get_config()
+        # 进程默认网关共享同一份用量统计：切换 / 编辑模型配置不会清零当日用量，也就不能借此绕过每日预算
+        self.usage = usage if usage is not None else Usage()
         self._provider = provider
         self._init_error: str | None = None
         if provider is None:
@@ -277,16 +326,22 @@ class LLMGateway:
                 self._init_error = f"LLM 初始化失败：{e}"
 
     def _build_provider(self) -> Provider:
-        s = self.settings
-        if s.llm_default_provider == "anthropic":
-            if not (s.llm_api_key or os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
+        c = self.config
+        if c.kind == "anthropic":
+            if not (c.api_key or os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
                 raise LLMUnavailable("未配置 LLM_API_KEY")
-            return AnthropicProvider(
-                s.llm_api_key, s.llm_base_url or None, s.llm_timeout_seconds, s.llm_anthropic_fallbacks
-            )
-        if s.llm_default_provider == "openai_compatible":
-            return OpenAICompatibleProvider(s.llm_api_key, s.llm_base_url, s.llm_timeout_seconds)
-        raise LLMUnavailable(f"未知的 LLM 供应商：{s.llm_default_provider}")
+            return AnthropicProvider(c.api_key, c.base_url or None, c.timeout, c.fallbacks)
+        if c.kind == "openai_compatible":
+            return ChatCompletionsProvider(c.api_key, c.base_url, c.timeout)
+        raise LLMUnavailable(f"未知的 LLM 供应商：{c.kind}")
+
+    async def aclose(self) -> None:
+        close = getattr(self._provider, "aclose", None)
+        if close is not None:
+            try:
+                await close()
+            except Exception:  # noqa: BLE001
+                logger.debug("关闭模型客户端失败", exc_info=True)
 
     @property
     def available(self) -> bool:
@@ -295,25 +350,25 @@ class LLMGateway:
     def status(self) -> dict[str, Any]:
         return {
             "available": self.available,
-            "provider": self.settings.llm_default_provider,
+            "provider": self.config.kind,
+            "source": self.config.source,
             "error": self._init_error,
             "models": {t.value: self.model_for(t) for t in Tier},
             "usage_today": {
                 "calls": self.usage.calls,
                 "input_tokens": self.usage.input_tokens,
                 "output_tokens": self.usage.output_tokens,
-                "budget": self.settings.llm_daily_token_budget,
+                "budget": self.config.daily_token_budget,
             },
         }
 
     def model_for(self, tier: Tier) -> str:
-        s = self.settings
-        return {Tier.VISION: s.llm_model_vision, Tier.CHAT: s.llm_model_chat, Tier.FAST: s.llm_model_fast}[tier]
+        return self.config.model_for(tier)
 
     def _over_budget(self) -> bool:
         if self.usage.day != date.today():
-            self.usage = Usage()
-        budget = self.settings.llm_daily_token_budget
+            self.usage.__init__()  # 原地重置，保持共享引用
+        budget = self.config.daily_token_budget
         return bool(budget) and self.usage.total >= budget
 
     async def _complete(
@@ -334,7 +389,7 @@ class LLMGateway:
             model=self.model_for(tier),
             system=system,
             messages=messages,
-            images=list(images)[: self.settings.llm_max_images],
+            images=list(images)[: self.config.max_images],
             schema=schema,
             max_tokens=max_tokens,
             effort=effort,
@@ -385,16 +440,51 @@ class LLMGateway:
 
 
 _gateway: LLMGateway | None = None
+_config: LlmConfig | None = None
+_shared_usage = Usage()
+_retiring: set[asyncio.Task] = set()
+
+
+def _retire(gateway: LLMGateway) -> None:
+    """配置切换后延迟关闭旧网关的 HTTP 客户端，给进行中的请求留出完成时间。"""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+
+    def _close() -> None:
+        task = loop.create_task(gateway.aclose())
+        _retiring.add(task)
+        task.add_done_callback(_retiring.discard)
+
+    loop.call_later(gateway.config.timeout + 30, _close)
+
+
+def get_config() -> LlmConfig:
+    """当前生效的模型配置：管理台接入配置优先，其次环境变量。"""
+    return _config or LlmConfig.from_settings(get_settings())
+
+
+def set_config(config: LlmConfig | None) -> None:
+    """替换生效配置并重建网关。config 为空表示回退到环境变量。"""
+    global _config, _gateway
+    old = _gateway
+    _config = config
+    _gateway = None
+    if old is not None:
+        _retire(old)
 
 
 def get_llm() -> LLMGateway:
     global _gateway
     if _gateway is None:
-        _gateway = LLMGateway()
+        _gateway = LLMGateway(usage=_shared_usage)
     return _gateway
 
 
 def set_llm(gateway: LLMGateway | None) -> None:
-    """测试或配置变更后替换网关。"""
+    """测试时替换网关；传 None 同时清空共享用量。"""
     global _gateway
     _gateway = gateway
+    if gateway is None:
+        _shared_usage.__init__()

@@ -19,6 +19,7 @@ from app.domains.buyer import scheduling as buyer_scheduling
 from app.domains.goods import service as goods_service
 from app.domains.message import service as message_service
 from app.domains.order import service as order_service
+from app.domains.system import llm as llm_service
 from app.runtime import close_runtime, get_runtime, init_runtime
 from app.workers import scheduler
 from app.workers.im_gateway import ImGatewayManager, get_im_manager, im_status_snapshot, set_im_manager
@@ -36,6 +37,11 @@ def runs_workers() -> bool:
 async def _on_remote_event(topic: str, payload: dict[str, Any]) -> None:
     if topic == Topics.ACCOUNT_STATUS_CHANGED and payload.get("account_id") is not None:
         await account_service.reload_guard_state(payload["account_id"])
+    if topic == Topics.LLM_CONFIG_CHANGED:
+        # 其他进程改了模型配置，本进程重新装载
+        from app.domains.system import llm as llm_service
+
+        await llm_service.apply_active_config()
     await bus.publish(topic, payload, remote=True)
 
 
@@ -71,6 +77,7 @@ async def setup_runtime(transport=None) -> None:
     await account_service.load_guard_states()
     if role() in ("all", "worker"):
         bus.subscribe(Topics.ORDER_STATUS_CHANGED, order_service.on_order_event)
+    await llm_service.apply_active_config()
     await _setup_cluster()
 
 

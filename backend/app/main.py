@@ -12,6 +12,7 @@ from app.core.db import dispose_engine, init_engine, run_migrations
 from app.core.events import bus
 from app.core.logging import setup_logging
 from app.domains.message.router import ws_router
+from app.domains.system import llm as llm_service
 from app.domains.system.service import ensure_admin
 
 
@@ -24,6 +25,7 @@ async def lifespan(app: FastAPI):
     init_engine()
     await run_migrations()
     await ensure_admin()
+    await llm_service.seed_from_env()
     await bootstrap.setup_runtime()
     if bootstrap.workers_enabled():
         await bootstrap.start_workers()

@@ -18,5 +18,5 @@ from app.domains.order.models import (  # noqa: F401
     DeliveryRecord,
     Order,
 )
-from app.domains.system.models import AuditLog, User  # noqa: F401
+from app.domains.system.models import AuditLog, LlmProvider, User  # noqa: F401
 from app.notify.models import NotificationChannel  # noqa: F401

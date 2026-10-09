@@ -13,6 +13,8 @@ export interface DashboardAccount {
 export interface LlmStatus {
   available: boolean
   provider: string
+  /** 生效配置来源：接入名称，或 env 表示回退到环境变量 */
+  source: string
   error: string | null
   models: Record<string, string>
   usage_today: { calls: number; input_tokens: number; output_tokens: number; budget: number }

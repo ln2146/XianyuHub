@@ -8,6 +8,9 @@ function packageOf(id: string): string | null {
   return m ? m[1]!.replace(/\\/g, '/') : null
 }
 
+// 开发代理目标：默认本机 8000 端口的后端；端口被占用时用 VITE_API_TARGET=http://127.0.0.1:8001 pnpm dev 覆盖
+const API_TARGET = process.env.VITE_API_TARGET || 'http://127.0.0.1:8000'
+
 type PkgMatcher = (pkg: string) => boolean
 const VUE_PKGS: PkgMatcher = (p) => ['vue', 'vue-router', 'pinia', 'vue-demi'].includes(p) || p.startsWith('@vue/')
 // element-plus、图标及其运行时依赖
@@ -31,8 +34,8 @@ export default defineConfig({
     port: 5173,
     proxy: {
       // WebSocket 实时推送（需放在 /api 之前，确保 ws 升级被代理）
-      '/api/v1/ws': { target: 'http://127.0.0.1:8000', ws: true, changeOrigin: true },
-      '/api': { target: 'http://127.0.0.1:8000', changeOrigin: true },
+      '/api/v1/ws': { target: API_TARGET, ws: true, changeOrigin: true },
+      '/api': { target: API_TARGET, changeOrigin: true },
     },
   },
   build: {

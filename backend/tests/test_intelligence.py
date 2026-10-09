@@ -20,11 +20,11 @@ from app.intelligence.guardrails import check_reply, detect_injection, extract_a
 from app.intelligence.intent import Intent, classify_intent, rule_intent
 from app.intelligence.llm import (
     AnthropicProvider,
+    ChatCompletionsProvider,
     ImageInput,
     LLMGateway,
     LLMResult,
     LLMUnavailable,
-    OpenAICompatibleProvider,
     Tier,
     parse_json,
     strict_schema,
@@ -255,7 +255,7 @@ async def test_openai_compatible_provider_json_mode_fallback():
         )
 
     respx.post("https://llm.example.com/v1/chat/completions").mock(side_effect=handler)
-    provider = OpenAICompatibleProvider("k", "https://llm.example.com/v1", 30)
+    provider = ChatCompletionsProvider("k", "https://llm.example.com/v1", 30)
     gw = LLMGateway(provider=provider)
     out = await gw.complete_json(Tier.VISION, "sys", "看图", Out, images=[ImageInput(url="https://img/1.jpg")])
     assert out.score == 2 and len(calls) == 2
