@@ -47,22 +47,6 @@ const activeMenu = computed(() => {
       <template #title><span>选品雷达</span></template>
     </el-menu-item>
 
-    <!-- 消息中心 -->
-    <el-sub-menu index="messages">
-      <template #title>
-        <el-icon class="menu-icon-primary"><ChatDotRound /></el-icon>
-        <span>消息中心</span>
-      </template>
-      <el-menu-item index="/messages/inbox">
-        <el-icon class="sub-icon"><Message /></el-icon>
-        <template #title><span>收件箱</span></template>
-      </el-menu-item>
-      <el-menu-item index="/messages/rules">
-        <el-icon class="sub-icon"><Operation /></el-icon>
-        <template #title><span>回复规则</span></template>
-      </el-menu-item>
-    </el-sub-menu>
-
     <!-- 商品中心 -->
     <el-sub-menu index="goods">
       <template #title>
@@ -92,6 +76,22 @@ const activeMenu = computed(() => {
       <el-menu-item index="/orders/cards">
         <el-icon class="sub-icon"><Lightning /></el-icon>
         <template #title><span>自动发货</span></template>
+      </el-menu-item>
+    </el-sub-menu>
+
+    <!-- 消息中心 -->
+    <el-sub-menu index="messages">
+      <template #title>
+        <el-icon class="menu-icon-primary"><ChatDotRound /></el-icon>
+        <span>消息中心</span>
+      </template>
+      <el-menu-item index="/messages/inbox">
+        <el-icon class="sub-icon"><Message /></el-icon>
+        <template #title><span>收件箱</span></template>
+      </el-menu-item>
+      <el-menu-item index="/messages/rules">
+        <el-icon class="sub-icon"><Operation /></el-icon>
+        <template #title><span>回复规则</span></template>
       </el-menu-item>
     </el-sub-menu>
 
