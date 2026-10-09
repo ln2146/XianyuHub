@@ -259,7 +259,7 @@ function publishConfirmText(title: string, price: number, accountId: number, pen
     `将以账号「${accounts.nameOf(accountId)}」在闲鱼上发布「${title}」，售价 ${fmtMoney(price)}。`,
     '发布受频率保护（默认每个账号 5 分钟 1 个），发布后可在闲鱼 App 中修改或下架。',
   ]
-  if (pending) lines.unshift(`⚠️ 还有 ${pending} 项 AI 标注的信息未确认。`)
+  if (pending) lines.unshift(`注意：还有 ${pending} 项 AI 标注的信息未确认。`)
   return lines.join('\n')
 }
 
@@ -679,40 +679,35 @@ onBeforeUnmount(() => window.clearInterval(timer))
           <!-- 智能发品提效助手与质检贴士（填满空间，提升专业度与美观度） -->
           <el-card shadow="never" class="publish-guide-card">
             <div class="guide-card-head">
-              <span class="guide-card-title">💡 AI 发品提效与质检指南</span>
-              <span class="guide-card-tag">智能辅助</span>
+              <span class="guide-card-title">发布小贴士</span>
             </div>
 
             <div class="guide-items-list">
               <div class="guide-item-row">
-                <span class="guide-icon">📸</span>
-                <div class="guide-item-content">
-                  <div class="guide-item-name">实拍细节优化</div>
-                  <div class="guide-item-desc">建议上传正面、背面、成色细节及防伪标签，AI 识图成色评级准确率提升 40%。</div>
+                                <div class="guide-item-content">
+                  <div class="guide-item-name">多拍实拍细节</div>
+                  <div class="guide-item-desc">正面、背面、成色细节、瑕疵和标签各拍一张，AI 判断成色和写描述时会更准确，买家也更放心。</div>
                 </div>
               </div>
 
               <div class="guide-item-row">
-                <span class="guide-icon">🎯</span>
-                <div class="guide-item-content">
-                  <div class="guide-item-name">智能定价策略</div>
-                  <div class="guide-item-desc">参考同款行情中位价定价；设置「底价」后 AI 客服将在议价区间内自动挽留买家促成交易。</div>
+                                <div class="guide-item-content">
+                  <div class="guide-item-name">定价与底价</div>
+                  <div class="guide-item-desc">AI 参考同款在售价给出建议价；设置「底价」后，AI 客服议价不会低于这个价格，底价也不会透露给买家。</div>
                 </div>
               </div>
 
               <div class="guide-item-row">
-                <span class="guide-icon">🛡️</span>
-                <div class="guide-item-content">
-                  <div class="guide-item-name">违规引流自动检测</div>
-                  <div class="guide-item-desc">生成文案时系统自动滤除微信号、手机号、外链等引流违禁词，降低闲鱼封禁与扣分风险。</div>
+                                <div class="guide-item-content">
+                  <div class="guide-item-name">自动去掉违规内容</div>
+                  <div class="guide-item-desc">生成的标题和描述会自动去掉微信、QQ、手机号等站外联系方式，以及“保证正品”这类绝对化承诺。</div>
                 </div>
               </div>
 
               <div class="guide-item-row">
-                <span class="guide-icon">⚡</span>
-                <div class="guide-item-content">
-                  <div class="guide-item-name">雷达好货一键套利</div>
-                  <div class="guide-item-desc">在选品雷达发现一手捡漏货源后，点击「一键转手发品」自动带入商品标题与加价率直接生成！</div>
+                                <div class="guide-item-content">
+                  <div class="guide-item-name">从选品雷达转手</div>
+                  <div class="guide-item-desc">在选品雷达的商品详情里点「转手发品」，会带入标题和建议价，补上实拍图即可发布。</div>
                 </div>
               </div>
             </div>
@@ -1001,15 +996,6 @@ onBeforeUnmount(() => window.clearInterval(timer))
   font-weight: 600;
   color: #1e293b;
 }
-.guide-card-tag {
-  font-size: 10.5px;
-  color: #059669;
-  background: #ecfdf5;
-  border: 1px solid #a7f3d0;
-  padding: 1px 8px;
-  border-radius: 999px;
-  font-weight: 500;
-}
 .guide-items-list {
   display: flex;
   flex-direction: column;
@@ -1019,11 +1005,6 @@ onBeforeUnmount(() => window.clearInterval(timer))
   display: flex;
   align-items: flex-start;
   gap: 10px;
-}
-.guide-icon {
-  font-size: 16px;
-  margin-top: 1px;
-  flex-shrink: 0;
 }
 .guide-item-content {
   flex: 1;
