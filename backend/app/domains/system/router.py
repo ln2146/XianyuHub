@@ -1,11 +1,12 @@
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.core.deps import AdminUser, CurrentUser, SessionDep
+from app.core.pagination import set_total
 from app.core.security import create_access_token, hash_password, verify_password
 from app.domains.system import service
 from app.domains.system.audit import record_audit
@@ -137,18 +138,44 @@ async def update_user(user_id: int, body: UserUpdate, admin: AdminUser, session:
     return user
 
 
+@router.delete("/users/{user_id}", status_code=204)
+async def delete_user(user_id: int, admin: AdminUser, session: SessionDep) -> None:
+    from app.domains.account.models import XyAccount
+    from app.domains.buyer.models import MonitorTask
+    from app.domains.order.models import CardPool
+
+    user = await session.get(User, user_id)
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "用户不存在")
+    if user.id == admin.id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "不能删除自己")
+    for model, label in ((XyAccount, "闲鱼账号"), (MonitorTask, "选品任务"), (CardPool, "卡券")):
+        owned = (
+            await session.execute(select(func.count()).select_from(model).where(model.owner_id == user.id))
+        ).scalar_one()
+        if owned:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT, f"该用户名下还有 {owned} 个{label}，请先转移或删除，或改为停用该用户"
+            )
+    await session.delete(user)
+    await session.commit()
+    await record_audit("user.delete", user_id=admin.id, actor_type="human", target_type="user", target_id=user_id)
+
+
 @router.get("/audit-logs", response_model=list[AuditOut])
 async def list_audit_logs(
     _: AdminUser,
     session: SessionDep,
+    response: Response,
     action: str | None = None,
     account_id: int | None = None,
     limit: int = Query(100, le=500),
     offset: int = 0,
 ) -> list[AuditLog]:
-    stmt = select(AuditLog).order_by(AuditLog.id.desc()).limit(limit).offset(offset)
+    stmt = select(AuditLog).order_by(AuditLog.id.desc())
     if action:
         stmt = stmt.where(AuditLog.action == action)
     if account_id is not None:
         stmt = stmt.where(AuditLog.account_id == account_id)
-    return list((await session.execute(stmt)).scalars())
+    await set_total(response, session, stmt)
+    return list((await session.execute(stmt.limit(limit).offset(offset))).scalars())

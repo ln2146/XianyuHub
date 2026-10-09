@@ -42,6 +42,7 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=["X-Total-Count"],
     )
     app.include_router(api_router)
     app.include_router(ws_router)

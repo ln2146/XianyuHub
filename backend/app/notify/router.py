@@ -6,7 +6,7 @@ from sqlalchemy import select
 
 from app.core.deps import CurrentUser, SessionDep
 from app.notify.models import NotificationChannel
-from app.notify.senders import SENDERS, Notification, validate_config
+from app.notify.senders import OPTIONAL_FIELDS, SENDERS, Notification, validate_config
 from app.notify.service import NotifyEvents, decode_config, encode_config, send_to_channel
 
 router = APIRouter(prefix="/notify", tags=["notify"])
@@ -70,7 +70,11 @@ async def _get(session, user, channel_id: int) -> NotificationChannel:
 
 @router.get("/meta")
 async def meta(_: CurrentUser) -> dict[str, Any]:
-    return {"types": {k: v[1] for k, v in SENDERS.items()}, "events": NotifyEvents.ALL}
+    return {
+        "types": {k: v[1] for k, v in SENDERS.items()},
+        "optional": {k: OPTIONAL_FIELDS.get(k, {}) for k in SENDERS},
+        "events": NotifyEvents.ALL,
+    }
 
 
 @router.get("/channels", response_model=list[ChannelOut])

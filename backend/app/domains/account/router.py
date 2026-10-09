@@ -10,6 +10,7 @@ from app.core.deps import AdminUser, CurrentUser, SessionDep
 from app.domains.account import service
 from app.domains.account.models import AccountGrant, AccountSettings, RiskEvent, XyAccount
 from app.domains.system.audit import record_audit
+from app.domains.system.models import User
 from app.goofish.gateway import account_key
 from app.goofish.guard.guard import AccountState
 from app.runtime import get_runtime
@@ -189,6 +190,17 @@ async def risk_events(account_id: int, user: CurrentUser, session: SessionDep) -
         select(RiskEvent).where(RiskEvent.account_id == account_id).order_by(RiskEvent.id.desc()).limit(100)
     )
     return list(rows.scalars())
+
+
+@router.get("/{account_id}/grants")
+async def list_grants(account_id: int, _: AdminUser, session: SessionDep) -> list[dict[str, Any]]:
+    rows = await session.execute(
+        select(AccountGrant, User)
+        .join(User, User.id == AccountGrant.user_id)
+        .where(AccountGrant.account_id == account_id)
+        .order_by(AccountGrant.id)
+    )
+    return [{"user_id": u.id, "username": u.username, "role": u.role} for _g, u in rows]
 
 
 @router.post("/{account_id}/grants", status_code=201)

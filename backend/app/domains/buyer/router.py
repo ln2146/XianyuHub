@@ -5,12 +5,13 @@ from datetime import datetime
 from typing import Any
 
 from croniter import croniter
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Response, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func, select
 
 from app.core.deps import CurrentUser, SessionDep
+from app.core.pagination import set_total
 from app.domains.buyer import scheduling
 from app.domains.buyer.ai import draft_task
 from app.domains.buyer.models import MarketItemRecord, MonitorTask, PriceSnapshot, TaskResult, UserMark, Verdict
@@ -225,6 +226,7 @@ async def list_results(
     sort: str = Query("newest", pattern="^(newest|price_asc|deal)$"),
     limit: int = Query(50, le=200),
     offset: int = 0,
+    response: Response = None,  # type: ignore[assignment]  # 直接调用（导出 CSV）时可不传
 ) -> list[ResultOut]:
     stmt = (
         select(TaskResult, MarketItemRecord)
@@ -251,6 +253,7 @@ async def list_results(
         "price_asc": MarketItemRecord.price.asc(),
         "deal": TaskResult.deal_score.desc(),
     }[sort]
+    await set_total(response, session, stmt)
     rows = (await session.execute(stmt.order_by(order).limit(limit).offset(offset))).all()
     return [
         ResultOut(

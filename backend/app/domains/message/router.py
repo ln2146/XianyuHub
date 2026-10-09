@@ -2,12 +2,13 @@ from datetime import datetime
 from typing import Any
 
 import jwt
-from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, HTTPException, Query, Response, WebSocket, WebSocketDisconnect, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app.core.db import session_factory
 from app.core.deps import CurrentUser, SessionDep
+from app.core.pagination import set_total
 from app.core.realtime import hub
 from app.core.security import decode_access_token
 from app.domains.account.service import accessible_account_ids, get_account_for
@@ -100,6 +101,7 @@ def _conv_out(c: Conversation) -> ConversationOut:
 async def list_conversations(
     user: CurrentUser,
     session: SessionDep,
+    response: Response,
     account_id: int | None = None,
     q: str | None = None,
     limit: int = Query(50, le=200),
@@ -113,6 +115,7 @@ async def list_conversations(
         stmt = stmt.where(Conversation.account_id == account_id)
     if q:
         stmt = stmt.where(Conversation.peer_name.contains(q) | Conversation.last_message.contains(q))
+    await set_total(response, session, stmt)
     return [_conv_out(c) for c in (await session.execute(stmt.limit(limit).offset(offset))).scalars()]
 
 

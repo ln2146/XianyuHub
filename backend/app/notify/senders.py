@@ -133,6 +133,15 @@ SENDERS = {
 }
 
 
+# 可选配置项及默认值（供管理台渲染表单）
+OPTIONAL_FIELDS: dict[str, dict[str, object]] = {
+    "telegram": {"api_base": "https://api.telegram.org"},
+    "ntfy": {"server_url": "https://ntfy.sh", "token": ""},
+    "webhook": {"headers": {}},
+    "email": {"port": 465, "ssl": True},
+}
+
+
 def validate_config(channel_type: str, cfg: dict) -> None:
     if channel_type not in SENDERS:
         raise ValueError(f"不支持的通知渠道：{channel_type}")

@@ -1,12 +1,13 @@
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
 from app.core.crypto import get_vault
 from app.core.deps import CurrentUser, SessionDep
+from app.core.pagination import set_total
 from app.domains.account.service import accessible_account_ids, get_account_for
 from app.domains.order import service
 from app.domains.order.models import (
@@ -137,6 +138,7 @@ async def _pool_out(session, pool: CardPool) -> PoolOut:
 async def list_orders(
     user: CurrentUser,
     session: SessionDep,
+    response: Response,
     account_id: int | None = None,
     status_: str | None = Query(None, alias="status"),
     q: str | None = None,
@@ -153,6 +155,7 @@ async def list_orders(
         stmt = stmt.where(Order.status == status_)
     if q:
         stmt = stmt.where(Order.order_id.contains(q) | Order.item_title.contains(q) | Order.buyer_nick.contains(q))
+    await set_total(response, session, stmt)
     return list((await session.execute(stmt.limit(limit).offset(offset))).scalars())
 
 
