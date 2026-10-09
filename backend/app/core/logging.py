@@ -1,5 +1,6 @@
 """日志：loguru 统一输出，并对敏感字段打码。"""
 
+import logging
 import re
 import sys
 
@@ -25,7 +26,25 @@ def _patch(record):  # type: ignore[no-untyped-def]
     record["message"] = mask_secrets(record["message"])
 
 
+_TOKEN_QS = re.compile(r"(token=)[^&\s\"']+")
+
+
+class _AccessTokenFilter(logging.Filter):
+    """uvicorn 访问日志会记录完整 URL，其中 WebSocket 的 ?token= 是登录凭证，需要打码。"""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.args:
+            record.args = tuple(_TOKEN_QS.sub(r"\1***", a) if isinstance(a, str) else a for a in record.args)
+        if isinstance(record.msg, str):
+            record.msg = _TOKEN_QS.sub(r"\1***", record.msg)
+        return True
+
+
 def setup_logging(level: str = "INFO") -> None:
+    for name in ("uvicorn.access", "uvicorn.error"):
+        lg = logging.getLogger(name)
+        if not any(isinstance(f, _AccessTokenFilter) for f in lg.filters):
+            lg.addFilter(_AccessTokenFilter())
     logger.remove()
     logger.configure(patcher=_patch)
     logger.add(
