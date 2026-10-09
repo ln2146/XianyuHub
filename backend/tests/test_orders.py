@@ -143,3 +143,16 @@ async def test_out_of_stock_goes_manual(admin_client, im):  # noqa: F811
     await paid(account_id, "4400020")
     order = (await admin_client.get("/api/v1/orders")).json()[0]
     assert order["status"] == "manual" and "库存不足" in order["fail_reason"]
+
+
+@respx.mock
+async def test_dashboard(admin_client, im):  # noqa: F811
+    account_id, fake = im
+    await setup_delivery(admin_client, account_id, cards="C1")
+    mock_trade()
+    await receive(account_id, chat("在吗"))
+    await paid(account_id, "4400030")
+    d = (await admin_client.get("/api/v1/dashboard")).json()
+    assert d["accounts"][0]["im_connected"] and d["today"]["messages_in"] == 1
+    assert d["today"]["deliveries"] == 1 and d["today"]["orders"]["delivered"] == 1
+    assert d["today"]["gmv"] == 19.9 and "llm" in d["system"]

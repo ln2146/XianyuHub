@@ -7,6 +7,7 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parents[2]
+DEV_SECRET = "dev-secret-change-me-please-use-a-long-random-string"
 
 
 class Settings(BaseSettings):
@@ -17,7 +18,7 @@ class Settings(BaseSettings):
     app_name: str = "XianyuHub"
     bind_host: str = "127.0.0.1"
     app_port: int = 8000
-    app_secret_key: str = "dev-secret-change-me"
+    app_secret_key: str = DEV_SECRET
     access_token_expire_minutes: int = 60 * 12
     # 32 字节 base64，用于加密 Cookie / 卡密；为空时开发环境使用派生密钥
     credential_master_key: str = ""
