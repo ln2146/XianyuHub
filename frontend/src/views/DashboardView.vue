@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRealtimeStore } from '@/stores/realtime'
 import { useRouter } from 'vue-router'
 import {
@@ -16,6 +16,8 @@ import {
   Warning,
 } from '@element-plus/icons-vue'
 import { getDashboard, type Dashboard } from '@/api/dashboard'
+import { updateAccount } from '@/api/account'
+import { ElMessage } from 'element-plus'
 import StatusTag from '@/components/StatusTag.vue'
 import { NEEDS_ACTION_STATUSES, accountStatusMap, fmtMoney, fmtTime } from '@/utils/format'
 
@@ -45,6 +47,34 @@ async function load() {
     data.value = await getDashboard()
   } finally {
     loading.value = false
+  }
+}
+
+const busy = reactive<Record<string, boolean>>({})
+
+async function toggleAccountReply(row: { id: number; auto_reply: boolean; nickname: string; remark?: string }, val: boolean) {
+  busy[`reply-${row.id}`] = true
+  try {
+    await updateAccount(row.id, { settings: { auto_reply: val } })
+    row.auto_reply = val
+    ElMessage.success(`账号「${row.remark || row.nickname || row.id}」已${val ? '开启' : '关闭'}自动回复`)
+  } catch {
+    /* 拦截器已处理 */
+  } finally {
+    busy[`reply-${row.id}`] = false
+  }
+}
+
+async function toggleAccountDelivery(row: { id: number; auto_delivery: boolean; nickname: string; remark?: string }, val: boolean) {
+  busy[`deliv-${row.id}`] = true
+  try {
+    await updateAccount(row.id, { settings: { auto_delivery: val } })
+    row.auto_delivery = val
+    ElMessage.success(`账号「${row.remark || row.nickname || row.id}」已${val ? '开启' : '关闭'}自动发货`)
+  } catch {
+    /* 拦截器已处理 */
+  } finally {
+    busy[`deliv-${row.id}`] = false
   }
 }
 
@@ -297,17 +327,29 @@ function healthColor(h: number) {
 
               <el-table-column label="自动回复" width="95">
                 <template #default="{ row }">
-                  <el-tag size="small" :type="row.auto_reply ? 'success' : 'info'" effect="light">
-                    {{ row.auto_reply ? '已开启' : '未开启' }}
-                  </el-tag>
+                  <el-switch
+                    :model-value="row.auto_reply"
+                    :loading="busy[`reply-${row.id}`]"
+                    active-text="开"
+                    inactive-text="关"
+                    inline-prompt
+                    size="small"
+                    @change="(v: string | number | boolean) => toggleAccountReply(row as any, !!v)"
+                  />
                 </template>
               </el-table-column>
 
               <el-table-column label="自动发货" width="95">
                 <template #default="{ row }">
-                  <el-tag size="small" :type="row.auto_delivery ? 'success' : 'info'" effect="light">
-                    {{ row.auto_delivery ? '已开启' : '未开启' }}
-                  </el-tag>
+                  <el-switch
+                    :model-value="row.auto_delivery"
+                    :loading="busy[`deliv-${row.id}`]"
+                    active-text="开"
+                    inactive-text="关"
+                    inline-prompt
+                    size="small"
+                    @change="(v: string | number | boolean) => toggleAccountDelivery(row as any, !!v)"
+                  />
                 </template>
               </el-table-column>
             </el-table>

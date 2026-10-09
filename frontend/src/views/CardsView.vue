@@ -27,6 +27,7 @@ import {
   type PoolOut,
 } from '@/api/order'
 import { listItems, type MyItem } from '@/api/goods'
+import { updateAccount, type Account } from '@/api/account'
 import { useAccountsStore } from '@/stores/accounts'
 import { useMobile } from '@/composables/useMobile'
 import { fmtTime } from '@/utils/format'
@@ -408,6 +409,70 @@ onMounted(async () => {
 })
 
 const lowStock = (p: PoolOut) => p.kind === 'pool' && p.stock.available <= p.low_stock_threshold
+
+// ================================================================ 账号发货免跳转管理
+const accountsLoading = ref(false)
+const accountToggling = reactive<Record<number, boolean>>({})
+
+const accountDeliveryStats = computed(() => {
+  const list = accounts.list
+  if (!list.length) return { total: 0, enabled: 0, allEnabled: false }
+  const enabled = list.filter((a) => a.settings?.auto_delivery).length
+  return {
+    total: list.length,
+    enabled,
+    allEnabled: enabled > 0 && enabled === list.length,
+  }
+})
+
+async function toggleAccountDelivery(acc: Account, val: boolean) {
+  accountToggling[acc.id] = true
+  try {
+    await updateAccount(acc.id, {
+      settings: { ...acc.settings, auto_delivery: val },
+    })
+    if (acc.settings) acc.settings.auto_delivery = val
+    ElMessage.success(`账号「${acc.remark || acc.nickname || acc.unb}」已${val ? '开启' : '关闭'}自动发货`)
+    await accounts.load(true)
+  } catch {
+    /* 拦截器已处理 */
+  } finally {
+    accountToggling[acc.id] = false
+  }
+}
+
+async function toggleAllAccountsDelivery(val: boolean) {
+  accountsLoading.value = true
+  try {
+    for (const acc of accounts.list) {
+      await updateAccount(acc.id, {
+        settings: { ...acc.settings, auto_delivery: val },
+      })
+      if (acc.settings) acc.settings.auto_delivery = val
+    }
+    ElMessage.success(`已为全部 ${accounts.list.length} 个账号${val ? '开启' : '关闭'}自动发货`)
+    await accounts.load(true)
+  } finally {
+    accountsLoading.value = false
+  }
+}
+
+async function changeAccountDeliveryMode(acc: Account, mode: 'confirm_then_send' | 'send_then_confirm' | 'send_only') {
+  try {
+    await updateAccount(acc.id, {
+      settings: { ...acc.settings, delivery_mode: mode },
+    })
+    if (acc.settings) acc.settings.delivery_mode = mode
+    ElMessage.success('发货确认模式已更新')
+    await accounts.load(true)
+  } catch {
+    /* 拦截器已处理 */
+  }
+}
+
+const accountModal = reactive({
+  open: false,
+})
 </script>
 
 <template>
@@ -456,15 +521,57 @@ const lowStock = (p: PoolOut) => p.kind === 'pool' && p.stock.available <= p.low
 
         <div class="step-arrow-divider">→</div>
 
-        <div class="delivery-step-item" @click="router.push('/accounts')">
+        <div
+          class="delivery-step-item"
+          :class="{ current: accountDeliveryStats.allEnabled, warning: !accountDeliveryStats.enabled }"
+          @click="accountModal.open = true"
+        >
           <div class="step-num-badge">03</div>
           <div class="step-content">
-            <div class="step-label">开启自动发货</div>
-            <div class="step-detail">在账号设置中打开开关，开启 7x24 自动发货</div>
+            <div class="step-label">
+              <span>开启自动发货</span>
+              <el-tag
+                size="small"
+                :type="accountDeliveryStats.allEnabled ? 'success' : accountDeliveryStats.enabled > 0 ? 'warning' : 'info'"
+                effect="light"
+                class="ml-s"
+              >
+                {{ accountDeliveryStats.enabled }}/{{ accountDeliveryStats.total }} 已开启
+              </el-tag>
+            </div>
+            <div class="step-detail">
+              {{ accountDeliveryStats.enabled > 0 ? '已接管发货，买家付款后系统自动发货' : '点击此处免跳转直接开启' }}
+            </div>
           </div>
-          <el-button size="small" type="success" plain class="step-action-btn" @click.stop="router.push('/accounts')">
-            去设置 &gt;
-          </el-button>
+
+          <!-- 单账号直接放开关免跳转 -->
+          <div v-if="accounts.list.length === 1" class="step-direct-switch" @click.stop>
+            <el-switch
+              :model-value="accounts.list[0].settings?.auto_delivery"
+              :loading="accountToggling[accounts.list[0].id]"
+              active-text="开"
+              inactive-text="关"
+              inline-prompt
+              @change="(v: string | number | boolean) => toggleAccountDelivery(accounts.list[0], !!v)"
+            />
+          </div>
+          <!-- 多账号提供一键开启与弹窗设置 -->
+          <div v-else class="step-action-group" @click.stop>
+            <el-button
+              v-if="!accountDeliveryStats.allEnabled"
+              size="small"
+              type="success"
+              plain
+              :loading="accountsLoading"
+              class="step-action-btn"
+              @click="toggleAllAccountsDelivery(true)"
+            >
+              一键全开
+            </el-button>
+            <el-button size="small" class="step-action-btn" @click="accountModal.open = true">
+              设置 &gt;
+            </el-button>
+          </div>
         </div>
       </div>
     </div>
@@ -781,6 +888,74 @@ const lowStock = (p: PoolOut) => p.kind === 'pool' && p.stock.available <= p.low
         <el-button type="primary" :loading="bEdit.saving" @click="saveBinding">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 账号自动发货免跳转设置弹窗 -->
+    <el-dialog v-model="accountModal.open" title="账号自动发货开关管理" width="680px">
+      <div class="account-modal-header">
+        <div class="desc">在此快速管理每个闲鱼账号的自动发货开关与通知模式，修改即时生效，无需前往账号管理：</div>
+        <div class="modal-quick-ops">
+          <el-button size="small" type="success" plain :loading="accountsLoading" @click="toggleAllAccountsDelivery(true)">
+            全部开启
+          </el-button>
+          <el-button size="small" plain :loading="accountsLoading" @click="toggleAllAccountsDelivery(false)">
+            全部暂停
+          </el-button>
+        </div>
+      </div>
+
+      <div class="table-wrap mt-s">
+        <el-table :data="accounts.list" size="small" empty-text="暂无绑定账号，请先添加账号">
+          <el-table-column label="闲鱼账号" min-width="160">
+            <template #default="{ row }">
+              <div class="modal-acc-cell">
+                <div class="modal-acc-avatar">🐟</div>
+                <div>
+                  <div class="font-semibold">{{ row.remark || row.nickname || row.unb }}</div>
+                  <div class="muted smaller mono">{{ row.nickname }}</div>
+                </div>
+              </div>
+            </template>
+          </el-table-column>
+
+          <el-table-column label="自动发货开关" width="130">
+            <template #default="{ row }">
+              <el-switch
+                :model-value="row.settings?.auto_delivery"
+                :loading="accountToggling[row.id]"
+                active-text="开启"
+                inactive-text="关闭"
+                inline-prompt
+                @change="(v: string | number | boolean) => toggleAccountDelivery(row as Account, !!v)"
+              />
+            </template>
+          </el-table-column>
+
+          <el-table-column label="发货通知模式" min-width="210">
+            <template #default="{ row }">
+              <el-select
+                :model-value="row.settings?.delivery_mode || 'send_then_confirm'"
+                size="small"
+                class="full"
+                @change="(v: 'confirm_then_send' | 'send_then_confirm' | 'send_only') => changeAccountDeliveryMode(row as Account, v)"
+              >
+                <el-option value="send_then_confirm" label="先发聊天消息，后点确认发货（推荐）" />
+                <el-option value="confirm_then_send" label="先点确认发货，后发聊天消息" />
+                <el-option value="send_only" label="仅发聊天消息，不点确认发货" />
+              </el-select>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+
+      <template #footer>
+        <div class="modal-footer-flex">
+          <el-button link type="primary" size="small" @click="router.push('/accounts')">
+            前往完整账号管理中心 &gt;
+          </el-button>
+          <el-button type="primary" @click="accountModal.open = false">完成</el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -983,6 +1158,59 @@ const lowStock = (p: PoolOut) => p.kind === 'pool' && p.stock.available <= p.low
 .mono :deep(textarea) {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
+}
+.step-direct-switch {
+  display: flex;
+  align-items: center;
+}
+.step-action-group {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.delivery-step-item.warning {
+  border-color: #fde047;
+  background: #fefce8;
+}
+.account-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #f1f5f9;
+}
+.account-modal-header .desc {
+  font-size: 13px;
+  color: #475569;
+  flex: 1;
+}
+.modal-quick-ops {
+  display: flex;
+  gap: 8px;
+}
+.modal-acc-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.modal-acc-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: #ecfdf5;
+  border: 1px solid #d1fae5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+}
+.modal-footer-flex {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
 }
 @media (max-width: 900px) {
   .delivery-steps-grid {
