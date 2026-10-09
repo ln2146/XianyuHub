@@ -13,8 +13,8 @@ import {
   Message,
   Operation,
   Setting,
+  SetUp,
   Tickets,
-  Tools,
   Upload,
   User,
 } from '@element-plus/icons-vue'
@@ -117,7 +117,7 @@ const activeMenu = computed(() => {
         <template #title><span>通知设置</span></template>
       </el-menu-item>
       <el-menu-item index="/system">
-        <el-icon class="sub-icon"><Tools /></el-icon>
+        <el-icon class="sub-icon"><SetUp /></el-icon>
         <template #title><span>系统设置</span></template>
       </el-menu-item>
     </el-sub-menu>
