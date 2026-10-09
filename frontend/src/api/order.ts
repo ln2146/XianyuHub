@@ -1,4 +1,4 @@
-import { http } from './http'
+import { http, toPaged } from './http'
 
 export type OrderState =
   | 'pending_pay'
@@ -98,7 +98,7 @@ export interface BlacklistEntry {
 }
 
 export const listOrders = (params: { account_id?: number; status?: string; q?: string; limit?: number; offset?: number }) =>
-  http.get<Order[]>('/orders', { params }).then((r) => r.data)
+  http.get<Order[]>('/orders', { params }).then(toPaged)
 export const getOrder = (id: number) =>
   http.get<{ order: Order; deliveries: DeliveryRecord[] }>(`/orders/${id}`).then((r) => r.data)
 export const syncOrders = (accountId: number) =>

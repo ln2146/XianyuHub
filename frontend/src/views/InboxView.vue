@@ -29,20 +29,38 @@ const isMobile = useMobile()
 // ---------------------------------------------------------------- 会话列表
 const convs = ref<Conversation[]>([])
 const convLoading = ref(false)
+const convMoreLoading = ref(false)
+const convTotal = ref(0)
+const CONV_PAGE = 50
 const filter = reactive({ account_id: undefined as number | undefined, q: '' })
 const currentId = ref<number | null>(null)
 const current = computed(() => convs.value.find((c) => c.id === currentId.value) || null)
 
+const convParams = () => ({ account_id: filter.account_id, q: filter.q.trim() || undefined })
+
+/** 重新加载会话列表；静默刷新（实时推送）时保留已加载的条数，避免“加载更多”的内容被收起 */
 async function loadConvs(silent = false) {
   if (!silent) convLoading.value = true
   try {
-    convs.value = await listConversations({
-      account_id: filter.account_id,
-      q: filter.q.trim() || undefined,
-      limit: 100,
-    })
+    const limit = silent ? Math.min(200, Math.max(CONV_PAGE, convs.value.length)) : CONV_PAGE
+    const res = await listConversations({ ...convParams(), limit, offset: 0 })
+    convs.value = res.items
+    convTotal.value = res.total
   } finally {
     convLoading.value = false
+  }
+}
+
+async function loadMoreConvs() {
+  convMoreLoading.value = true
+  try {
+    const res = await listConversations({ ...convParams(), limit: CONV_PAGE, offset: convs.value.length })
+    // 列表按最新消息排序，翻页期间可能有会话移动位置，按 id 去重
+    const seen = new Set(convs.value.map((c) => c.id))
+    convs.value = [...convs.value, ...res.items.filter((c) => !seen.has(c.id))]
+    convTotal.value = res.total
+  } finally {
+    convMoreLoading.value = false
   }
 }
 
@@ -281,6 +299,10 @@ const showThread = computed(() => !isMobile.value || !!currentId.value)
             </div>
             <div class="muted conv-acc ellipsis">{{ accounts.nameOf(c.account_id) }}</div>
           </div>
+        </div>
+        <div v-if="convs.length" class="conv-foot">
+          <span class="muted small">共 {{ convTotal }} 个会话</span>
+          <el-button v-if="convs.length < convTotal" link type="primary" size="small" :loading="convMoreLoading" @click="loadMoreConvs">加载更多</el-button>
         </div>
       </el-scrollbar>
     </section>
@@ -691,5 +713,12 @@ const showThread = computed(() => !isMobile.value || !!currentId.value)
   .msg-row {
     max-width: 90%;
   }
+}
+.conv-foot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 0 14px;
 }
 </style>

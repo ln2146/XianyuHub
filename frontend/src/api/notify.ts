@@ -3,6 +3,8 @@ import { http } from './http'
 export interface NotifyMeta {
   /** 渠道类型 -> 必填配置项 */
   types: Record<string, string[]>
+  /** 渠道类型 -> {可选配置项: 默认值} */
+  optional: Record<string, Record<string, unknown>>
   events: string[]
 }
 

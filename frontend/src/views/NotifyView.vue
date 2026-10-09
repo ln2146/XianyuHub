@@ -16,13 +16,13 @@ import { useMobile } from '@/composables/useMobile'
 import { notifyEventMap, notifyTypeMap } from '@/utils/format'
 
 const isMobile = useMobile()
-const meta = ref<NotifyMeta>({ types: {}, events: [] })
+const meta = ref<NotifyMeta>({ types: {}, optional: {}, events: [] })
 const channels = ref<Channel[]>([])
 const loading = ref(false)
 const busy = reactive<Record<string, boolean>>({})
 
-/** 配置项的中文名称与提示 */
-const fieldMeta: Record<string, { label: string; placeholder?: string; secret?: boolean; type?: 'number' | 'bool' | 'json' }> = {
+/** 配置项的中文名称与提示（未列出的字段直接显示原始字段名） */
+const fieldMeta: Record<string, { label: string; placeholder?: string; secret?: boolean }> = {
   webhook_url: { label: 'Webhook 地址', placeholder: '机器人 Webhook URL', secret: true },
   bot_token: { label: 'Bot Token', placeholder: '123456:ABC-DEF…', secret: true },
   chat_id: { label: 'Chat ID', placeholder: '用户或群组 ID' },
@@ -30,24 +30,17 @@ const fieldMeta: Record<string, { label: string; placeholder?: string; secret?: 
   server_url: { label: '服务器地址', placeholder: 'https://api.day.app 或 https://ntfy.sh' },
   device_key: { label: 'Device Key', secret: true },
   topic: { label: '主题 Topic', placeholder: '订阅的 topic 名称' },
-  token: { label: '访问令牌', placeholder: '可选', secret: true },
+  token: { label: '访问令牌', secret: true },
   url: { label: '回调地址', placeholder: 'https://your-server/hook（POST JSON）', secret: true },
-  headers: { label: '请求头', placeholder: '{"Authorization": "Bearer xxx"}', type: 'json' },
+  headers: { label: '请求头', placeholder: '{"Authorization": "Bearer xxx"}' },
   host: { label: 'SMTP 服务器', placeholder: 'smtp.qq.com' },
-  port: { label: '端口', placeholder: '465', type: 'number' },
-  ssl: { label: '使用 SSL', type: 'bool' },
+  port: { label: '端口' },
+  ssl: { label: '使用 SSL' },
   username: { label: '发件邮箱', placeholder: 'you@example.com' },
   password: { label: '密码 / 授权码', secret: true },
   to: { label: '收件邮箱', placeholder: 'to@example.com' },
 }
-
-/** 后端 meta 只返回必填项，这里补充可选项 */
-const optionalFields: Record<string, string[]> = {
-  telegram: ['api_base'],
-  ntfy: ['server_url', 'token'],
-  webhook: ['headers'],
-  email: ['port', 'ssl'],
-}
+const labelOf = (k: string) => fieldMeta[k]?.label || k
 
 const typeHelp: Record<string, string> = {
   wecom: '企业微信群 → 添加群机器人 → 复制 Webhook 地址',
@@ -64,7 +57,7 @@ async function load() {
   loading.value = true
   try {
     const [m, list] = await Promise.all([getNotifyMeta(), listChannels()])
-    meta.value = m
+    meta.value = { types: m.types || {}, optional: m.optional || {}, events: m.events || [] }
     channels.value = list
   } finally {
     loading.value = false
@@ -73,65 +66,110 @@ async function load() {
 onMounted(load)
 
 // ---------------------------------------------------------------- 编辑
+/** 字段控件类型：必填项均为文本；可选项按后端默认值的类型推断 */
+type FieldKind = 'string' | 'number' | 'boolean' | 'json'
+interface FieldDef {
+  key: string
+  required: boolean
+  kind: FieldKind
+  default: unknown
+}
+
+function kindOf(v: unknown): FieldKind {
+  if (typeof v === 'number') return 'number'
+  if (typeof v === 'boolean') return 'boolean'
+  if (typeof v === 'object' && v !== null) return 'json'
+  return 'string'
+}
+
 const edit = reactive({
   open: false,
   saving: false,
   id: null as number | null,
   name: '',
   type: '',
+  /** 文本 / JSON 字段的输入值 */
   config: {} as Record<string, string>,
+  nums: {} as Record<string, number | null | undefined>,
   bools: {} as Record<string, boolean>,
   events: [] as string[],
   enabled: true,
 })
 
-const fields = computed(() => {
+const fields = computed<FieldDef[]>(() => {
   const req = meta.value.types[edit.type] || []
-  const opt = (optionalFields[edit.type] || []).filter((f) => !req.includes(f))
-  return [...req.map((k) => ({ key: k, required: true })), ...opt.map((k) => ({ key: k, required: false }))]
+  const opt = Object.entries(meta.value.optional[edit.type] || {}).filter(([k]) => !req.includes(k))
+  return [
+    ...req.map((k) => ({ key: k, required: true, kind: 'string' as FieldKind, default: '' })),
+    ...opt.map(([k, d]) => ({ key: k, required: false, kind: kindOf(d), default: d })),
+  ]
 })
+
+function placeholderOf(f: FieldDef): string {
+  const custom = fieldMeta[f.key]?.placeholder
+  if (f.required) return custom || '必填'
+  if (f.kind === 'json') return custom || `JSON，例如 ${JSON.stringify(f.default)}`
+  if (typeof f.default === 'string' && f.default) return `可选，默认 ${f.default}`
+  return custom ? `${custom}（可选）` : '可选'
+}
+
+const numValue = (f: FieldDef) => edit.nums[f.key] ?? (typeof f.default === 'number' ? f.default : undefined)
+const boolValue = (f: FieldDef) => edit.bools[f.key] ?? f.default === true
 
 function openCreate() {
   const first = Object.keys(meta.value.types)[0] || 'wecom'
-  Object.assign(edit, { open: true, id: null, name: '', type: first, config: {}, bools: { ssl: true }, events: [], enabled: true })
+  Object.assign(edit, { open: true, id: null, name: '', type: first, config: {}, nums: {}, bools: {}, events: [], enabled: true })
 }
 
 function openEdit(c: Channel) {
   const cfg: Record<string, string> = {}
+  const nums: Record<string, number> = {}
   const bools: Record<string, boolean> = {}
   for (const [k, v] of Object.entries(c.config)) {
     if (typeof v === 'boolean') bools[k] = v
-    else if (typeof v === 'object' && v !== null) cfg[k] = JSON.stringify(v)
+    else if (typeof v === 'number') {
+      nums[k] = v
+      cfg[k] = String(v)
+    } else if (typeof v === 'object' && v !== null) cfg[k] = JSON.stringify(v, null, 2)
     else if (v !== null && v !== undefined) cfg[k] = String(v)
   }
-  Object.assign(edit, { open: true, id: c.id, name: c.name, type: c.type, config: cfg, bools, events: [...c.events], enabled: c.enabled })
+  Object.assign(edit, { open: true, id: c.id, name: c.name, type: c.type, config: cfg, nums, bools, events: [...c.events], enabled: c.enabled })
 }
 
 function buildConfig(): Record<string, unknown> | null {
   const out: Record<string, unknown> = {}
   for (const f of fields.value) {
-    const fm = fieldMeta[f.key]
-    if (fm?.type === 'bool') {
-      out[f.key] = edit.bools[f.key] ?? true
+    if (f.kind === 'boolean') {
+      out[f.key] = boolValue(f)
+      continue
+    }
+    if (f.kind === 'number') {
+      const n = numValue(f)
+      if (n !== undefined && n !== null && Number.isFinite(n)) out[f.key] = n
       continue
     }
     const v = (edit.config[f.key] ?? '').trim()
     if (!v) {
       if (f.required) {
-        ElMessage.warning(`请填写${fm?.label || f.key}`)
+        ElMessage.warning(`请填写${labelOf(f.key)}`)
         return null
       }
       continue
     }
-    if (fm?.type === 'json') {
+    if (f.kind === 'json') {
+      let parsed: unknown
       try {
-        out[f.key] = JSON.parse(v)
+        parsed = JSON.parse(v)
       } catch {
-        ElMessage.warning(`${fm.label} 不是有效的 JSON`)
+        ElMessage.warning(`${labelOf(f.key)} 不是有效的 JSON`)
         return null
       }
-    } else if (fm?.type === 'number') {
-      out[f.key] = Number(v)
+      const wantArray = Array.isArray(f.default)
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed) !== wantArray) {
+        ElMessage.warning(`${labelOf(f.key)} 必须是 JSON ${wantArray ? '数组' : '对象'}`)
+        return null
+      }
+      out[f.key] = parsed
     } else {
       out[f.key] = v
     }
@@ -220,7 +258,7 @@ async function remove(c: Channel) {
         </div>
         <div class="ch-cfg">
           <div v-for="(v, k) in c.config" :key="k" class="small ellipsis">
-            <span class="muted">{{ fieldMeta[k]?.label || k }}：</span>
+            <span class="muted">{{ labelOf(String(k)) }}：</span>
             <span class="mono">{{ typeof v === 'object' ? JSON.stringify(v) : v }}</span>
           </div>
         </div>
@@ -244,16 +282,32 @@ async function remove(c: Channel) {
           </el-select>
           <div v-if="typeHelp[edit.type]" class="form-tip">{{ typeHelp[edit.type] }}</div>
         </el-form-item>
-        <el-form-item v-for="f in fields" :key="f.key" :label="fieldMeta[f.key]?.label || f.key" :required="f.required">
-          <el-switch v-if="fieldMeta[f.key]?.type === 'bool'" :model-value="edit.bools[f.key] ?? true" @update:model-value="(v: string | number | boolean) => (edit.bools[f.key] = !!v)" />
+        <el-form-item v-for="f in fields" :key="`${edit.type}-${f.key}`" :label="labelOf(f.key)" :required="f.required">
+          <el-switch
+            v-if="f.kind === 'boolean'"
+            :model-value="boolValue(f)"
+            @update:model-value="(v: string | number | boolean) => (edit.bools[f.key] = !!v)"
+          />
+          <el-input-number
+            v-else-if="f.kind === 'number'"
+            :model-value="numValue(f)"
+            :min="0"
+            :step="1"
+            :step-strictly="Number.isInteger(f.default)"
+            controls-position="right"
+            @update:model-value="(v: number | null | undefined) => (edit.nums[f.key] = v)"
+          />
           <el-input
             v-else
             v-model="edit.config[f.key]"
-            :type="fieldMeta[f.key]?.type === 'json' ? 'textarea' : 'text'"
-            :rows="3"
-            :placeholder="fieldMeta[f.key]?.placeholder || (f.required ? '必填' : '可选')"
+            :type="f.kind === 'json' ? 'textarea' : 'text'"
+            :rows="f.kind === 'json' ? 4 : undefined"
+            :class="{ mono: f.kind === 'json' }"
+            :placeholder="placeholderOf(f)"
             :show-password="!!fieldMeta[f.key]?.secret && !edit.id"
           />
+          <div v-if="f.kind === 'json'" class="form-tip">填写 JSON {{ Array.isArray(f.default) ? '数组' : '对象' }}，留空使用默认值；保存时会校验格式。</div>
+          <div v-else-if="!f.required && f.kind !== 'string'" class="form-tip">默认：{{ typeof f.default === 'boolean' ? (f.default ? '开启' : '关闭') : f.default }}</div>
           <div v-if="edit.id && fieldMeta[f.key]?.secret" class="form-tip">显示为 *** 的值表示保持不变。</div>
         </el-form-item>
         <el-form-item label="订阅事件">

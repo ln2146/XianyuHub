@@ -1,4 +1,4 @@
-import { http } from './http'
+import { http, toPaged } from './http'
 
 export type MessageSource =
   | 'buyer'
@@ -76,7 +76,7 @@ export interface ImStatus {
 }
 
 export const listConversations = (params: { account_id?: number; q?: string; limit?: number; offset?: number }) =>
-  http.get<Conversation[]>('/messages/conversations', { params }).then((r) => r.data)
+  http.get<Conversation[]>('/messages/conversations', { params }).then(toPaged)
 export const listMessages = (convId: number, before_id?: number) =>
   http
     .get<ChatMessage[]>(`/messages/conversations/${convId}/messages`, { params: { before_id } })

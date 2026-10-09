@@ -1,4 +1,4 @@
-import axios, { AxiosError } from 'axios'
+import axios, { AxiosError, type AxiosResponse } from 'axios'
 import { ElMessage } from 'element-plus'
 import { getItem, removeItem, TOKEN_KEY, USER_KEY } from '@/utils/storage'
 
@@ -35,6 +35,19 @@ export function errorMessage(err: unknown): string {
   }
   if (err instanceof Error) return err.message
   return String(err)
+}
+
+/** 分页列表：items 为当前页，total 为总数（来自响应头 X-Total-Count） */
+export interface Paged<T> {
+  items: T[]
+  total: number
+}
+
+/** 把列表响应转换为 {items, total}；后端未返回 X-Total-Count 时退化为当前页长度 */
+export function toPaged<T>(resp: AxiosResponse<T[]>): Paged<T> {
+  const raw = resp.headers['x-total-count']
+  const total = raw === undefined || raw === null || raw === '' ? NaN : Number(raw)
+  return { items: resp.data, total: Number.isFinite(total) ? total : resp.data.length }
 }
 
 let redirecting = false

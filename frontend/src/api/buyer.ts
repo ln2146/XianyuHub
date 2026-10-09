@@ -1,4 +1,4 @@
-import { downloadBlob, http } from './http'
+import { downloadBlob, http, toPaged } from './http'
 
 export interface ItemRules {
   include_any: string[]
@@ -169,7 +169,7 @@ export const generateTask = (description: string) =>
 export const taskMarket = (id: number) => http.get<MarketStats>(`/buyer/tasks/${id}/market`).then((r) => r.data)
 
 export const listResults = (params: ResultQuery) =>
-  http.get<ResultOut[]>('/buyer/results', { params }).then((r) => r.data)
+  http.get<ResultOut[]>('/buyer/results', { params }).then(toPaged)
 export const markResult = (id: number, mark: UserMark) =>
   http.patch<{ mark: UserMark }>(`/buyer/results/${id}`, { mark }).then((r) => r.data)
 export const exportResults = (task_id?: number) =>

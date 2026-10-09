@@ -14,15 +14,17 @@ import {
   type UserMark,
 } from '@/api/buyer'
 import EChart from '@/components/EChart.vue'
+import ListPager from '@/components/ListPager.vue'
 import { copyText, fmtMoney, fmtRelative, fmtTime, itemUrl, markMap, verdictMap } from '@/utils/format'
 
 const route = useRoute()
-const PAGE = 40
 
 const tasks = ref<TaskOut[]>([])
 const results = ref<ResultOut[]>([])
 const loading = ref(false)
-const hasMore = ref(false)
+const page = ref(1)
+const pageSize = ref(40)
+const total = ref(0)
 const exporting = ref(false)
 
 const filters = reactive({
@@ -33,23 +35,33 @@ const filters = reactive({
   q: '',
 })
 
-async function load(append = false) {
+async function load(p = 1) {
   loading.value = true
   try {
-    const rows = await listResults({
+    const res = await listResults({
       task_id: filters.task_id || undefined,
       verdict: filters.verdict,
       mark: filters.mark || undefined,
       sort: filters.sort,
       q: filters.q.trim() || undefined,
-      limit: PAGE,
-      offset: append ? results.value.length : 0,
+      limit: pageSize.value,
+      offset: (p - 1) * pageSize.value,
     })
-    results.value = append ? [...results.value, ...rows] : rows
-    hasMore.value = rows.length === PAGE
+    const last = Math.max(1, Math.ceil(res.total / pageSize.value))
+    if (!res.items.length && p > last) return await load(last)
+    results.value = res.items
+    total.value = res.total
+    page.value = p
   } finally {
     loading.value = false
   }
+}
+
+const root = ref<HTMLElement>()
+async function changePage() {
+  await load(page.value)
+  // 翻页后回到顶部（滚动容器是布局里的 el-main）
+  root.value?.scrollIntoView({ block: 'start', behavior: 'smooth' })
 }
 
 onMounted(async () => {
@@ -70,6 +82,7 @@ async function mark(r: ResultOut, m: UserMark) {
     if (next === 'ignored' && !filters.mark) {
       // 不感兴趣的结果默认隐藏
       results.value = results.value.filter((x) => x.id !== r.id)
+      total.value = Math.max(0, total.value - 1)
     }
     ElMessage.success(next === 'none' ? '已取消标记' : `已标记为「${markMap[next]}」`)
   } catch {
@@ -129,7 +142,7 @@ const historyOption = computed(() => ({
 </script>
 
 <template>
-  <div class="page">
+  <div ref="root" class="page">
     <div class="page-head">
       <div>
         <h2>选品雷达 · 好货看板</h2>
@@ -166,7 +179,7 @@ const historyOption = computed(() => ({
       </div>
     </el-card>
 
-    <div v-loading="loading && !results.length" class="grid">
+    <div v-loading="loading" class="grid">
       <el-empty v-if="!loading && !results.length" description="暂无结果，去「监控任务」运行一次试试" class="empty" />
       <el-card v-for="r in results" :key="r.id" shadow="hover" class="card" :body-style="{ padding: '0' }">
         <div class="img-wrap">
@@ -228,9 +241,15 @@ const historyOption = computed(() => ({
       </el-card>
     </div>
 
-    <div v-if="hasMore" class="more">
-      <el-button :loading="loading" @click="load(true)">加载更多</el-button>
-    </div>
+    <ListPager
+      v-if="total > 0"
+      v-model:page="page"
+      v-model:page-size="pageSize"
+      :total="total"
+      :page-sizes="[20, 40, 80, 120]"
+      :disabled="loading"
+      @change="changePage"
+    />
 
     <el-dialog v-model="history.open" title="价格走势" width="640px">
       <div class="muted small ellipsis">{{ history.title }}</div>
@@ -392,9 +411,6 @@ const historyOption = computed(() => ({
 .links {
   display: flex;
   justify-content: space-between;
-}
-.more {
-  text-align: center;
 }
 @media (max-width: 768px) {
   .f-task,

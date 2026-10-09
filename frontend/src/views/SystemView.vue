@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
-import { Plus, Refresh, Search } from '@element-plus/icons-vue'
+import axios from 'axios'
+import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
+import { Delete, Plus, Refresh, Search } from '@element-plus/icons-vue'
 import {
   changePassword,
   createUser,
+  deleteUser,
   listAuditLogs,
   listUsers,
   updateUser,
@@ -13,7 +15,10 @@ import {
   type Role,
   type UserOut,
 } from '@/api/system'
+import { errorMessage } from '@/api/http'
 import JsonBlock from '@/components/JsonBlock.vue'
+import ListPager from '@/components/ListPager.vue'
+import SelfCheckPanel from '@/components/SelfCheckPanel.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useAccountsStore } from '@/stores/accounts'
 import { useMobile } from '@/composables/useMobile'
@@ -109,12 +114,48 @@ async function toggleActive(u: UserOut, v: boolean) {
   }
 }
 
+async function removeUser(u: UserOut) {
+  try {
+    await ElMessageBox.confirm(
+      `确定删除用户「${u.username}」？删除后该用户无法登录，且不可恢复。`,
+      '删除用户',
+      { type: 'warning', confirmButtonText: '删除', confirmButtonClass: 'el-button--danger' },
+    )
+  } catch {
+    return
+  }
+  try {
+    await deleteUser(u.id)
+    ElMessage.success('已删除')
+    await loadUsers()
+  } catch (err) {
+    const msg = errorMessage(err)
+    if (axios.isAxiosError(err) && err.response?.status === 409) {
+      // 名下仍有账号 / 任务 / 卡券：展示后端说明，并提供“改为停用”
+      if (!u.is_active) {
+        await ElMessageBox.alert(msg, '无法删除', { type: 'warning' }).catch(() => undefined)
+        return
+      }
+      const disable = await ElMessageBox.confirm(msg, '无法删除', {
+        type: 'warning',
+        confirmButtonText: '改为停用',
+        cancelButtonText: '知道了',
+      })
+        .then(() => true)
+        .catch(() => false)
+      if (disable) await toggleActive(u, false)
+    } else {
+      ElMessage.error(msg)
+    }
+  }
+}
+
 // ================================================================ 审计日志
-const PAGE = 50
 const logs = ref<AuditOut[]>([])
 const logsLoading = ref(false)
 const logPage = ref(1)
-const logHasMore = ref(false)
+const logPageSize = ref(50)
+const logTotal = ref(0)
 const logFilter = reactive({ action: '', account_id: undefined as number | undefined })
 
 const actorMap: Record<string, { label: string; type: 'primary' | 'warning' | 'success' | 'info' }> = {
@@ -128,15 +169,17 @@ async function loadLogs(p = 1) {
   if (!auth.isAdmin) return
   logsLoading.value = true
   try {
-    const rows = await listAuditLogs({
+    const res = await listAuditLogs({
       action: logFilter.action.trim() || undefined,
       account_id: logFilter.account_id,
-      limit: PAGE,
-      offset: (p - 1) * PAGE,
+      limit: logPageSize.value,
+      offset: (p - 1) * logPageSize.value,
     })
-    logs.value = rows
+    const last = Math.max(1, Math.ceil(res.total / logPageSize.value))
+    if (!res.items.length && p > last) return await loadLogs(last)
+    logs.value = res.items
+    logTotal.value = res.total
     logPage.value = p
-    logHasMore.value = rows.length === PAGE
   } finally {
     logsLoading.value = false
   }
@@ -223,9 +266,17 @@ onMounted(() => {
               <el-table-column label="最近登录" width="160">
                 <template #default="{ row }">{{ fmtTime(row.last_login_at) }}</template>
               </el-table-column>
-              <el-table-column label="操作" width="90">
+              <el-table-column label="操作" width="120">
                 <template #default="{ row }">
                   <el-button size="small" link type="primary" @click="openUserEdit(row as UserOut)">编辑</el-button>
+                  <el-button
+                    v-if="row.id !== auth.user?.id"
+                    size="small"
+                    link
+                    type="danger"
+                    :icon="Delete"
+                    @click="removeUser(row as UserOut)"
+                  >删除</el-button>
                 </template>
               </el-table-column>
             </el-table>
@@ -278,11 +329,18 @@ onMounted(() => {
               </el-table-column>
             </el-table>
           </div>
-          <div class="pager">
-            <el-button size="small" :disabled="logPage <= 1 || logsLoading" @click="loadLogs(logPage - 1)">上一页</el-button>
-            <span class="muted small">第 {{ logPage }} 页</span>
-            <el-button size="small" :disabled="!logHasMore || logsLoading" @click="loadLogs(logPage + 1)">下一页</el-button>
-          </div>
+          <ListPager
+            v-model:page="logPage"
+            v-model:page-size="logPageSize"
+            :total="logTotal"
+            :page-sizes="[20, 50, 100, 200]"
+            :disabled="logsLoading"
+            @change="loadLogs(logPage)"
+          />
+        </el-tab-pane>
+
+        <el-tab-pane v-if="auth.isAdmin" label="协议自检" name="selfcheck" lazy>
+          <SelfCheckPanel />
         </el-tab-pane>
 
         <el-tab-pane label="修改密码" name="password">
@@ -354,13 +412,6 @@ onMounted(() => {
 .err {
   color: var(--el-color-danger);
   margin-bottom: 6px;
-}
-.pager {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 10px;
-  margin-top: 12px;
 }
 .pwd-form {
   max-width: 440px;

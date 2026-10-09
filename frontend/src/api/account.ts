@@ -81,3 +81,14 @@ export const resolveRisk = (id: number) =>
   http.post<{ status: string }>(`/accounts/${id}/resolve`).then((r) => r.data)
 export const listRiskEvents = (id: number) =>
   http.get<RiskEvent[]>(`/accounts/${id}/risk-events`).then((r) => r.data)
+
+export interface AccountGrant {
+  user_id: number
+  username: string
+  role: string
+}
+
+export const listGrants = (id: number) => http.get<AccountGrant[]>(`/accounts/${id}/grants`).then((r) => r.data)
+export const addGrant = (id: number, user_id: number) =>
+  http.post<{ user_id: number; account_id: number }>(`/accounts/${id}/grants`, { user_id }).then((r) => r.data)
+export const removeGrant = (id: number, userId: number) => http.delete(`/accounts/${id}/grants/${userId}`)

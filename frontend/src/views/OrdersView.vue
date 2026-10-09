@@ -6,6 +6,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, Search } from '@element-plus/icons-vue'
 import { closeHold, deliverOrder, getOrder, listOrders, syncOrders, type DeliveryRecord, type Order } from '@/api/order'
 import StatusTag from '@/components/StatusTag.vue'
+import ListPager from '@/components/ListPager.vue'
 import { useAccountsStore } from '@/stores/accounts'
 import { useMobile } from '@/composables/useMobile'
 import { fmtMoney, fmtTime, itemUrl, orderStatusMap } from '@/utils/format'
@@ -14,13 +15,13 @@ const route = useRoute()
 const accounts = useAccountsStore()
 const realtime = useRealtimeStore()
 const isMobile = useMobile()
-const PAGE = 50
 
 const orders = ref<Order[]>([])
 const loading = ref(false)
 const syncing = ref(false)
 const page = ref(1)
-const hasMore = ref(false)
+const pageSize = ref(50)
+const total = ref(0)
 const busy = reactive<Record<string, boolean>>({})
 const filter = reactive({
   account_id: undefined as number | undefined,
@@ -31,16 +32,19 @@ const filter = reactive({
 async function load(p = 1) {
   loading.value = true
   try {
-    const rows = await listOrders({
+    const res = await listOrders({
       account_id: filter.account_id,
       status: filter.status || undefined,
       q: filter.q.trim() || undefined,
-      limit: PAGE,
-      offset: (p - 1) * PAGE,
+      limit: pageSize.value,
+      offset: (p - 1) * pageSize.value,
     })
-    orders.value = rows
+    // 当前页被删空（如筛选条件变化导致总数减少）时回退到最后一页
+    const last = Math.max(1, Math.ceil(res.total / pageSize.value))
+    if (!res.items.length && p > last) return await load(last)
+    orders.value = res.items
+    total.value = res.total
     page.value = p
-    hasMore.value = rows.length === PAGE
   } finally {
     loading.value = false
   }
@@ -212,11 +216,7 @@ async function openDetail(o: Order) {
           </el-table-column>
         </el-table>
       </div>
-      <div class="pager">
-        <el-button size="small" :disabled="page <= 1 || loading" @click="load(page - 1)">上一页</el-button>
-        <span class="muted small">第 {{ page }} 页</span>
-        <el-button size="small" :disabled="!hasMore || loading" @click="load(page + 1)">下一页</el-button>
-      </div>
+      <ListPager v-model:page="page" v-model:page-size="pageSize" :total="total" :disabled="loading" @change="load(page)" />
     </el-card>
 
     <el-drawer v-model="detail.open" title="订单详情" size="560px">
@@ -303,13 +303,6 @@ async function openDetail(o: Order) {
 }
 .ops .el-button + .el-button {
   margin-left: 0;
-}
-.pager {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 10px;
-  margin-top: 12px;
 }
 .mt {
   margin-top: 12px;

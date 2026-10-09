@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Refresh, Upload } from '@element-plus/icons-vue'
+import { Delete, Plus, Refresh, Upload } from '@element-plus/icons-vue'
 import QRCode from 'qrcode'
 import {
+  addGrant,
   deleteAccount,
   importCookies,
+  listGrants,
+  removeGrant,
   listRiskEvents,
   probeAccount,
   qrPoll,
@@ -13,17 +16,22 @@ import {
   resolveRisk,
   updateAccount,
   type Account,
+  type AccountGrant,
   type AccountSettings,
   type QrStatus,
   type RiskEvent,
 } from '@/api/account'
 import { getImStatus, type ImStatus } from '@/api/message'
+import { listUsers, type UserOut } from '@/api/system'
 import StatusTag from '@/components/StatusTag.vue'
 import { useAccountsStore } from '@/stores/accounts'
+import { useAuthStore } from '@/stores/auth'
 import { useMobile } from '@/composables/useMobile'
-import { accountStatusMap, fmtTime } from '@/utils/format'
+import { accountStatusMap, fmtTime, roleMap } from '@/utils/format'
 
 const store = useAccountsStore()
+const auth = useAuthStore()
+const isAdmin = computed(() => auth.user?.role === 'admin')
 const isMobile = useMobile()
 const loading = ref(false)
 const im = ref<ImStatus>({ running: false, accounts: {} })
@@ -299,6 +307,78 @@ async function openRisk(a: Account) {
   }
 }
 
+// ---------------------------------------------------------------- 授权（仅管理员）
+const grant = reactive({
+  open: false,
+  loading: false,
+  adding: false,
+  account: null as Account | null,
+  list: [] as AccountGrant[],
+  users: [] as UserOut[],
+  userId: null as number | null,
+})
+
+async function openGrants(a: Account) {
+  Object.assign(grant, { open: true, loading: true, account: a, list: [], userId: null })
+  try {
+    const [list, users] = await Promise.all([listGrants(a.id), listUsers()])
+    if (grant.account?.id !== a.id) return
+    grant.list = list
+    grant.users = users
+  } catch {
+    /* 拦截器已提示 */
+  } finally {
+    grant.loading = false
+  }
+}
+
+/** 可选用户：排除账号所有者与已授权用户；管理员本身可见全部账号，无需授权 */
+const grantOptions = computed(() => {
+  const granted = new Set(grant.list.map((g) => g.user_id))
+  return grant.users
+    .filter((u) => u.id !== grant.account?.owner_id && !granted.has(u.id))
+    .map((u) => ({
+      ...u,
+      disabled: u.role === 'admin' || !u.is_active,
+      hint: u.role === 'admin' ? '管理员已可查看全部账号' : !u.is_active ? '已停用' : roleMap[u.role] || u.role,
+    }))
+})
+const ownerName = computed(() => {
+  const id = grant.account?.owner_id
+  return grant.users.find((u) => u.id === id)?.username || (id ? `#${id}` : '-')
+})
+
+async function submitGrant() {
+  const a = grant.account
+  if (!a || !grant.userId) return
+  grant.adding = true
+  try {
+    await addGrant(a.id, grant.userId)
+    ElMessage.success('已授权')
+    grant.userId = null
+    grant.list = await listGrants(a.id)
+  } catch {
+    /* 拦截器已提示 */
+  } finally {
+    grant.adding = false
+  }
+}
+
+async function revokeGrant(g: AccountGrant) {
+  const a = grant.account
+  if (!a) return
+  try {
+    await ElMessageBox.confirm(`取消「${g.username}」对该账号的授权？`, '取消授权', { type: 'warning' })
+  } catch {
+    return
+  }
+  await withBusy(`grant-${g.user_id}`, async () => {
+    await removeGrant(a.id, g.user_id)
+    grant.list = grant.list.filter((x) => x.user_id !== g.user_id)
+    ElMessage.success('已取消授权')
+  })
+}
+
 onBeforeUnmount(stopQrPoll)
 </script>
 
@@ -387,6 +467,7 @@ onBeforeUnmount(stopQrPoll)
                   <template #dropdown>
                     <el-dropdown-menu>
                       <el-dropdown-item @click="openRisk(row as Account)">风控记录</el-dropdown-item>
+                      <el-dropdown-item v-if="isAdmin" @click="openGrants(row as Account)">授权</el-dropdown-item>
                       <el-dropdown-item @click="toggleEnabled(row as Account)">{{ row.status === 'disabled' ? '启用账号' : '停用账号' }}</el-dropdown-item>
                       <el-dropdown-item divided @click="remove(row as Account)"><span class="err">删除账号</span></el-dropdown-item>
                     </el-dropdown-menu>
@@ -571,6 +652,46 @@ onBeforeUnmount(stopQrPoll)
         </el-table>
       </div>
     </el-dialog>
+
+    <!-- 账号授权（管理员） -->
+    <el-dialog
+      v-if="isAdmin"
+      v-model="grant.open"
+      :title="`账号授权 · ${grant.account?.remark || grant.account?.nickname || grant.account?.unb || ''}`"
+      width="560px"
+    >
+      <el-alert type="info" :closable="false" show-icon title="被授权的用户可以查看和操作该账号的消息、商品和订单。" class="grant-tip" />
+      <div class="muted small grant-owner">账号所有者：{{ ownerName }}（管理员可查看全部账号，无需授权）</div>
+      <div class="grant-add">
+        <el-select v-model="grant.userId" filterable clearable placeholder="选择要授权的用户" class="grant-sel" :loading="grant.loading">
+          <el-option v-for="u in grantOptions" :key="u.id" :value="u.id" :label="u.username" :disabled="u.disabled">
+            <span>{{ u.username }}</span>
+            <span class="muted small opt-hint">{{ u.hint }}</span>
+          </el-option>
+        </el-select>
+        <el-button type="primary" :icon="Plus" :disabled="!grant.userId" :loading="grant.adding" @click="submitGrant">添加授权</el-button>
+      </div>
+      <div class="table-wrap">
+        <el-table v-loading="grant.loading" :data="grant.list" size="small" empty-text="尚未授权给其他用户" max-height="360">
+          <el-table-column label="用户" prop="username" min-width="140" />
+          <el-table-column label="角色" width="100">
+            <template #default="{ row }"><el-tag size="small" type="info">{{ roleMap[row.role] || row.role }}</el-tag></template>
+          </el-table-column>
+          <el-table-column label="操作" width="100">
+            <template #default="{ row }">
+              <el-button
+                size="small"
+                link
+                type="danger"
+                :icon="Delete"
+                :loading="busy[`grant-${row.user_id}`]"
+                @click="revokeGrant(row as AccountGrant)"
+              >移除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -666,5 +787,24 @@ onBeforeUnmount(stopQrPoll)
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
+}
+.grant-tip {
+  margin-bottom: 8px;
+}
+.grant-owner {
+  margin-bottom: 12px;
+}
+.grant-add {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.grant-sel {
+  flex: 1;
+  min-width: 0;
+}
+.opt-hint {
+  float: right;
+  margin-left: 12px;
 }
 </style>
