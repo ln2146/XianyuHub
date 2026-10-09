@@ -7,7 +7,13 @@ from app.core.config import get_settings
 
 def main() -> None:
     s = get_settings()
-    uvicorn.run("app.main:app", host=s.bind_host, port=s.app_port, proxy_headers=True)
+    uvicorn.run(
+        "app.main:app",
+        host=s.bind_host,
+        port=s.app_port,
+        proxy_headers=True,
+        reload=s.is_development,
+    )
 
 
 if __name__ == "__main__":
