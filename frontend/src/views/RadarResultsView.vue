@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { CopyDocument, Download, Link, Refresh, Search, TrendCharts } from '@element-plus/icons-vue'
 import {
@@ -18,6 +18,7 @@ import ListPager from '@/components/ListPager.vue'
 import { copyText, fmtMoney, fmtRelative, fmtTime, itemUrl, markMap, verdictMap } from '@/utils/format'
 
 const route = useRoute()
+const router = useRouter()
 
 const tasks = ref<TaskOut[]>([])
 const results = ref<ResultOut[]>([])
@@ -149,6 +150,7 @@ const historyOption = computed(() => ({
         <div class="sub">AI 判定为推荐 / 有条件推荐的商品，附带风险点与给卖家的提问</div>
       </div>
       <div class="toolbar">
+        <el-button :icon="Search" @click="router.push('/radar/search')">实时商品搜索</el-button>
         <el-button :icon="Refresh" :loading="loading" @click="load()">刷新</el-button>
         <el-button :icon="Download" :loading="exporting" @click="doExport">导出 CSV</el-button>
       </div>
