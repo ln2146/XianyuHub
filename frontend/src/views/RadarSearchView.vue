@@ -52,6 +52,13 @@ const searchForm = reactive({
 // 快捷热门词
 const hotKeywords = ['MacBook M1', 'iPhone 15', 'Switch OLED', 'PS5', '显卡 RTX', 'iPad Air', 'AirPods Pro', '机械键盘']
 
+// 引导探索分类推荐
+const exploreCategories = [
+  { icon: '💻', name: '数码轻奢', items: ['MacBook M1', 'iPhone 15', 'iPad Air', 'AirPods Pro'] },
+  { icon: '🎮', name: '游戏电竞', items: ['Switch OLED', 'PS5', 'Steam Deck', '显卡 RTX'] },
+  { icon: '📷', name: '影像外设', items: ['索尼微单', '佳能微单', '机械键盘', '戴森吹风机'] },
+]
+
 // 排序选项
 const sortOptions = [
   { label: '综合排序', value: 'default' },
@@ -286,7 +293,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="page">
+  <div class="page radar-search-page">
     <RadarNav current="search">
       <template #actions>
         <el-button v-if="searchForm.keyword.trim()" type="primary" :icon="Bell" @click="openCreateTask()">
@@ -445,24 +452,43 @@ onMounted(() => {
         </div>
       </div>
 
-      <!-- 未搜索时的引导占位 -->
-      <el-card v-if="!searched && !loading" shadow="never" class="welcome-box">
+      <!-- 未搜索时的引导占位（沉浸式高维 Hero 视界，撑满视口剩余高度） -->
+      <div v-if="!searched && !loading" class="welcome-box">
         <div class="welcome-inner">
           <div class="icon-circle">
-            <el-icon :size="48" color="#409eff"><Search /></el-icon>
+            <el-icon :size="36" class="welcome-search-ico"><Search /></el-icon>
           </div>
-          <h3>输入关键词，立即探索闲鱼好货</h3>
-          <p class="muted">
-            无需像以前那样先建监控任务等待！直接输入商品名称或型号，一键查看最新挂牌价、成色与卖家信息。
+          <h3 class="welcome-title">输入关键词，立即探索闲鱼一手好货</h3>
+          <p class="welcome-desc">
+            无需像以前那样先建监控任务等待！直接输入商品名称或型号，秒级同步闲鱼全量最新挂牌底价、成色与卖家信誉。
           </p>
-          <div class="quick-try">
-            <span>试一试：</span>
-            <el-button v-for="k in hotKeywords.slice(0, 4)" :key="k" size="small" round @click="onQuickSearch(k)">
-              {{ k }}
-            </el-button>
+
+          <!-- 热门探索专区分类药丸矩阵 (充实下半部分空间，美观实用) -->
+          <div class="welcome-categories">
+            <div v-for="cat in exploreCategories" :key="cat.name" class="cat-explore-row">
+              <span class="cat-pill-badge">
+                <span class="cat-icon">{{ cat.icon }}</span>
+                <span>{{ cat.name }}</span>
+              </span>
+              <div class="cat-chips-list">
+                <button
+                  v-for="k in cat.items"
+                  :key="k"
+                  type="button"
+                  class="explore-chip-btn"
+                  @click="onQuickSearch(k)"
+                >
+                  {{ k }}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="welcome-bottom-tip">
+            <span>💡 捡漏小贴士：在上方筛选开启「仅看个人闲置」，可智能过滤商家批量加价文案与批量铺货引流品</span>
           </div>
         </div>
-      </el-card>
+      </div>
 
       <!-- 搜索无结果 -->
       <div v-else-if="searched && !loading && !items.length && !searchError" class="no-result-box">
@@ -710,29 +736,41 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.radar-search-page {
+  min-height: calc(100vh - 96px);
+  display: flex;
+  flex-direction: column;
+}
 .search-box-card {
-  margin-bottom: 20px;
-  border-radius: 12px;
+  margin-bottom: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--xh-border);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  flex-shrink: 0;
+}
+.search-box-card :deep(.el-card__body) {
+  padding: 10px 14px;
 }
 .search-input-wrap {
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 .main-search-input :deep(.el-input__wrapper) {
-  padding-left: 14px;
+  height: 38px;
+  padding-left: 12px;
   border-radius: 8px 0 0 8px;
   box-shadow: 0 0 0 1px var(--el-border-color) inset;
 }
 .main-search-input :deep(.el-input-group__append) {
-  background: var(--el-color-primary);
-  border-color: var(--el-color-primary);
+  background: var(--el-color-primary, #10b981);
+  border-color: var(--el-color-primary, #10b981);
   color: #fff;
   border-radius: 0 8px 8px 0;
-  padding: 0 24px;
-  font-size: 15px;
+  padding: 0 20px;
+  font-size: 14px;
   font-weight: 600;
 }
 .main-search-input :deep(.el-input-group__append:hover) {
-  background: var(--el-color-primary-light-3);
+  background: var(--el-color-primary-light-3, #34d399);
 }
 .search-action-btn {
   color: #fff !important;
@@ -744,15 +782,21 @@ onMounted(() => {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 16px;
-  font-size: 13px;
+  gap: 6px;
+  margin-bottom: 8px;
+  font-size: 12px;
 }
 .hot-label {
   color: var(--xh-muted);
+  font-size: 12px;
 }
 .hot-tag {
   cursor: pointer;
+  height: 22px;
+  line-height: 20px;
+  padding: 0 8px;
+  font-size: 11.5px;
+  border-radius: 4px;
   transition: all 0.15s;
 }
 .hot-tag:hover {
@@ -763,19 +807,20 @@ onMounted(() => {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 16px;
-  padding-top: 14px;
+  gap: 12px;
+  padding-top: 8px;
   border-top: 1px solid var(--xh-border);
 }
 .filter-item {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 13px;
+  gap: 5px;
+  font-size: 12px;
 }
 .filter-label {
   color: var(--xh-muted);
   white-space: nowrap;
+  font-size: 12px;
 }
 .dash {
   color: var(--xh-muted);
@@ -787,20 +832,32 @@ onMounted(() => {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  margin-top: 12px;
-  padding-top: 12px;
+  gap: 6px;
+  margin-top: 6px;
+  padding-top: 6px;
   border-top: 1px dashed var(--xh-border);
-  font-size: 13px;
+  font-size: 12px;
 }
 .city-tag {
   cursor: pointer;
+  height: 22px;
+  line-height: 20px;
+  padding: 0 8px;
+  font-size: 11.5px;
+  border-radius: 4px;
+}
+.results-container {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 .results-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
+  flex-shrink: 0;
 }
 .result-count b {
   color: var(--el-color-primary);
@@ -816,36 +873,117 @@ onMounted(() => {
   color: var(--xh-muted);
 }
 
-/* 欢迎/引导区 */
+/* 欢迎/引导区 (沉浸式高维 Hero 视界，充满视口剩余高度) */
 .welcome-box {
-  padding: 40px 20px;
-  text-align: center;
+  flex: 1;
+  min-height: 460px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 50% 18%, #f0fdf4 0%, #ffffff 75%);
   border-radius: 12px;
+  border: 1px solid #d1fae5;
+  box-shadow: 0 2px 12px rgba(16, 185, 129, 0.04);
+  padding: 32px 24px;
+  box-sizing: border-box;
+  text-align: center;
 }
 .welcome-inner {
-  max-width: 520px;
+  max-width: 600px;
   margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 .icon-circle {
-  width: 80px;
-  height: 80px;
-  background: var(--el-color-primary-light-9);
+  width: 64px;
+  height: 64px;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin: 0 auto 16px;
+  margin-bottom: 12px;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.15);
 }
-.welcome-inner h3 {
-  font-size: 18px;
-  margin-bottom: 8px;
+.welcome-search-ico {
+  color: #10b981;
 }
-.quick-try {
-  margin-top: 20px;
+.welcome-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 6px 0;
+}
+.welcome-desc {
+  font-size: 12.5px;
+  color: #64748b;
+  line-height: 1.5;
+  margin: 0 0 18px 0;
+  max-width: 480px;
+}
+.welcome-categories {
   display: flex;
-  justify-content: center;
-  align-items: center;
+  flex-direction: column;
   gap: 8px;
+  width: 100%;
+  margin-bottom: 18px;
+}
+.cat-explore-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #ffffff;
+  border: 1px solid #eef2f6;
+  border-radius: 999px;
+  padding: 4px 8px 4px 6px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+.cat-pill-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #065f46;
+  background: #ecfdf5;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.cat-chips-list {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.explore-chip-btn {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: #475569;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.explore-chip-btn:hover {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  color: #059669;
+  transform: translateY(-1px);
+}
+.welcome-bottom-tip {
+  font-size: 11.5px;
+  color: #64748b;
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px dashed #cbd5e1;
+  padding: 6px 14px;
+  border-radius: 8px;
 }
 
 /* 网格瀑布流 */
