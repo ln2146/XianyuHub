@@ -95,9 +95,7 @@ const activeMenu = computed(() => {
       </el-menu-item>
     </el-sub-menu>
 
-    <!-- 分隔线与系统配置 -->
-    <div class="menu-divider" />
-
+    <!-- 系统配置 -->
     <el-sub-menu index="settings">
       <template #title>
         <el-icon class="menu-icon-primary"><Setting /></el-icon>
@@ -213,22 +211,11 @@ const activeMenu = computed(() => {
   color: var(--xh-primary, #1e9e6a) !important;
 }
 
-/* 分隔线与分组标签 */
-.menu-divider {
-  height: 1px;
-  background: #f0f2f5;
-  margin: 12px 16px 8px;
-}
-
 /* 折叠状态调整 */
 .el-menu--collapse :deep(.el-menu-item),
 .el-menu--collapse :deep(.el-sub-menu__title) {
   margin: 4px 6px;
   padding: 0 !important;
   justify-content: center;
-}
-
-.el-menu--collapse .menu-divider {
-  margin: 10px 8px;
 }
 </style>
