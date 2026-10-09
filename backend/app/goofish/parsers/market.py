@@ -8,6 +8,7 @@ import re
 from typing import Any
 
 from app.goofish.dto import (
+    QUICK_FILTERS,
     ItemDetail,
     MarketItem,
     SearchPage,
@@ -15,6 +16,7 @@ from app.goofish.dto import (
     SellerInfo,
     SellerProfile,
     SellerRating,
+    TagIcon,
 )
 from app.goofish.parsers.common import dig, normalize_link, parse_int, parse_ms, parse_price
 
@@ -22,8 +24,17 @@ SORT_OPTIONS = {
     "newest": ("create", "desc"),
     "price_asc": ("price", "asc"),
     "price_desc": ("price", "desc"),
+    "reduce": ("reduce", "desc"),
     "default": ("", ""),
 }
+
+# fishTags 图片标签的含义（用于文字标签与规则判断；展示直接用图标）
+ICON_TEXT = {
+    "freeShippingIcon": "包邮",
+    "nfrIcon": "描述不符包邮退",
+    "sevenIcon": "7天无理由",
+}
+_WANT_LABEL = "9"  # r3 里的“N人想要”，已有 want_cnt
 
 
 _IP_KEYS = ("ipLocation", "ipAddress", "ipAddr", "ipProvince", "ipCity", "ipLoc")
@@ -64,6 +75,7 @@ def build_search_payload(q: SearchQuery) -> dict[str, Any]:
     quick = [
         name for flag, name in ((q.personal_only, "filterPersonal"), (q.free_shipping, "filterFreePostage")) if flag
     ]
+    quick += [f for f in q.quick_filters if f in QUICK_FILTERS and f not in quick]
     if quick:
         filters.append("quickFilter:" + ",".join(quick))
     extra = "{}"
@@ -94,6 +106,41 @@ def build_search_payload(q: SearchQuery) -> dict[str, Any]:
     }
 
 
+def parse_fish_tags(fish_tags: dict[str, Any]) -> dict[str, Any]:
+    """把搜索卡片的 fishTags 按行拆开：r1 标题前图标、r2 属性、r3 价格旁说明、r4 卖家标签、r5 服务图标。"""
+    out: dict[str, Any] = {"tags": [], "attrs": [], "price_note": "", "seller_tags": [], "icons": []}
+    for row in sorted(fish_tags):
+        for tag in dig(fish_tags, row, "tagList", default=[]) or []:
+            data = tag.get("data") or {}
+            content = str(data.get("content") or "").strip()
+            if not content:
+                continue
+            if data.get("type") == "img":
+                if data.get("url"):
+                    out["icons"].append(
+                        TagIcon(
+                            name=content,
+                            url=str(data["url"]).replace("http://", "https://", 1),
+                            row=row,
+                            width=parse_int(data.get("width")),
+                            height=parse_int(data.get("height")),
+                        )
+                    )
+                text = ICON_TEXT.get(content)
+                if text and text not in out["tags"]:
+                    out["tags"].append(text)
+            elif row == "r2":
+                out["attrs"].append(content)
+            elif row == "r3":
+                if str(data.get("labelId")) != _WANT_LABEL and data.get("isStrikeThrough") != "true":
+                    out["price_note"] = out["price_note"] or content
+            elif row == "r4":
+                out["seller_tags"].append(content)
+            elif content not in out["tags"]:
+                out["tags"].append(content)
+    return out
+
+
 def parse_search(data: dict[str, Any], page: int = 1) -> SearchPage:
     items: list[MarketItem] = []
     for row in dig(data, "resultList", default=[]) or []:
@@ -103,13 +150,10 @@ def parse_search(data: dict[str, Any], page: int = 1) -> SearchPage:
         item_id = str(ex.get("itemId") or args.get("item_id") or args.get("id") or "")
         if not item_id:
             continue
-        tags: list[str] = []
-        if args.get("tag") == "freeship":
-            tags.append("包邮")
-        for tag in dig(ex, "fishTags", "r1", "tagList", default=[]) or []:
-            content = dig(tag, "data", "content", default="")
-            if content and content not in tags:
-                tags.append(content)
+        cards = parse_fish_tags(ex.get("fishTags") or {})
+        tags = cards.pop("tags")
+        if args.get("tag") == "freeship" and "包邮" not in tags:
+            tags.insert(0, "包邮")
         price_raw = ex.get("price")
         price_text = (
             "".join(str(p.get("text", "")) for p in price_raw if isinstance(p, dict))
@@ -132,6 +176,8 @@ def parse_search(data: dict[str, Any], page: int = 1) -> SearchPage:
                 publish_time=parse_ms(args.get("publishTime")),
                 link=normalize_link(main.get("targetUrl"), item_id),
                 tags=tags,
+                avatar=(ex.get("userAvatarUrl") or "").replace("http://", "https://", 1),
+                **cards,
             )
         )
     has_more = bool(dig(data, "resultInfo", "hasNextPage", default=len(items) >= 30))

@@ -12,7 +12,7 @@ from app.goofish.dto import ImEventType, SearchQuery, SystemNotice
 from app.goofish.errors import BizError, RiskControlError, SessionExpiredError, TokenExpiredError
 from app.goofish.parsers.common import parse_price
 from app.goofish.parsers.im import classify_notice, extract_order_id, parse_message
-from app.goofish.parsers.market import build_search_payload, parse_detail, parse_search
+from app.goofish.parsers.market import build_search_payload, parse_detail, parse_fish_tags, parse_search
 from app.goofish.protocol.codec import decode_push_data, encode_custom
 from app.goofish.protocol.cookies import (
     h5_token,
@@ -134,6 +134,52 @@ def test_build_search_payload_filters():
     )
     assert json.loads(p["extraFilterValue"])["divisionList"][0]["city"] == "上海"
     assert p["sortField"] == "create" and p["fromFilter"] is True
+
+
+def test_build_search_payload_quick_filters_and_reduce_sort():
+    p = build_search_payload(
+        SearchQuery(
+            keyword="iphone",
+            sort="reduce",
+            personal_only=True,
+            quick_filters=["filterAppraise", "filterPersonal", "inspectedPhone", "bogus"],
+        )
+    )
+    # 与 goofish.com 抓包一致；重复项与未知项被丢弃
+    assert p["propValueStr"]["searchFilter"] == "quickFilter:filterPersonal,filterAppraise,inspectedPhone;"
+    assert (p["sortField"], p["sortValue"]) == ("reduce", "desc")
+
+
+def test_parse_fish_tags_rows():
+    # 结构取自 goofish.com 搜索接口的真实响应（节选）
+    def img(content, url="http://gw.alicdn.com/x.png"):
+        return {"data": {"type": "img", "content": content, "url": url, "width": "76", "height": "14"}}
+
+    def text(content, **kw):
+        return {"data": {"type": "gradientImageText", "content": content, **kw}}
+
+    out = parse_fish_tags(
+        {
+            "r1": {"tagList": [img("freeShippingIcon")]},
+            "r2": {"tagList": [text("几乎全新"), text("Apple/苹果"), text("256GB")]},
+            "r3": {
+                "tagList": [
+                    text("¥8999", isStrikeThrough="true", labelId="41"),
+                    text("累计降价168.00元", labelId="749"),
+                    text("6人想要", labelId="9"),
+                ]
+            },
+            "r4": {"tagList": [text("卖家信用优秀", labelId="919")]},
+            "r5": {"tagList": [img("nfrIcon"), img("sevenIcon")]},
+        }
+    )
+    assert out["attrs"] == ["几乎全新", "Apple/苹果", "256GB"]
+    assert out["price_note"] == "累计降价168.00元"
+    assert out["seller_tags"] == ["卖家信用优秀"]
+    assert out["tags"] == ["包邮", "描述不符包邮退", "7天无理由"]  # 不再混入 freeShippingIcon 这类图标名
+    assert [i.name for i in out["icons"]] == ["freeShippingIcon", "nfrIcon", "sevenIcon"]
+    assert out["icons"][0].url.startswith("https://") and out["icons"][0].width == 76
+    assert [i.row for i in out["icons"]] == ["r1", "r5", "r5"]
 
 
 def test_parse_search():

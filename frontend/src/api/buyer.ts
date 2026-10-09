@@ -195,7 +195,28 @@ export interface SearchItem {
   link: string
   tags: string[]
   desc: string
+  avatar?: string
+  /** 成色 / 品牌 / 规格（闲鱼卡片标题下的灰色属性） */
+  attrs?: string[]
+  /** 价格旁的说明，如“累计降价168.00元” */
+  price_note?: string
+  /** 卖家标签，如“卖家信用极好”“回复超快” */
+  seller_tags?: string[]
+  /** 闲鱼原生图片标签（包邮、描述不符包邮退、7 天无理由…） */
+  icons?: { name: string; url: string; row: string; width: number | null; height: number | null }[]
 }
+
+/** 闲鱼网页版搜索的快捷筛选（键为接口参数，值为界面文案） */
+export const QUICK_FILTERS = [
+  { key: 'filterPersonal', label: '个人闲置' },
+  { key: 'filterAppraise', label: '验货宝' },
+  { key: 'gameAccountInsurance', label: '验号担保' },
+  { key: 'filterFreePostage', label: '包邮' },
+  { key: 'filterHighLevelYxpSeller', label: '超赞鱼小铺' },
+  { key: 'filterNew', label: '全新' },
+  { key: 'inspectedPhone', label: '严选' },
+  { key: 'filterOneKeyResell', label: '转卖' },
+] as const
 
 export interface SearchPage {
   items: SearchItem[]
@@ -206,7 +227,7 @@ export interface SearchPage {
 export interface LiveSearchQuery {
   keyword: string
   page?: number
-  sort?: 'newest' | 'price_asc' | 'price_desc' | 'default'
+  sort?: 'newest' | 'price_asc' | 'price_desc' | 'reduce' | 'default'
   min_price?: number | null
   max_price?: number | null
   province?: string | null
@@ -214,6 +235,8 @@ export interface LiveSearchQuery {
   publish_days?: number | null
   personal_only?: boolean
   free_shipping?: boolean
+  /** 逗号分隔的 QUICK_FILTERS 键 */
+  quick_filters?: string
   account_id?: number | null
 }
 

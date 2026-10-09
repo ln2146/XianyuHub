@@ -7,6 +7,16 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 
+class TagIcon(BaseModel):
+    """搜索卡片上的图片标签（包邮、描述不符包邮退、7 天无理由等），直接用闲鱼的图标渲染。"""
+
+    name: str
+    url: str
+    row: str = ""  # r1 = 标题前，r5 = 服务标签行
+    width: int | None = None
+    height: int | None = None
+
+
 class MarketItem(BaseModel):
     item_id: str
     title: str = ""
@@ -24,6 +34,25 @@ class MarketItem(BaseModel):
     link: str = ""
     tags: list[str] = Field(default_factory=list)
     desc: str = ""
+    # 以下仅搜索结果卡片有（fishTags 各行）
+    avatar: str = ""
+    attrs: list[str] = Field(default_factory=list)  # r2：成色 / 品牌 / 规格
+    price_note: str = ""  # r3：累计降价等
+    seller_tags: list[str] = Field(default_factory=list)  # r4：卖家信用极好 / 回复超快
+    icons: list[TagIcon] = Field(default_factory=list)  # r1 / r5 图片标签
+
+
+# 网页版搜索的快捷筛选（勾选框），取值来自对 goofish.com 搜索请求的抓包
+QUICK_FILTERS = {
+    "filterPersonal": "个人闲置",
+    "filterAppraise": "验货宝",
+    "gameAccountInsurance": "验号担保",
+    "filterFreePostage": "包邮",
+    "filterHighLevelYxpSeller": "超赞鱼小铺",
+    "filterNew": "全新",
+    "inspectedPhone": "严选",
+    "filterOneKeyResell": "转卖",
+}
 
 
 class SellerInfo(BaseModel):
@@ -45,7 +74,7 @@ class ItemDetail(BaseModel):
 class SearchQuery(BaseModel):
     keyword: str
     page: int = 1
-    sort: str = "newest"  # newest / price_asc / price_desc / default
+    sort: str = "newest"  # newest / price_asc / price_desc / reduce（新降价） / default
     min_price: int | None = None
     max_price: int | None = None
     province: str | None = None
@@ -53,6 +82,7 @@ class SearchQuery(BaseModel):
     publish_days: int | None = None
     personal_only: bool = False
     free_shipping: bool = False
+    quick_filters: list[str] = Field(default_factory=list)  # QUICK_FILTERS 的键
 
 
 class SearchPage(BaseModel):

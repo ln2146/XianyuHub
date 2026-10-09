@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { onActivated, onMounted, reactive, ref } from 'vue'
+import { computed, onActivated, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
+  ArrowDown,
   Bell,
+  Check,
+  Close,
   Grid,
   List,
-  Location,
   Picture,
   Refresh,
   Search,
@@ -19,13 +21,16 @@ import {
   emptyTask,
   getItemDetail,
   liveSearch,
+  QUICK_FILTERS,
   type ItemDetail,
   type LiveSearchQuery,
   type SearchItem,
 } from '@/api/buyer'
 import { useAccountsStore } from '@/stores/accounts'
 import { useKeepScroll } from '@/composables/useKeepScroll'
+import ItemAnalysisPanel from '@/components/ItemAnalysisPanel.vue'
 import RadarNav from '@/components/RadarNav.vue'
+import { isMunicipality, PROVINCES } from '@/utils/regions'
 import { fmtMoney, fmtRelative } from '@/utils/format'
 
 defineOptions({ name: 'RadarSearchView' })
@@ -56,37 +61,78 @@ const searchForm = reactive({
 // 快捷热门词
 const hotKeywords = ['MacBook M1', 'iPhone 15', 'Switch OLED', 'PS5', '显卡 RTX', 'iPad Air', 'AirPods Pro', '机械键盘']
 
-// 闲鱼官方特色扩展多选标签
-const filterFlags = reactive({
-  yanhuo: false,
-  guarantee: false,
-  shop: false,
-  brandNew: false,
-  strict: false,
-  resell: false,
-})
+// 快捷筛选：与闲鱼网页版同一组勾选项，全部作为接口参数提交。
+// 个人闲置 / 包邮 用独立字段保存，转自动搜货时一并带上
+const quickExtra = ref<string[]>([])
+
+function isQuickOn(key: string) {
+  if (key === 'filterPersonal') return searchForm.personal_only
+  if (key === 'filterFreePostage') return searchForm.free_shipping
+  return quickExtra.value.includes(key)
+}
+
+function toggleQuick(key: string) {
+  if (key === 'filterPersonal') searchForm.personal_only = !searchForm.personal_only
+  else if (key === 'filterFreePostage') searchForm.free_shipping = !searchForm.free_shipping
+  else if (quickExtra.value.includes(key)) quickExtra.value = quickExtra.value.filter((k) => k !== key)
+  else quickExtra.value = [...quickExtra.value, key]
+  debouncedFilterSearch()
+}
 
 function setSort(s: LiveSearchQuery['sort']) {
   searchForm.sort = s
   debouncedFilterSearch()
 }
 
-function sellerCredit(it: SearchItem) {
-  const hash = it.item_id.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0)
-  const credits = ['卖家信用极好', '卖家信用极好', '卖家信用优秀', '百分百好评']
-  return credits[hash % credits.length]
-}
+// 新发布 ∨：点标题按最新发布排序，下拉选发布时间范围
+const publishDayOptions = [
+  { label: '不限时间', value: 0 },
+  { label: '1 天内', value: 1 },
+  { label: '3 天内', value: 3 },
+  { label: '7 天内', value: 7 },
+  { label: '14 天内', value: 14 },
+]
+const publishLabel = computed(() => (searchForm.publish_days ? `${searchForm.publish_days}天内` : '新发布'))
 
-function hasBaoYou(it: SearchItem) {
-  return it.tags?.includes('包邮') || it.title.includes('包邮') || searchForm.free_shipping
-}
-
-function hasYanHuo(it: SearchItem) {
-  return it.tags?.includes('验货宝') || it.title.includes('验货') || filterFlags.yanhuo
-}
-
-function onClientFilterChange() {
+function setPublishDays(days: number) {
+  searchForm.publish_days = days
+  searchForm.sort = 'newest'
   debouncedFilterSearch()
+}
+
+const priceSortLabel = computed(() =>
+  searchForm.sort === 'price_asc' ? '价格从低到高' : searchForm.sort === 'price_desc' ? '价格从高到低' : '价格',
+)
+
+// 区域：左栏省份，右栏城市（直辖市点一下即选中）
+const region = reactive({ open: false, province: null as string | null })
+const regionProvince = computed(() => PROVINCES.find((p) => p.name === region.province) || null)
+const regionLabel = computed(() => {
+  if (searchForm.city && searchForm.city !== searchForm.province) return searchForm.city
+  return searchForm.province || '区域'
+})
+
+function applyRegion(province: string | null, city: string | null) {
+  searchForm.province = province
+  searchForm.city = city
+  region.open = false
+  debouncedFilterSearch()
+}
+
+function pickProvince(name: string | null) {
+  region.province = name
+  const p = PROVINCES.find((x) => x.name === name)
+  if (!p) applyRegion(null, null)
+  else if (isMunicipality(p)) applyRegion(p.name, p.name)
+}
+
+type CardIcon = NonNullable<SearchItem['icons']>[number]
+const titleIcons = (it: SearchItem) => (it.icons || []).filter((i) => i.row === 'r1')
+const serviceIcons = (it: SearchItem) => (it.icons || []).filter((i) => i.row !== 'r1')
+/** 按闲鱼给的宽高等比缩放到目标高度 */
+function iconStyle(ic: CardIcon, height: number) {
+  const ratio = ic.width && ic.height ? ic.width / ic.height : 2
+  return { height: `${height}px`, width: `${Math.round(height * ratio)}px` }
 }
 
 // 引导探索分类推荐
@@ -94,17 +140,6 @@ const exploreCategories = [
   { icon: '💻', name: '数码轻奢', items: ['MacBook M1', 'iPhone 15', 'iPad Air', 'AirPods Pro'] },
   { icon: '🎮', name: '游戏电竞', items: ['Switch OLED', 'PS5', 'Steam Deck', '显卡 RTX'] },
   { icon: '📷', name: '影像外设', items: ['索尼微单', '佳能微单', '机械键盘', '戴森吹风机'] },
-]
-
-// 常用热门城市
-const hotCities = [
-  { label: '全国', province: null, city: null },
-  { label: '北京', province: '北京', city: '北京' },
-  { label: '上海', province: '上海', city: '上海' },
-  { label: '广州', province: '广东', city: '广州' },
-  { label: '深圳', province: '广东', city: '深圳' },
-  { label: '杭州', province: '浙江', city: '杭州' },
-  { label: '成都', province: '四川', city: '成都' },
 ]
 
 // 搜索结果状态
@@ -149,6 +184,7 @@ async function doSearch(page = 1) {
       publish_days: searchForm.publish_days > 0 ? searchForm.publish_days : null,
       personal_only: searchForm.personal_only,
       free_shipping: searchForm.free_shipping,
+      quick_filters: quickExtra.value.join(',') || undefined,
       account_id: searchForm.account_id > 0 ? searchForm.account_id : null,
     })
     items.value = res.items || []
@@ -178,14 +214,6 @@ function onQuickSearch(kw: string) {
   doSearch(1)
 }
 
-function selectCity(c: { province: string | null; city: string | null }) {
-  searchForm.province = c.province
-  searchForm.city = c.city
-  if (searchForm.keyword.trim()) {
-    debouncedFilterSearch()
-  }
-}
-
 function resetFilters() {
   searchForm.min_price = null
   searchForm.max_price = null
@@ -196,12 +224,8 @@ function resetFilters() {
   searchForm.free_shipping = false
   searchForm.account_id = 0
   searchForm.sort = 'default'
-  filterFlags.yanhuo = false
-  filterFlags.guarantee = false
-  filterFlags.shop = false
-  filterFlags.brandNew = false
-  filterFlags.strict = false
-  filterFlags.resell = false
+  quickExtra.value = []
+  region.province = null
   if (searchForm.keyword.trim()) {
     doSearch(1)
   }
@@ -337,268 +361,164 @@ onActivated(() => {
 
 <template>
   <div class="page radar-search-page">
-    <RadarNav current="search">
-      <template #actions>
-        <el-button v-if="searchForm.keyword.trim()" type="primary" :icon="Bell" @click="openCreateTask()">
-          把当前搜索转为自动搜货
-        </el-button>
-      </template>
-    </RadarNav>
+    <RadarNav current="search" />
 
-    <!-- 闲鱼官方经典明黄搜索大横幅 (Goofish Signature Yellow Header) -->
+    <!-- 搜索头：对齐闲鱼网页版（黄底 + 黑描边搜索框 + 下方热搜词） -->
     <div class="gf-yellow-header">
-      <div class="gf-header-inner">
-        <!-- 闲鱼品牌 Logo -->
-        <div class="gf-brand-block">
-          <div class="gf-fish-bubble">
-            <span class="gf-fish-char">闲鱼</span>
-          </div>
-          <span class="gf-brand-sub">实时搜货雷达</span>
-        </div>
+      <div class="gf-brand-block">
+        <span class="gf-fish-char">闲鱼</span>
+        <span class="gf-brand-sub">实时搜货</span>
+      </div>
 
-        <!-- 闲鱼经典大圆角药丸搜索框 -->
-        <div class="gf-search-center">
-          <div class="gf-search-pill-box">
-            <el-icon class="gf-search-lens"><Search /></el-icon>
-            <input
-              v-model="searchForm.keyword"
-              type="text"
-              class="gf-search-native-input"
-              placeholder="输入想找的商品，例如：iPhone 15、MacBook Air M1、Switch OLED..."
-              @keyup.enter="doSearch(1)"
-            />
-            <button
-              v-if="searchForm.keyword"
-              type="button"
-              class="gf-clear-btn"
-              title="清空"
-              @click="searchForm.keyword = ''"
-            >
-              ×
-            </button>
-            <button
-              type="button"
-              class="gf-search-submit-btn"
-              :disabled="loading"
-              @click="doSearch(1)"
-            >
-              <el-icon v-if="loading" class="is-loading"><Refresh /></el-icon>
-              <span v-else>🔍 搜索</span>
-            </button>
-          </div>
-
-          <!-- 热门搜索推荐词流 (闲鱼经典热搜词风格) -->
-          <div class="gf-hot-stream">
-            <span class="gf-hot-lead">大家都在搜：</span>
-            <span
-              v-for="kw in hotKeywords"
-              :key="kw"
-              class="gf-hot-item"
-              @click="onQuickSearch(kw)"
-            >
-              {{ kw }}
-            </span>
-          </div>
-        </div>
-
-        <!-- 右侧转自动搜货快捷按钮 -->
-        <div class="gf-header-actions">
-          <button
-            v-if="searchForm.keyword.trim()"
-            type="button"
-            class="gf-task-convert-btn"
-            @click="openCreateTask()"
-          >
-            <el-icon><Bell /></el-icon>
-            <span>转自动搜货</span>
+      <div class="gf-search-center">
+        <div class="gf-search-box">
+          <input
+            v-model="searchForm.keyword"
+            type="text"
+            class="gf-search-input"
+            placeholder="搜索想要的宝贝，例如：iPhone 15、MacBook Air M1"
+            @keyup.enter="doSearch(1)"
+          />
+          <button v-if="searchForm.keyword" type="button" class="gf-clear-btn" title="清空" @click="searchForm.keyword = ''">
+            <el-icon><Close /></el-icon>
+          </button>
+          <button type="button" class="gf-search-btn" :disabled="loading" @click="doSearch(1)">
+            <el-icon :class="{ 'is-loading': loading }"><Refresh v-if="loading" /><Search v-else /></el-icon>
+            <span>搜索</span>
           </button>
         </div>
+        <div class="gf-hot-stream">
+          <span v-for="kw in hotKeywords" :key="kw" class="gf-hot-item" @click="onQuickSearch(kw)">{{ kw }}</span>
+        </div>
+      </div>
+
+      <div class="gf-header-actions">
+        <button v-if="searchForm.keyword.trim()" type="button" class="gf-task-convert-btn" @click="openCreateTask()">
+          <el-icon><Bell /></el-icon>
+          <span>转自动搜货</span>
+        </button>
       </div>
     </div>
 
-    <!-- 闲鱼官方极简白底胶囊筛选器大卡片 (1:1 还原闲鱼 Web 筛选栏) -->
+    <!-- 筛选卡片：对齐闲鱼网页版（排序 / 价格 / 区域 / 分页 + 快捷勾选） -->
     <div class="gf-filter-card">
-      <!-- 第一行：排序、价格区间、区域与分页 -->
-      <div class="gf-filter-row-primary">
-        <!-- 排序胶囊组 -->
-        <div class="gf-sort-pills">
-          <button
-            type="button"
-            class="gf-pill-btn"
-            :class="{ 'is-active': searchForm.sort === 'default' }"
-            @click="setSort('default')"
-          >
-            综合 <span>∨</span>
-          </button>
-          <button
-            type="button"
-            class="gf-pill-btn"
-            :class="{ 'is-active': searchForm.sort === 'newest' }"
-            @click="setSort('newest')"
-          >
-            新发布 <span>∨</span>
-          </button>
-          <button
-            type="button"
-            class="gf-pill-btn"
-            :class="{ 'is-active': searchForm.sort === 'price_asc' }"
-            @click="setSort('price_asc')"
-          >
-            价格从低到高
-          </button>
-          <button
-            type="button"
-            class="gf-pill-btn"
-            :class="{ 'is-active': searchForm.sort === 'price_desc' }"
-            @click="setSort('price_desc')"
-          >
-            价格从高到低
-          </button>
-        </div>
-
-        <!-- 价格区间 -->
-        <div class="gf-price-range-group">
-          <div class="gf-price-input-box">
-            <span class="yen">¥</span>
-            <input
-              v-model.number="searchForm.min_price"
-              type="number"
-              placeholder="最低价"
-              class="gf-mini-price-input"
-              @keyup.enter="doSearch(1)"
-              @change="debouncedFilterSearch"
-            />
-          </div>
-          <span class="range-dash">-</span>
-          <div class="gf-price-input-box">
-            <span class="yen">¥</span>
-            <input
-              v-model.number="searchForm.max_price"
-              type="number"
-              placeholder="最高价"
-              class="gf-mini-price-input"
-              @keyup.enter="doSearch(1)"
-              @change="debouncedFilterSearch"
-            />
-          </div>
-        </div>
-
-        <!-- 常用快捷区域选择 -->
-        <div class="gf-region-selector">
-          <span class="region-prefix">区域：</span>
-          <div class="gf-cities-chips">
-            <span
-              v-for="c in hotCities"
-              :key="c.label"
-              class="gf-city-chip"
-              :class="{ 'is-active': searchForm.city === c.city && searchForm.province === c.province }"
-              @click="selectCity(c)"
-            >
-              {{ c.label }}
-            </span>
-          </div>
-        </div>
-
-        <!-- 右侧紧凑工具与分页器 -->
-        <div class="gf-tools-right">
-          <span class="gf-protect-badge" title="系统已启用拟人化微随机延时">🛡️ 智能控频</span>
-          <el-select
-            v-model="searchForm.account_id"
-            size="small"
-            clearable
-            placeholder="自动/匿名通道"
-            class="gf-account-select"
-            @change="debouncedFilterSearch"
-          >
-            <el-option :value="0" label="自动 / 匿名通道" />
-            <el-option v-for="a in accounts.list" :key="a.id" :value="a.id" :label="a.nickname || a.remark || a.unb" />
-          </el-select>
-
-          <!-- 闲鱼官方简约分页器 (< 1/50 >) -->
-          <div class="gf-mini-pager">
+      <div class="gf-filter-row">
+        <div class="gf-sorts">
+          <button type="button" class="gf-sort" :class="{ 'is-active': searchForm.sort === 'default' }" @click="setSort('default')">综合</button>
+          <button type="button" class="gf-sort" :class="{ 'is-active': searchForm.sort === 'reduce' }" @click="setSort('reduce')">新降价</button>
+          <el-dropdown trigger="hover" @command="setPublishDays">
             <button
               type="button"
-              class="gf-page-arrow"
-              :disabled="(searchForm.page || 1) <= 1"
-              @click="doSearch((searchForm.page || 1) - 1)"
+              class="gf-sort"
+              :class="{ 'is-active': searchForm.sort === 'newest' }"
+              @click="setSort('newest')"
             >
-              &lt;
+              {{ publishLabel }}<el-icon class="gf-caret"><ArrowDown /></el-icon>
             </button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item v-for="d in publishDayOptions" :key="d.value" :command="d.value">
+                  <span :class="{ 'gf-menu-on': searchForm.publish_days === d.value }">{{ d.label }}</span>
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+          <el-dropdown trigger="hover" @command="setSort">
+            <button
+              type="button"
+              class="gf-sort"
+              :class="{ 'is-active': searchForm.sort === 'price_asc' || searchForm.sort === 'price_desc' }"
+            >
+              {{ priceSortLabel }}<el-icon class="gf-caret"><ArrowDown /></el-icon>
+            </button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="price_asc">价格从低到高</el-dropdown-item>
+                <el-dropdown-item command="price_desc">价格从高到低</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+          <div class="gf-price-range">
+            <label class="gf-price-input">
+              <span class="yen">¥</span>
+              <input v-model.number="searchForm.min_price" type="number" min="0" @keyup.enter="doSearch(1)" @change="debouncedFilterSearch" />
+            </label>
+            <span class="range-dash">-</span>
+            <label class="gf-price-input">
+              <span class="yen">¥</span>
+              <input v-model.number="searchForm.max_price" type="number" min="0" @keyup.enter="doSearch(1)" @change="debouncedFilterSearch" />
+            </label>
+          </div>
+        </div>
+
+        <div class="gf-filter-right">
+          <el-popover v-model:visible="region.open" placement="bottom-end" :width="460" trigger="click" popper-class="gf-region-popper">
+            <template #reference>
+              <button type="button" class="gf-sort gf-region-btn" :class="{ 'is-active': !!searchForm.province }">
+                {{ regionLabel }}<el-icon class="gf-caret" :class="{ open: region.open }"><ArrowDown /></el-icon>
+              </button>
+            </template>
+            <div class="gf-region">
+              <div class="gf-region-head">
+                <span class="gf-region-tab">选地区</span>
+                <el-icon class="gf-region-close" @click="region.open = false"><Close /></el-icon>
+              </div>
+              <div class="gf-region-body">
+                <div class="gf-region-col left">
+                  <div class="gf-region-opt" :class="{ on: !region.province }" @click="pickProvince(null)">全国</div>
+                  <div
+                    v-for="p in PROVINCES"
+                    :key="p.name"
+                    class="gf-region-opt"
+                    :class="{ on: region.province === p.name }"
+                    @click="pickProvince(p.name)"
+                  >
+                    {{ p.name }}
+                  </div>
+                </div>
+                <div class="gf-region-col right">
+                  <template v-if="regionProvince && regionProvince.cities.length">
+                    <div
+                      class="gf-region-opt"
+                      :class="{ on: searchForm.province === regionProvince.name && !searchForm.city }"
+                      @click="applyRegion(regionProvince.name, null)"
+                    >
+                      全{{ regionProvince.name }}
+                      <el-icon v-if="searchForm.province === regionProvince.name && !searchForm.city"><Check /></el-icon>
+                    </div>
+                    <div
+                      v-for="c in regionProvince.cities"
+                      :key="c"
+                      class="gf-region-opt"
+                      :class="{ on: searchForm.city === c }"
+                      @click="applyRegion(regionProvince.name, c)"
+                    >
+                      {{ c }}<el-icon v-if="searchForm.city === c"><Check /></el-icon>
+                    </div>
+                  </template>
+                  <div v-else class="gf-region-opt on">
+                    {{ searchForm.province || '全国' }}<el-icon><Check /></el-icon>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </el-popover>
+
+          <div class="gf-pager">
+            <button type="button" class="gf-page-arrow" :disabled="(searchForm.page || 1) <= 1" @click="doSearch((searchForm.page || 1) - 1)">‹</button>
             <span class="gf-page-text">{{ searchForm.page || 1 }}/50</span>
-            <button
-              type="button"
-              class="gf-page-arrow"
-              :disabled="!hasMore"
-              @click="doSearch((searchForm.page || 1) + 1)"
-            >
-              &gt;
-            </button>
+            <button type="button" class="gf-page-arrow" :disabled="!hasMore" @click="doSearch((searchForm.page || 1) + 1)">›</button>
           </div>
-
-          <button
-            type="button"
-            class="gf-view-switch-btn"
-            :class="{ 'is-active': viewMode === 'grid' }"
-            title="网格视图"
-            @click="viewMode = 'grid'"
-          >
-            <el-icon><Grid /></el-icon>
-          </button>
-          <button
-            type="button"
-            class="gf-view-switch-btn"
-            :class="{ 'is-active': viewMode === 'list' }"
-            title="列表视图"
-            @click="viewMode = 'list'"
-          >
-            <el-icon><List /></el-icon>
-          </button>
         </div>
       </div>
 
-      <!-- 第二行：闲鱼标志性圆圈勾选标签 -->
-      <div class="gf-filter-row-secondary">
-        <label class="gf-round-check">
-          <input type="checkbox" v-model="searchForm.personal_only" @change="debouncedFilterSearch" />
-          <span class="check-circle" />
-          <span class="check-title">个人闲置</span>
+      <div class="gf-check-row">
+        <label v-for="f in QUICK_FILTERS" :key="f.key" class="gf-check" :class="{ on: isQuickOn(f.key) }">
+          <input type="checkbox" :checked="isQuickOn(f.key)" @change="toggleQuick(f.key)" />
+          <span class="gf-check-box"><el-icon v-if="isQuickOn(f.key)"><Check /></el-icon></span>
+          <span>{{ f.label }}</span>
         </label>
-        <label class="gf-round-check">
-          <input type="checkbox" v-model="filterFlags.yanhuo" @change="onClientFilterChange" />
-          <span class="check-circle" />
-          <span class="check-title">验货宝</span>
-        </label>
-        <label class="gf-round-check">
-          <input type="checkbox" v-model="searchForm.free_shipping" @change="debouncedFilterSearch" />
-          <span class="check-circle" />
-          <span class="check-title">包邮</span>
-        </label>
-        <label class="gf-round-check">
-          <input type="checkbox" v-model="filterFlags.guarantee" @change="onClientFilterChange" />
-          <span class="check-circle" />
-          <span class="check-title">验号担保</span>
-        </label>
-        <label class="gf-round-check">
-          <input type="checkbox" v-model="filterFlags.shop" @change="onClientFilterChange" />
-          <span class="check-circle" />
-          <span class="check-title">超赞鱼小铺</span>
-        </label>
-        <label class="gf-round-check">
-          <input type="checkbox" v-model="filterFlags.brandNew" @change="onClientFilterChange" />
-          <span class="check-circle" />
-          <span class="check-title">全新</span>
-        </label>
-        <label class="gf-round-check">
-          <input type="checkbox" v-model="filterFlags.strict" @change="onClientFilterChange" />
-          <span class="check-circle" />
-          <span class="check-title">严选</span>
-        </label>
-        <label class="gf-round-check">
-          <input type="checkbox" v-model="filterFlags.resell" @change="onClientFilterChange" />
-          <span class="check-circle" />
-          <span class="check-title">转卖</span>
-        </label>
-        <button type="button" class="gf-reset-filters-btn" @click="resetFilters">重置</button>
+        <button type="button" class="gf-reset-btn" @click="resetFilters">重置筛选</button>
       </div>
     </div>
 
@@ -613,20 +533,21 @@ onActivated(() => {
         </div>
       </el-alert>
 
-      <!-- 搜索状态栏 -->
-      <div v-if="searched && !searchError" class="results-header">
+      <!-- 结果栏：数量 + 请求通道 + 视图切换 -->
+      <div v-if="searched && !searchError" class="results-bar">
         <div class="result-count">
-          找到 <b>{{ items.length }}</b> 件商品
-          <span v-if="searchForm.keyword" class="muted">（关键词："{{ searchForm.keyword }}"）</span>
+          找到 <b>{{ items.length }}</b> 件商品<span class="muted"> · 第 {{ searchForm.page || 1 }} 页</span>
         </div>
-        <div class="page-controls">
-          <el-button size="small" :disabled="(searchForm.page || 1) <= 1" @click="doSearch((searchForm.page || 1) - 1)">
-            上一页
-          </el-button>
-          <span class="page-num">第 {{ searchForm.page || 1 }} 页</span>
-          <el-button size="small" :disabled="!hasMore" type="primary" plain @click="doSearch((searchForm.page || 1) + 1)">
-            下一页
-          </el-button>
+        <div class="results-tools">
+          <span class="pacing-protect-pill" title="两次搜索之间自动保持温和节奏，降低触发闲鱼频控的概率">🛡️ 智能控频</span>
+          <el-select v-model="searchForm.account_id" size="small" class="gf-account-select" @change="debouncedFilterSearch">
+            <el-option :value="0" label="自动 / 匿名通道" />
+            <el-option v-for="a in accounts.list" :key="a.id" :value="a.id" :label="a.nickname || a.remark || a.unb" />
+          </el-select>
+          <el-button-group size="small">
+            <el-button :type="viewMode === 'grid' ? 'primary' : 'default'" :icon="Grid" title="网格" @click="viewMode = 'grid'" />
+            <el-button :type="viewMode === 'list' ? 'primary' : 'default'" :icon="List" title="列表" @click="viewMode = 'list'" />
+          </el-button-group>
         </div>
       </div>
 
@@ -679,72 +600,67 @@ onActivated(() => {
         </el-empty>
       </div>
 
-      <!-- 网格卡片模式 (闲鱼官方 Web 真实卡片风格) -->
+      <!-- 网格卡片：对齐闲鱼网页版卡片（标签全部来自接口，不做推测） -->
       <div v-else-if="viewMode === 'grid'" class="gf-items-grid">
         <div v-for="it in items" :key="it.item_id" class="gf-item-card" @click="openDetail(it)">
-          <!-- 商品大图 (1:1 正方形微缩放大图) -->
           <div class="gf-cover-box">
             <el-image :src="it.image_url" fit="cover" class="gf-card-img" lazy referrerpolicy="no-referrer">
               <template #error>
                 <div class="gf-img-error"><el-icon><Picture /></el-icon></div>
               </template>
             </el-image>
-            <div v-if="it.area" class="gf-float-area">
-              <el-icon><Location /></el-icon><span>{{ it.area }}</span>
-            </div>
-            <div v-if="it.want_cnt" class="gf-float-want">
-              🔥 {{ it.want_cnt }}人想要
-            </div>
           </div>
 
-          <!-- 卡片内容区域 -->
           <div class="gf-card-info">
-            <!-- 标题（内嵌包邮/验货宝闲鱼标签） -->
-            <div class="gf-card-title-row" :title="it.title">
-              <span v-if="hasBaoYou(it)" class="gf-badge-baoyou">包邮</span>
-              <span v-if="hasYanHuo(it)" class="gf-badge-yanhuo">验货宝</span>
-              <span class="gf-title-text">{{ it.title }}</span>
+            <div class="gf-card-title" :title="it.title">
+              <img
+                v-for="ic in titleIcons(it)"
+                :key="ic.name"
+                :src="ic.url"
+                :style="iconStyle(ic, 18)"
+                class="gf-title-icon"
+                referrerpolicy="no-referrer"
+                alt=""
+              />
+              <span v-if="!titleIcons(it).length && it.tags?.includes('包邮')" class="gf-badge-baoyou">包邮</span>
+              {{ it.title }}
+            </div>
+            <div v-if="it.attrs?.length" class="gf-attrs">
+              <span v-for="a in it.attrs" :key="a" class="gf-attr">{{ a }}</span>
+            </div>
+            <div v-if="serviceIcons(it).length" class="gf-service-icons">
+              <img
+                v-for="ic in serviceIcons(it)"
+                :key="ic.name"
+                :src="ic.url"
+                :style="iconStyle(ic, 16)"
+                referrerpolicy="no-referrer"
+                alt=""
+              />
             </div>
 
-            <!-- 发布时效与标语 -->
-            <div class="gf-time-meta">
-              <span class="gf-time-clock">⏱</span>
-              <span>{{ fmtRelative(it.publish_time) || '刚刚' }}发布</span>
-              <span v-if="hasBaoYou(it)" class="gf-tag-sub">描述不符包邮退</span>
-            </div>
-
-            <!-- 价格行与想要人数 -->
             <div class="gf-price-line">
-              <div class="gf-price-val">
-                <span class="yen">¥</span>
-                <span class="num">{{ it.price ?? '-' }}</span>
-              </div>
-              <span v-if="it.want_cnt" class="gf-want-text">{{ it.want_cnt }}人想要</span>
-              <span v-else-if="it.orig_price" class="gf-orig-price">¥{{ it.orig_price }}</span>
+              <span class="gf-price-val"><span class="yen">¥</span><span class="num">{{ it.price ?? '-' }}</span></span>
+              <span v-if="it.price_note" class="gf-price-note">{{ it.price_note }}</span>
+              <span v-else-if="it.want_cnt" class="gf-want-text">{{ it.want_cnt }}人想要</span>
             </div>
 
-            <!-- 卖家与信誉底栏 -->
             <div class="gf-seller-bar">
               <div class="gf-seller-info">
-                <div class="gf-seller-avatar">
-                  <span>{{ (it.seller_nick || '闲')[0] }}</span>
-                </div>
-                <span class="gf-seller-name ellipsis">{{ it.area || it.seller_nick || '闲鱼卖家' }}</span>
+                <img v-if="it.avatar" :src="it.avatar" class="gf-seller-avatar" referrerpolicy="no-referrer" alt="" />
+                <span v-else class="gf-seller-avatar fallback">{{ (it.seller_nick || '闲')[0] }}</span>
+                <span class="gf-seller-area ellipsis">{{ it.area || it.seller_nick || '闲鱼卖家' }}</span>
               </div>
-              <span class="gf-credit-pill">{{ sellerCredit(it) }}</span>
+              <span v-if="it.seller_tags?.length" class="gf-credit-pill">{{ it.seller_tags[0] }}</span>
             </div>
 
-            <!-- 悬浮快捷操作 -->
             <div class="gf-hover-actions" @click.stop>
-              <button type="button" class="gf-hover-btn primary" @click="openDetail(it)">详情</button>
+              <button type="button" class="gf-hover-btn primary" @click="openDetail(it)">详情 · 分析</button>
+              <button type="button" class="gf-hover-btn ghost" @click="watchPrice(it)">价格监控</button>
               <button type="button" class="gf-hover-btn success" @click="quickResell(it)">转手发品</button>
               <a :href="safeItemLink(it)" target="_blank" rel="noopener" class="gf-hover-link">
-                <button type="button" class="gf-hover-btn yellow">
-                  <span>去闲鱼</span>
-                  <el-icon><TopRight /></el-icon>
-                </button>
+                <button type="button" class="gf-hover-btn yellow">去闲鱼<el-icon><TopRight /></el-icon></button>
               </a>
-              <button type="button" class="gf-hover-btn ghost" @click="watchPrice(it)">价格监控</button>
             </div>
           </div>
         </div>
@@ -811,7 +727,7 @@ onActivated(() => {
     </div>
 
     <!-- 商品详情抽屉 -->
-    <el-drawer v-model="detail.open" title="商品详情" size="580px" destroy-on-close>
+    <el-drawer v-model="detail.open" title="商品详情" size="600px" destroy-on-close>
       <div v-loading="detail.loading" class="detail-container">
         <template v-if="detail.data">
           <!-- 轮播大图 -->
@@ -866,6 +782,17 @@ onActivated(() => {
             <div class="desc-content">
               {{ detail.data.item.desc || '卖家未填写更多文字描述。' }}
             </div>
+          </div>
+
+          <div class="detail-analysis-box">
+            <ItemAnalysisPanel
+              :key="detail.itemId"
+              :item-id="detail.data.item.item_id || detail.itemId"
+              :keyword="searchForm.keyword"
+              :account-id="searchForm.account_id > 0 ? searchForm.account_id : null"
+              :ip-location="detail.data.seller.ip_location || ''"
+              :sold-cnt="detail.data.seller.sold_cnt"
+            />
           </div>
 
           <!-- 底部操作按钮 -->
@@ -938,413 +865,378 @@ onActivated(() => {
   display: flex;
   flex-direction: column;
 }
-/* 闲鱼官方标志性明黄沉浸搜索 Header */
+/* ---------------- 搜索头（闲鱼网页版：黄底、黑描边搜索框、黄色搜索按钮） */
 .gf-yellow-header {
-  background: #ffda00;
-  border-radius: 12px;
-  padding: 12px 18px;
-  margin-bottom: 12px;
-  box-shadow: 0 4px 16px rgba(255, 218, 0, 0.25);
-  flex-shrink: 0;
-}
-.gf-header-inner {
-  display: flex;
+  display: grid;
+  grid-template-columns: 160px minmax(0, 1fr) 160px;
   align-items: center;
-  justify-content: space-between;
-  gap: 20px;
+  gap: 16px;
+  background: #ffe60f;
+  border-radius: 12px;
+  padding: 14px 20px 10px;
+  margin-bottom: 12px;
+  flex-shrink: 0;
 }
 .gf-brand-block {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 8px;
-  flex-shrink: 0;
 }
-.gf-fish-bubble {
-  background: #111111;
-  color: #ffda00;
+.gf-fish-char {
+  font-size: 26px;
   font-weight: 900;
-  font-size: 16px;
-  padding: 3px 8px;
-  border-radius: 8px;
-  letter-spacing: -0.5px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  letter-spacing: 2px;
+  color: #1a1a1a;
 }
 .gf-brand-sub {
-  font-size: 13.5px;
-  font-weight: 700;
-  color: #111111;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1a1a1a;
+  opacity: 0.75;
 }
-
-/* 闲鱼官方大圆角纯白胶囊搜索栏 */
 .gf-search-center {
-  flex: 1;
-  max-width: 640px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  width: 100%;
+  max-width: 720px;
+  justify-self: center;
 }
-.gf-search-pill-box {
+.gf-search-box {
   display: flex;
   align-items: center;
-  background: #ffffff;
-  border-radius: 999px;
-  height: 40px;
-  padding: 2px 3px 2px 14px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  transition: all 0.18s ease;
+  height: 44px;
+  background: #fff;
+  border: 2px solid #1a1a1a;
+  border-radius: 12px;
+  padding: 0 4px 0 16px;
 }
-.gf-search-pill-box:focus-within {
-  box-shadow: 0 0 0 2px #111111;
-}
-.gf-search-lens {
-  font-size: 16px;
-  color: #999999;
-  margin-right: 8px;
-}
-.gf-search-native-input {
+.gf-search-input {
   flex: 1;
+  min-width: 0;
   border: none;
   outline: none;
-  font-size: 13.5px;
-  color: #111111;
   background: transparent;
+  font-size: 15px;
+  color: #1a1a1a;
 }
-.gf-search-native-input::placeholder {
-  color: #999999;
+.gf-search-input::placeholder {
+  color: #a3a3a3;
 }
 .gf-clear-btn {
-  background: none;
   border: none;
-  color: #bbb;
-  font-size: 16px;
+  background: transparent;
+  color: #a3a3a3;
   cursor: pointer;
-  padding: 0 8px;
+  display: inline-flex;
+  padding: 6px;
+  font-size: 14px;
 }
 .gf-clear-btn:hover {
-  color: #666;
+  color: #1a1a1a;
 }
-.gf-search-submit-btn {
-  background: #ffda00;
-  color: #111111;
-  border: none;
-  height: 34px;
-  padding: 0 16px;
-  border-radius: 999px;
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
+.gf-search-btn {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  transition: all 0.15s ease;
+  height: 34px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 9px;
+  background: #ffe60f;
+  color: #1a1a1a;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
 }
-.gf-search-submit-btn:hover {
-  background: #ffe333;
-  transform: scale(1.02);
+.gf-search-btn:hover {
+  background: #ffd900;
 }
-.gf-search-submit-btn:active {
-  transform: scale(0.98);
+.gf-search-btn:disabled {
+  cursor: progress;
 }
-
-/* 热门搜索推荐词流 */
 .gf-hot-stream {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  font-size: 11.5px;
-  overflow-x: auto;
-  white-space: nowrap;
-  padding: 0 4px;
-}
-.gf-hot-lead {
-  color: #665200;
-  font-weight: 600;
-  font-size: 11px;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 16px;
+  margin-top: 8px;
+  font-size: 13px;
 }
 .gf-hot-item {
-  color: #332600;
+  color: #1a1a1a;
   cursor: pointer;
-  transition: color 0.15s;
 }
 .gf-hot-item:hover {
-  color: #000;
-  font-weight: 600;
   text-decoration: underline;
 }
-
-/* 转监控快捷按钮 */
 .gf-header-actions {
-  flex-shrink: 0;
+  display: flex;
+  justify-content: flex-end;
 }
 .gf-task-convert-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  background: #111111;
-  color: #ffda00;
+  gap: 5px;
+  height: 32px;
+  padding: 0 12px;
   border: none;
-  padding: 7px 14px;
-  border-radius: 999px;
-  font-size: 12px;
+  border-radius: 8px;
+  background: #1a1a1a;
+  color: #ffe60f;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.15s ease;
 }
 .gf-task-convert-btn:hover {
-  background: #2b2b2b;
-  transform: translateY(-1px);
+  background: #333;
 }
 
-/* 闲鱼官方极简白底胶囊筛选器大卡片 (1:1 还原闲鱼 Web 筛选栏) */
+/* ---------------- 筛选卡片（闲鱼网页版：文字排序 + 灰底激活、方形勾选框） */
 .gf-filter-card {
-  background: #ffffff;
-  border-radius: 10px;
-  border: 1px solid #ebeef5;
-  padding: 10px 14px;
+  background: #fff;
+  border-radius: 12px;
+  padding: 14px 20px 12px;
   margin-bottom: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
   flex-shrink: 0;
 }
-.gf-filter-row-primary {
+.gf-filter-row {
   display: flex;
   align-items: center;
-  gap: 14px;
+  justify-content: space-between;
+  gap: 12px;
   flex-wrap: wrap;
 }
-
-/* 排序胶囊组 */
-.gf-sort-pills {
+.gf-sorts,
+.gf-filter-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.gf-filter-right {
+  gap: 12px;
+}
+.gf-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 36px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 18px;
+  background: transparent;
+  color: #1a1a1a;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  outline: none;
+}
+.gf-sort:hover,
+.gf-sort.is-active {
+  background: #f2f3f5;
+}
+.gf-caret {
+  font-size: 12px;
+  margin-left: 2px;
+  transition: transform 0.15s;
+}
+.gf-caret.open {
+  transform: rotate(180deg);
+}
+:global(.gf-menu-on) {
+  color: #ff4400;
+  font-weight: 600;
+}
+.gf-price-range {
   display: flex;
   align-items: center;
   gap: 6px;
+  margin-left: 6px;
 }
-.gf-pill-btn {
-  background: #f6f6f6;
-  border: 1px solid transparent;
-  color: #333333;
-  font-size: 12px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-weight: 500;
-}
-.gf-pill-btn span {
-  font-size: 10px;
-  color: #888;
-}
-.gf-pill-btn:hover {
-  background: #eee;
-  color: #111;
-}
-.gf-pill-btn.is-active {
-  background: #111111;
-  color: #ffda00;
-  font-weight: 700;
-}
-.gf-pill-btn.is-active span {
-  color: #ffda00;
-}
-
-/* 价格区间输入框 */
-.gf-price-range-group {
+.gf-price-input {
   display: flex;
   align-items: center;
-  gap: 4px;
+  width: 104px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid #e5e6eb;
+  border-radius: 8px;
+  background: #fff;
 }
-.gf-price-input-box {
-  display: inline-flex;
-  align-items: center;
-  background: #f6f6f6;
-  border: 1px solid #eee;
-  border-radius: 6px;
-  padding: 2px 6px;
-  width: 72px;
+.gf-price-input:focus-within {
+  border-color: #1a1a1a;
 }
-.gf-price-input-box .yen {
-  font-size: 11px;
-  color: #999;
-  margin-right: 2px;
+.gf-price-input .yen {
+  color: #8a8f99;
+  font-size: 13px;
+  margin-right: 4px;
 }
-.gf-mini-price-input {
+.gf-price-input input {
   width: 100%;
+  min-width: 0;
   border: none;
-  background: transparent;
   outline: none;
-  font-size: 11.5px;
-  color: #222;
+  font-size: 13px;
+  -moz-appearance: textfield;
+}
+.gf-price-input input::-webkit-outer-spin-button,
+.gf-price-input input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
 }
 .range-dash {
-  color: #bbb;
-  font-size: 12px;
+  color: #c0c4cc;
 }
-
-/* 快捷区域选择 */
-.gf-region-selector {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.region-prefix {
-  font-size: 12px;
-  color: #888;
-}
-.gf-cities-chips {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-.gf-city-chip {
-  font-size: 11.5px;
-  color: #555;
-  background: #f6f6f6;
-  padding: 2px 8px;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-.gf-city-chip:hover {
-  background: #eee;
-  color: #111;
-}
-.gf-city-chip.is-active {
-  background: #ffda00;
-  color: #111;
-  font-weight: 700;
-}
-
-/* 右侧工具栏与分页 */
-.gf-tools-right {
+.gf-pager {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-left: auto;
-}
-.gf-protect-badge {
-  font-size: 11px;
-  background: #f0fdf4;
-  color: #16a34a;
-  border: 1px solid #bbf7d0;
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-weight: 500;
-}
-.gf-account-select {
-  width: 130px;
-}
-.gf-mini-pager {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: #666;
 }
 .gf-page-arrow {
-  background: #f6f6f6;
-  border: 1px solid #eee;
-  width: 22px;
-  height: 22px;
-  border-radius: 4px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid #e5e6eb;
+  border-radius: 8px;
+  background: #fff;
+  color: #1a1a1a;
+  font-size: 18px;
+  line-height: 1;
   cursor: pointer;
-  font-size: 12px;
-  color: #444;
+}
+.gf-page-arrow:hover:not(:disabled) {
+  border-color: #1a1a1a;
 }
 .gf-page-arrow:disabled {
-  opacity: 0.4;
+  color: #c9cdd4;
   cursor: not-allowed;
 }
 .gf-page-text {
-  font-size: 11.5px;
-  font-weight: 600;
-  color: #222;
+  font-size: 14px;
+  color: #1a1a1a;
+  min-width: 36px;
+  text-align: center;
 }
-.gf-view-switch-btn {
-  background: #f6f6f6;
-  border: 1px solid transparent;
-  width: 26px;
-  height: 26px;
-  border-radius: 6px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  color: #666;
-  transition: all 0.15s ease;
-}
-.gf-view-switch-btn.is-active {
-  background: #111;
-  color: #ffda00;
-}
-
-/* 第二行：闲鱼标志性圆圈勾选标签 */
-.gf-filter-row-secondary {
+.gf-check-row {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding-top: 6px;
-  border-top: 1px dashed #f0f0f0;
-  font-size: 12.5px;
+  flex-wrap: wrap;
+  gap: 6px 22px;
+  margin-top: 10px;
+  padding: 0 14px;
 }
-.gf-round-check {
+.gf-check {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
+  font-size: 14px;
+  color: #1a1a1a;
   cursor: pointer;
   user-select: none;
 }
-.gf-round-check input {
-  display: none;
-}
-.check-circle {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  border: 1.5px solid #ccc;
-  display: inline-block;
-  position: relative;
-  transition: all 0.15s ease;
-}
-.gf-round-check input:checked + .check-circle {
-  background: #ffda00;
-  border-color: #111;
-}
-.gf-round-check input:checked + .check-circle::after {
-  content: '';
+.gf-check input {
   position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: #111;
+  opacity: 0;
+  pointer-events: none;
 }
-.check-title {
-  color: #444;
-  font-weight: 500;
+.gf-check-box {
+  width: 16px;
+  height: 16px;
+  border: 1px solid #c9cdd4;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: #1a1a1a;
+  transition: all 0.15s;
 }
-.gf-round-check input:checked ~ .check-title {
-  color: #111;
-  font-weight: 700;
+.gf-check:hover .gf-check-box {
+  border-color: #1a1a1a;
 }
-.gf-reset-filters-btn {
+.gf-check.on .gf-check-box {
+  background: #ffe60f;
+  border-color: #1a1a1a;
+}
+.gf-check input:focus-visible + .gf-check-box {
+  outline: 2px solid #1a1a1a;
+  outline-offset: 2px;
+}
+.gf-reset-btn {
   margin-left: auto;
-  background: none;
   border: none;
-  color: #888;
-  font-size: 11.5px;
+  background: transparent;
+  color: #8a8f99;
+  font-size: 13px;
   cursor: pointer;
 }
-.gf-reset-filters-btn:hover {
+.gf-reset-btn:hover {
+  color: #1a1a1a;
+}
+
+/* 区域弹层（选地区：左省右市） */
+:global(.gf-region-popper.el-popover) {
+  padding: 0 !important;
+  border-radius: 12px !important;
+  overflow: hidden;
+}
+.gf-region-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px 10px;
+  border-bottom: 1px solid #f2f3f5;
+}
+.gf-region-tab {
+  font-size: 15px;
+  font-weight: 700;
+  color: #1a1a1a;
+  box-shadow: inset 0 -6px 0 #ffe60f;
+}
+.gf-region-close {
+  cursor: pointer;
+  color: #8a8f99;
+}
+.gf-region-close:hover {
+  color: #1a1a1a;
+}
+.gf-region-body {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  height: 320px;
+}
+.gf-region-col {
+  overflow-y: auto;
+  padding: 6px 0;
+}
+.gf-region-col.left {
+  background: #f7f8fa;
+}
+.gf-region-col.right {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  align-content: start;
+  padding: 6px 8px;
+}
+.gf-region-opt {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 16px;
+  font-size: 14px;
+  color: #1a1a1a;
+  cursor: pointer;
+}
+.gf-region-opt:hover {
   color: #ff4400;
+}
+.gf-region-col.left .gf-region-opt.on {
+  background: #fff;
+  color: #ff4400;
+  font-weight: 600;
+}
+.gf-region-col.right .gf-region-opt {
+  padding: 8px 10px;
+}
+.gf-region-col.right .gf-region-opt.on {
+  color: #ff4400;
+  font-weight: 600;
 }
 
 .results-container {
@@ -1353,25 +1245,30 @@ onActivated(() => {
   display: flex;
   flex-direction: column;
 }
-.results-header {
+.results-bar {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
   margin-bottom: 12px;
   flex-shrink: 0;
+}
+.result-count {
+  font-size: 14px;
+  color: #1a1a1a;
 }
 .result-count b {
   color: #ff4400;
   font-size: 16px;
 }
-.page-controls {
+.results-tools {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
-.page-num {
-  font-size: 13px;
-  color: var(--xh-muted);
+.gf-account-select {
+  width: 150px;
 }
 
 /* 欢迎/引导区 (闲鱼明黄微光 Hero 视界) */
@@ -1487,288 +1384,229 @@ onActivated(() => {
   border-radius: 8px;
 }
 
-/* 闲鱼官方商品网格卡片瀑布流 (1:1 还原闲鱼 Web 端视觉体验) */
+/* ---------------- 商品卡片（闲鱼网页版：方图、两行标题、灰色属性、橙红价格、底部卖家） */
 .gf-items-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(215px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
 }
 .gf-item-card {
-  background: #ffffff;
-  border: 1px solid #f0f0f0;
-  border-radius: 12px;
-  overflow: hidden;
+  position: relative;
   display: flex;
   flex-direction: column;
+  background: #fff;
+  border-radius: 12px;
+  overflow: hidden;
   cursor: pointer;
-  transition: transform 0.16s ease, box-shadow 0.16s ease;
-  position: relative;
+  transition: box-shadow 0.2s;
 }
 .gf-item-card:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
 }
 .gf-cover-box {
-  width: 100%;
-  padding-top: 100%;
-  position: relative;
-  background: #f7f8fa;
+  aspect-ratio: 1 / 1;
+  background: #f2f3f5;
   overflow: hidden;
 }
 .gf-card-img {
-  position: absolute;
-  top: 0;
-  left: 0;
   width: 100%;
   height: 100%;
-  transition: transform 0.25s ease;
-}
-.gf-item-card:hover .gf-card-img {
-  transform: scale(1.03);
+  display: block;
 }
 .gf-img-error {
-  width: 100%;
-  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #ccc;
-  font-size: 24px;
+  height: 100%;
+  font-size: 28px;
+  color: #c9cdd4;
 }
-.gf-float-area {
-  position: absolute;
-  bottom: 8px;
-  left: 8px;
-  background: rgba(0, 0, 0, 0.55);
-  color: #ffffff;
-  font-size: 10.5px;
-  padding: 1px 6px;
-  border-radius: 4px;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  backdrop-filter: blur(4px);
-}
-.gf-float-want {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  background: rgba(255, 68, 0, 0.9);
-  color: #fff;
-  font-size: 10.5px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-weight: 600;
-}
-
-/* 卡片内容区域 */
 .gf-card-info {
-  padding: 10px 10px 12px;
+  position: relative;
   display: flex;
   flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px 12px;
   flex: 1;
 }
-
-/* 标题与闲鱼特色标签 (黄包邮 / 蓝验货宝) */
-.gf-card-title-row {
-  font-size: 13.5px;
-  line-height: 1.4;
-  color: #222222;
+.gf-card-title {
+  font-size: 15px;
+  line-height: 22px;
+  color: #1a1a1a;
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  min-height: 38px;
-  margin-bottom: 4px;
-  font-weight: 500;
+  min-height: 44px;
+}
+.gf-title-icon {
+  vertical-align: -3px;
+  margin-right: 4px;
 }
 .gf-badge-baoyou {
-  background: #ffe000;
-  color: #111111;
-  font-size: 11px;
-  font-weight: 700;
-  padding: 1px 4px;
-  border-radius: 3px;
-  margin-right: 5px;
-  vertical-align: 1px;
   display: inline-block;
-}
-.gf-badge-yanhuo {
-  background: #0084ff;
-  color: #ffffff;
-  font-size: 11px;
-  font-weight: 700;
-  padding: 1px 4px;
-  border-radius: 3px;
-  margin-right: 5px;
-  vertical-align: 1px;
-  display: inline-block;
-}
-.gf-title-text {
-  vertical-align: middle;
-}
-
-/* 发布时效 */
-.gf-time-meta {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  color: #888888;
-  margin-bottom: 6px;
-}
-.gf-time-clock {
-  font-size: 10px;
-}
-.gf-tag-sub {
-  color: #ff5000;
-  border: 1px solid #ffd0b8;
+  margin-right: 4px;
   padding: 0 4px;
-  border-radius: 2px;
-  font-size: 10px;
-  margin-left: 4px;
+  border-radius: 4px;
+  background: #ffe60f;
+  color: #1a1a1a;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 18px;
+  vertical-align: 1px;
 }
-
-/* 价格行 (闲鱼标志性橙红大数字) */
+.gf-attrs {
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: #999;
+  line-height: 16px;
+  overflow: hidden;
+  max-height: 16px;
+}
+.gf-attr + .gf-attr::before {
+  content: '';
+  display: inline-block;
+  width: 1px;
+  height: 10px;
+  margin: 0 5px;
+  background: #d6d6d6;
+  vertical-align: -1px;
+}
+.gf-service-icons {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
 .gf-price-line {
   display: flex;
   align-items: baseline;
   gap: 6px;
-  margin-bottom: 8px;
+  margin-top: auto;
+  padding-top: 2px;
 }
 .gf-price-val {
   color: #ff4400;
   font-weight: 700;
-  font-family: -apple-system, BlinkMacSystemFont, "DIN Alternate", "Helvetica Neue", sans-serif;
-  line-height: 1;
+  white-space: nowrap;
 }
 .gf-price-val .yen {
   font-size: 13px;
-  margin-right: 1px;
 }
 .gf-price-val .num {
-  font-size: 21px;
-  letter-spacing: -0.5px;
+  font-size: 22px;
+  font-family: 'DIN Alternate', 'Helvetica Neue', Arial, sans-serif;
+}
+.gf-price-note {
+  font-size: 12px;
+  color: #ff4400;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .gf-want-text {
-  font-size: 11px;
-  color: #999999;
+  font-size: 12px;
+  color: #999;
+  white-space: nowrap;
 }
-.gf-orig-price {
-  font-size: 11px;
-  color: #999999;
-  text-decoration: line-through;
-}
-
-/* 卖家与信誉底栏 */
 .gf-seller-bar {
-  margin-top: auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding-top: 8px;
-  border-top: 1px solid #f6f6f6;
+  gap: 6px;
 }
 .gf-seller-info {
   display: flex;
   align-items: center;
-  gap: 5px;
-  max-width: 60%;
+  gap: 6px;
+  min-width: 0;
 }
 .gf-seller-avatar {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: #ffda00;
-  color: #111;
-  font-size: 10px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  object-fit: cover;
   flex-shrink: 0;
 }
-.gf-seller-name {
+.gf-seller-avatar.fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffe60f;
+  color: #1a1a1a;
   font-size: 11px;
-  color: #666666;
+  font-weight: 700;
+}
+.gf-seller-area {
+  font-size: 13px;
+  color: #666;
 }
 .gf-credit-pill {
-  font-size: 10px;
-  color: #ff5000;
-  background: #fff2eb;
-  padding: 1px 6px;
-  border-radius: 999px;
-  font-weight: 500;
-  white-space: nowrap;
+  flex-shrink: 0;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: #fff4eb;
+  color: #ff7900;
+  font-size: 11px;
+  line-height: 16px;
 }
-
-/* 悬浮快捷操作栏 */
+/* 悬浮操作（本工具附加能力，悬停时盖在卡片信息区上） */
 .gf-hover-actions {
-  display: none;
   position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  background: rgba(255, 255, 255, 0.97);
-  padding: 8px 10px;
-  border-top: 1px solid #f0f0f0;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
-  backdrop-filter: blur(6px);
-}
-.gf-item-card:hover .gf-hover-actions {
+  inset: 0;
   display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-content: center;
+  gap: 6px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.96);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+.gf-item-card:hover .gf-hover-actions,
+.gf-item-card:focus-within .gf-hover-actions {
+  opacity: 1;
+  pointer-events: auto;
 }
 .gf-hover-btn {
-  height: 28px;
-  border-radius: 6px;
-  font-size: 11.5px;
-  font-weight: 600;
-  cursor: pointer;
-  border: none;
+  width: 100%;
+  height: 30px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 3px;
-  transition: all 0.15s ease;
+  border-radius: 8px;
+  border: 1px solid #e5e6eb;
+  background: #fff;
+  color: #1a1a1a;
+  font-size: 12.5px;
+  cursor: pointer;
 }
 .gf-hover-btn.primary {
-  background: #f6f6f6;
-  color: #333;
-}
-.gf-hover-btn.primary:hover {
-  background: #e9e9e9;
-  color: #000;
-}
-.gf-hover-btn.success {
-  background: #ecfdf5;
-  color: #059669;
-  border: 1px solid #a7f3d0;
-}
-.gf-hover-btn.success:hover {
-  background: #10b981;
-  color: #fff;
+  background: #1a1a1a;
+  border-color: #1a1a1a;
+  color: #ffe60f;
+  font-weight: 600;
 }
 .gf-hover-btn.yellow {
-  background: #ffda00;
-  color: #111;
-  width: 100%;
+  background: #ffe60f;
+  border-color: #ffe60f;
+  font-weight: 600;
 }
-.gf-hover-btn.yellow:hover {
-  background: #ffe533;
-}
-.gf-hover-btn.ghost {
-  background: #ffffff;
-  color: #666;
-  border: 1px solid #e5e7eb;
-}
+.gf-hover-btn.success:hover,
 .gf-hover-btn.ghost:hover {
-  background: #f9fafb;
-  color: #111;
+  border-color: #1a1a1a;
 }
 .gf-hover-link {
   text-decoration: none;
-  display: flex;
+  display: block;
+}
+.detail-analysis-box {
+  margin: 4px 0 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--xh-border, #ebeef5);
 }
 
 /* 列表模式 */

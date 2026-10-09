@@ -40,7 +40,7 @@ from app.domains.buyer.models import (
     WatchStatus,
 )
 from app.domains.buyer.pipeline import load_seller_profile, run_task, task_lock, upsert_market_item
-from app.goofish.dto import ItemDetail, SearchQuery
+from app.goofish.dto import QUICK_FILTERS, ItemDetail, SearchQuery
 from app.goofish.errors import GoofishError, RiskBlockedError, RiskControlError
 from app.intelligence.llm import LLMError, LLMUnavailable, get_llm
 from app.intelligence.pricing import deal_label, market_stats
@@ -412,7 +412,7 @@ async def live_search(
     session: SessionDep,
     keyword: str = Query(min_length=1, max_length=100),
     page: int = Query(default=1, ge=1, le=50),
-    sort: str = Query(default="newest", pattern="^(newest|price_asc|price_desc|default)$"),
+    sort: str = Query(default="newest", pattern="^(newest|price_asc|price_desc|reduce|default)$"),
     min_price: int | None = Query(default=None, ge=0),
     max_price: int | None = Query(default=None, ge=0),
     province: str | None = None,
@@ -420,10 +420,14 @@ async def live_search(
     publish_days: int | None = Query(default=None, ge=1, le=30),
     personal_only: bool = False,
     free_shipping: bool = False,
+    quick_filters: str = Query(default="", max_length=300, description="逗号分隔，取值见 QUICK_FILTERS"),
     account_id: int | None = None,
 ) -> dict[str, Any]:
     if account_id is not None:
         await get_account_for(session, user, account_id)
+    quick = [f for f in quick_filters.split(",") if f]
+    if unknown := [f for f in quick if f not in QUICK_FILTERS]:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, f"未知筛选项：{', '.join(unknown)}")
     query = SearchQuery(
         keyword=keyword.strip(),
         page=page,
@@ -435,6 +439,7 @@ async def live_search(
         publish_days=publish_days,
         personal_only=personal_only,
         free_shipping=free_shipping,
+        quick_filters=quick,
     )
     with _goofish_errors("搜索"):
         res = await get_runtime().gateway.search_items(query, account_id=account_id)

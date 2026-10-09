@@ -135,6 +135,10 @@ async def test_live_search_and_item_detail(admin_client):
     assert len(data["items"]) == 2
     assert data["items"][0]["title"]
     assert data["items"][0]["item_id"] == "900000000001"
+    ok = await admin_client.get("/api/v1/buyer/search?keyword=m&sort=reduce&quick_filters=filterAppraise,filterNew")
+    assert ok.status_code == 200
+    bad = await admin_client.get("/api/v1/buyer/search?keyword=m&quick_filters=filterAppraise,hack")
+    assert bad.status_code == 422 and "hack" in bad.text
 
     detail_res = await admin_client.get("/api/v1/buyer/items/900000000001/detail")
     assert detail_res.status_code == 200
