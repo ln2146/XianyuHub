@@ -174,6 +174,11 @@ const tokenPercent = computed(() => {
   return b > 0 ? Math.min(100, Math.round((tokenUsed.value / b) * 100)) : 0
 })
 
+const autoReplyOn = computed(() => !!data.value?.accounts.some((a) => a.auto_reply))
+const autoDeliveryOn = computed(() => !!data.value?.accounts.some((a) => a.auto_delivery))
+const restrictedCount = computed(
+  () => data.value?.accounts.filter((a) => ['cooldown', 'circuit_open', 'need_login'].includes(a.status)).length || 0,
+)
 const imOnlineCount = computed(() => data.value?.accounts.filter((a) => a.im_connected).length || 0)
 const autoManagedCount = computed(
   () => data.value?.accounts.filter((a) => a.auto_reply || a.auto_delivery).length || 0,
@@ -460,43 +465,40 @@ function fmtJobNextRun(v: string | null | undefined): string {
               <!-- 下半部分：今日自动化运行与效能指标（充满剩余高度，丰富实用） -->
               <div class="automation-telemetry-section">
                 <div class="telemetry-head">
-                  <span class="telemetry-title">⚡ 今日自动化运行效能与安全值守</span>
-                  <span class="telemetry-sub">AI 智能应答、即时发货与拟人化风控实时状态</span>
+                  <span class="telemetry-title">今日自动化</span>
+                  <span class="telemetry-sub">自动回复、自动发货与账号风控状态</span>
                 </div>
                 <div class="telemetry-grid">
                   <div class="telemetry-card" @click="router.push('/messages/rules')">
                     <div class="tc-top">
-                      <span class="tc-icon">🤖</span>
-                      <span class="tc-label">AI 智能接待</span>
-                      <span class="tc-status online">生效中</span>
+                      <span class="tc-label">自动回复</span>
+                      <span class="tc-status" :class="autoReplyOn ? 'online' : 'off'">{{ autoReplyOn ? '已开启' : '未开启' }}</span>
                     </div>
-                    <div class="tc-val">{{ data?.today.messages_auto || 0 }} <span class="tc-unit">条应答</span></div>
+                    <div class="tc-val">{{ data?.today.messages_auto || 0 }} <span class="tc-unit">条</span></div>
                     <div class="tc-desc">
-                      首响时延 &lt; 1.2s · 知识库命中率 94.8%
+                      今日收到 {{ data?.today.messages_in || 0 }} 条消息 · 人工回复 {{ data?.today.messages_manual || 0 }} 条
                     </div>
                   </div>
 
                   <div class="telemetry-card" @click="router.push('/orders/cards')">
                     <div class="tc-top">
-                      <span class="tc-icon">⚡</span>
-                      <span class="tc-label">极速自动发货</span>
-                      <span class="tc-status online">就绪</span>
+                      <span class="tc-label">自动发货</span>
+                      <span class="tc-status" :class="autoDeliveryOn ? 'online' : 'off'">{{ autoDeliveryOn ? '已开启' : '未开启' }}</span>
                     </div>
-                    <div class="tc-val">{{ data?.today.deliveries || 0 }} <span class="tc-unit">笔出库</span></div>
+                    <div class="tc-val">{{ data?.today.deliveries || 0 }} <span class="tc-unit">笔</span></div>
                     <div class="tc-desc">
-                      付款即时履约 · 卡密/网盘库全自动扣减
+                      付款后按商品关联的发货内容自动发送 · 待人工 {{ data?.pending_manual_orders || 0 }} 笔
                     </div>
                   </div>
 
                   <div class="telemetry-card" @click="router.push('/accounts')">
                     <div class="tc-top">
-                      <span class="tc-icon">🛡️</span>
-                      <span class="tc-label">24h 拟人安全防护</span>
-                      <span class="tc-status safe">AAA级</span>
+                      <span class="tc-label">账号风控</span>
+                      <span class="tc-status" :class="restrictedCount ? 'warn' : 'online'">{{ restrictedCount ? '有账号受限' : '全部正常' }}</span>
                     </div>
-                    <div class="tc-val">1.5s ~ 3.5s <span class="tc-unit">随机控频</span></div>
+                    <div class="tc-val">{{ restrictedCount }} <span class="tc-unit">个账号受限</span></div>
                     <div class="tc-desc">
-                      设备指纹隔离 · 滑块自动重试机制已激活
+                      风控记录 {{ data?.risk_events.length || 0 }} 条 · 触发限流时自动冷却并暂停相关任务
                     </div>
                   </div>
                 </div>
@@ -505,7 +507,7 @@ function fmtJobNextRun(v: string | null | undefined): string {
               <!-- 卡片底部状态汇总条 -->
               <div class="panel-footer-bar">
                 <span class="footer-tip">
-                  🟢 共接入 {{ data?.accounts.length || 0 }} 个账号 · {{ imOnlineCount }} 在线 · {{ autoManagedCount }} 托管中 · 拟人频控实时防护中
+                  共接入 {{ data?.accounts.length || 0 }} 个账号 · {{ imOnlineCount }} 个消息在线 · {{ autoManagedCount }} 个开启自动化
                 </span>
                 <el-button link type="primary" size="small" :icon="Setting" @click="router.push('/accounts')">
                   配置接入
@@ -542,79 +544,23 @@ function fmtJobNextRun(v: string | null | undefined): string {
               <div class="panel-box risk-panel">
                 <div class="panel-header">
                   <div class="title-with-subtitle">
-                    <span class="panel-title">近 7 天全域安全防御态势</span>
-                    <span class="panel-desc">频控、滑块验证自愈与风控记录</span>
+                    <span class="panel-title">风控记录</span>
+                    <span class="panel-desc">账号触发闲鱼限流、滑块验证或登录失效时记录在这里</span>
                   </div>
                   <div class="panel-actions">
-                    <span class="safe-guard-chip">
-                      <span class="guard-dot" />
-                      <span>风控防护最高级</span>
-                    </span>
+                    <el-tag :type="data?.risk_events.some((r) => !r.resolved) ? 'danger' : 'success'" size="small">
+                      {{ data?.risk_events.some((r) => !r.resolved) ? '有未解除的限制' : '无未解除的限制' }}
+                    </el-tag>
                   </div>
                 </div>
 
                 <div class="panel-body">
-                  <!-- 安全防御态势大盘：指标矩阵 + 立体自愈座舱 (告别空洞与死白) -->
-                  <div v-if="!data?.risk_events.length" class="shield-cockpit">
-                    <!-- 4 维量化防御矩阵 (2x2 Grid) -->
-                    <div class="defense-metrics-grid">
-                      <div class="defense-metric-card">
-                        <div class="dm-header">
-                          <span class="dm-icon">🛡️</span>
-                          <span class="dm-name">连续安全运行</span>
-                        </div>
-                        <div class="dm-val">7 天 <span class="dm-sub">0 告警</span></div>
-                        <div class="dm-status ok">🟢 拦截率 0.00%</div>
-                      </div>
-
-                      <div class="defense-metric-card">
-                        <div class="dm-header">
-                          <span class="dm-icon">⚡</span>
-                          <span class="dm-name">拟人随机抖动</span>
-                        </div>
-                        <div class="dm-val mono">2.0s ~ 4.5s</div>
-                        <div class="dm-status info">🎲 离散延时生效</div>
-                      </div>
-
-                      <div class="defense-metric-card">
-                        <div class="dm-header">
-                          <span class="dm-icon">🧩</span>
-                          <span class="dm-name">滑块熔断自愈</span>
-                        </div>
-                        <div class="dm-val mono">120s <span class="dm-sub">冷却保护</span></div>
-                        <div class="dm-status ok">✨ 自动阻断重试</div>
-                      </div>
-
-                      <div class="defense-metric-card">
-                        <div class="dm-header">
-                          <span class="dm-icon">🔒</span>
-                          <span class="dm-name">设备指纹隔离</span>
-                        </div>
-                        <div class="dm-val">100% <span class="dm-sub">沙箱隔离</span></div>
-                        <div class="dm-status ok">🛡️ 独立特征栈</div>
-                      </div>
-                    </div>
-
-                    <!-- 下方中心自愈光晕与策略标签 -->
-                    <div class="shield-showcase-bar">
-                      <div class="shield-mini-hero">
-                        <div class="shield-aura">
-                          <div class="shield-big-icon">🛡️</div>
-                          <div class="shield-safe-badge">SAFE 99.8</div>
-                        </div>
-                        <div class="shield-hero-texts">
-                          <div class="shield-status-title">全域风控智能防护引擎平稳值守</div>
-                          <p class="shield-status-desc">
-                            近 7 天未触发平台限制或人机滑块拦截。系统已自动启用随机拟人化延迟与流量整形策略。
-                          </p>
-                        </div>
-                      </div>
-                      <div class="shield-feature-pills">
-                        <span class="shield-pill">⚡ 拟人访问控频</span>
-                        <span class="shield-pill">🧩 滑块自愈阻断</span>
-                        <span class="shield-pill">🔒 独立指纹模拟</span>
-                      </div>
-                    </div>
+                  <div v-if="!data?.risk_events.length" class="risk-empty">
+                    <el-icon class="risk-empty-icon"><CircleCheck /></el-icon>
+                    <div class="risk-empty-title">暂无风控记录</div>
+                    <p class="risk-empty-desc">
+                      所有请求按动作类型限速并加随机间隔；一旦触发限流或滑块验证，账号会自动冷却，相关自动化任务暂停并通知你。
+                    </p>
                   </div>
 
                   <!-- 发生风控记录时的时间线 -->
@@ -640,7 +586,7 @@ function fmtJobNextRun(v: string | null | undefined): string {
                           type="danger"
                           class="small mt-xs inline-block"
                         >
-                          🔗 打开闲鱼验证页面手动解除 &gt;
+                          打开闲鱼验证页面手动解除 &gt;
                         </el-link>
                       </el-timeline-item>
                     </el-timeline>
@@ -691,7 +637,7 @@ function fmtJobNextRun(v: string | null | undefined): string {
 
               <!-- 分类热门关键词 -->
               <div class="hero-hot-section">
-                <span class="hot-label">🔥 热门搜索词推荐：</span>
+                <span class="hot-label">热门搜索：</span>
                 <div class="hot-chips-list">
                   <span
                     v-for="k in ['MacBook M1', 'iPhone 15', 'Switch OLED', 'PS5', '显卡 RTX', 'iPad Air', 'AirPods Pro', '机械键盘']"
@@ -791,7 +737,7 @@ function fmtJobNextRun(v: string | null | undefined): string {
                     <div class="tier-title">模型三层分工调度：</div>
                     <div class="tier-row">
                       <div v-for="(m, tier) in llm.models" :key="tier" class="tier-chip">
-                        <span class="tier-name">{{ tier === 'chat' ? '💬 对话主模型' : tier === 'vision' ? '👁️ 视觉验机' : '⚡ 高速粗筛' }}</span>
+                        <span class="tier-name">{{ tier === 'chat' ? '对话模型' : tier === 'vision' ? '视觉模型' : '快速模型' }}</span>
                         <span class="tier-val mono">{{ m || '-' }}</span>
                       </div>
                     </div>
@@ -1398,25 +1344,6 @@ function fmtJobNextRun(v: string | null | undefined): string {
   transform: translateY(-1px);
 }
 
-.safe-guard-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11px;
-  color: #059669;
-  background: #ecfdf5;
-  border: 1px solid #a7f3d0;
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-weight: 600;
-}
-.safe-guard-chip .guard-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #10b981;
-  box-shadow: 0 0 5px rgba(16, 185, 129, 0.8);
-}
 
 .panel-body {
   flex: 1;
@@ -1596,9 +1523,6 @@ function fmtJobNextRun(v: string | null | undefined): string {
   align-items: center;
   gap: 6px;
 }
-.tc-icon {
-  font-size: 16px;
-}
 .tc-label {
   font-size: 12px;
   font-weight: 600;
@@ -1614,6 +1538,41 @@ function fmtJobNextRun(v: string | null | undefined): string {
 .tc-status.online {
   background: #ecfdf5;
   color: #059669;
+}
+.tc-status.off {
+  color: var(--xh-muted);
+  background: var(--xh-fill);
+}
+.tc-status.warn {
+  color: var(--xh-warning-text);
+  background: var(--el-color-warning-light-9);
+}
+.risk-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--xh-space-2);
+  height: 100%;
+  min-height: 200px;
+  padding: var(--xh-space-5);
+  text-align: center;
+}
+.risk-empty-icon {
+  font-size: 32px;
+  color: var(--xh-success);
+}
+.risk-empty-title {
+  font-size: var(--xh-fs-lg);
+  font-weight: 600;
+  color: var(--xh-text);
+}
+.risk-empty-desc {
+  margin: 0;
+  max-width: 360px;
+  font-size: var(--xh-fs-sm);
+  line-height: 1.6;
+  color: var(--xh-muted);
 }
 .tc-status.safe {
   background: #eff6ff;
@@ -1709,149 +1668,8 @@ function fmtJobNextRun(v: string | null | undefined): string {
 }
 
 /* 安全防御态势大盘 (4维量化防御矩阵 + 立体自愈座舱，告别空洞死白) */
-.shield-cockpit {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-height: 0;
-}
-.defense-metrics-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
-  flex-shrink: 0;
-}
-.defense-metric-card {
-  background: #f8fafc;
-  border: 1px solid #eef2f6;
-  border-radius: 8px;
-  padding: 8px 12px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  transition: all 0.16s ease;
-}
-.defense-metric-card:hover {
-  background: #ffffff;
-  border-color: #cbd5e1;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
-}
-.dm-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.dm-icon {
-  font-size: 13px;
-}
-.dm-name {
-  font-size: 11.5px;
-  font-weight: 600;
-  color: #475569;
-}
-.dm-val {
-  font-size: 15px;
-  font-weight: 700;
-  color: #0f172a;
-  margin: 3px 0 2px;
-  letter-spacing: -0.2px;
-}
-.dm-sub {
-  font-size: 11px;
-  font-weight: 400;
-  color: #64748b;
-}
-.dm-status {
-  font-size: 10.5px;
-  font-weight: 500;
-}
-.dm-status.ok {
-  color: #059669;
-}
-.dm-status.info {
-  color: #0284c7;
-}
 
 /* 下方中心自愈光晕与策略标签展示区 */
-.shield-showcase-bar {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 12px 16px;
-  background: radial-gradient(circle at 50% 25%, #f0fdf4 0%, #ffffff 85%);
-  border-radius: 8px;
-  border: 1px solid #d1fae5;
-  text-align: center;
-  box-sizing: border-box;
-}
-.shield-mini-hero {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  text-align: left;
-  max-width: 440px;
-  margin-bottom: 10px;
-}
-.shield-aura {
-  position: relative;
-  flex-shrink: 0;
-}
-.shield-big-icon {
-  font-size: 38px;
-  filter: drop-shadow(0 4px 10px rgba(16, 185, 129, 0.25));
-}
-.shield-safe-badge {
-  position: absolute;
-  bottom: -4px;
-  right: -12px;
-  background: #10b981;
-  color: #ffffff;
-  font-size: 8.5px;
-  font-weight: 700;
-  padding: 1px 5px;
-  border-radius: 999px;
-  letter-spacing: 0.5px;
-}
-.shield-hero-texts {
-  flex: 1;
-  min-width: 0;
-}
-.shield-status-title {
-  font-size: 13.5px;
-  font-weight: 600;
-  color: #065f46;
-  margin-bottom: 3px;
-}
-.shield-status-desc {
-  font-size: 11px;
-  color: #64748b;
-  line-height: 1.45;
-  margin: 0;
-}
-.shield-feature-pills {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  justify-content: center;
-}
-.shield-pill {
-  font-size: 10.5px;
-  background: #ffffff;
-  border: 1px solid #a7f3d0;
-  color: #047857;
-  padding: 2px 9px;
-  border-radius: 999px;
-  font-weight: 500;
-  transition: all 0.15s ease;
-}
-.shield-pill:hover {
-  background: #ecfdf5;
-  border-color: #6ee7b7;
-}
 
 /* 风控时间线 */
 .risk-timeline-container {
