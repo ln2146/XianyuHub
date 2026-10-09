@@ -107,7 +107,11 @@ async def draft_task(llm: LLMGateway, description: str) -> TaskDraft:
         "你帮用户把闲鱼蹲货需求转换成监控任务配置。\n"
         "- keywords：2~4 个搜索关键词（含常见别称 / 暗语，如“mba”“丐版”）\n"
         "- include_all：标题必须包含的词（谨慎，只放型号等硬条件）；exclude：排除词（如 配件、求购、坏、维修）\n"
-        "- criteria：用 Markdown 写判定标准，包含“必须满足（一票否决）”“加分项”“危险信号”三部分\n"
+        "- criteria：用 Markdown 写判定标准，包含“必须满足（一票否决）”“加分项”“危险信号”三部分，简洁即可\n"
+        "- 价格：“2000 以内 / 以下 / 不超过 2000”→ max_price=2000；“1500 到 2000”→ min_price=1500、max_price=2000\n"
+        "- 地区：“同城 / 我在杭州 / 杭州的”→ city=杭州，province 填对应省份（浙江）；没提到地区填 null\n"
+        "- 个人卖家 / 不要贩子 / 不要商家 → personal_only=true\n"
         "- 用户没提到的条件填 null 或 false"
     )
-    return await llm.complete_json(Tier.CHAT, system, description[:2000], TaskDraft, max_tokens=3000, effort="medium")
+    # 结构化抽取不需要深度推理，用 low 让用户少等
+    return await llm.complete_json(Tier.CHAT, system, description[:2000], TaskDraft, max_tokens=2000, effort="low")

@@ -155,19 +155,35 @@ async function remove(t: TaskOut) {
 }
 
 // ---------------------------------------------------------------- 新建 / 编辑
-const dialog = reactive({ open: false, task: null as TaskOut | null, preset: null as Partial<TaskIn> | null })
+const dialog = reactive({
+  open: false,
+  task: null as TaskOut | null,
+  preset: null as Partial<TaskIn> | null,
+  nl: '' as string,
+})
 const quickKw = ref('')
 
-function openCreate(preset: Partial<TaskIn> | null = null) {
-  Object.assign(dialog, { open: true, task: null, preset })
+function openCreate(preset: Partial<TaskIn> | null = null, nl = '') {
+  Object.assign(dialog, { open: true, task: null, preset, nl })
 }
 function openEdit(t: TaskOut) {
-  Object.assign(dialog, { open: true, task: t, preset: null })
+  Object.assign(dialog, { open: true, task: t, preset: null, nl: '' })
 }
+
+/** 像一句完整需求（带价格、条件、语气词）而不是几个关键词 */
+function looksLikeSentence(text: string) {
+  if (text.length >= 20) return true
+  return text.length >= 8 && /[，。,；;！!？?]|想买|想要|求|预算|以内|以下|左右|不要|最好|电池|成色/.test(text)
+}
+
 function quickCreate() {
-  const kw = quickKw.value.trim()
-  if (!kw) return openCreate()
-  openCreate({ name: kw.slice(0, 32), keywords: kw.split(/[\s,，]+/).filter(Boolean).slice(0, 8) })
+  const text = quickKw.value.trim()
+  if (!text) return openCreate()
+  // 一句话需求交给 AI 拆成关键词 / 价格 / 排除词；几个关键词则直接预填
+  if (looksLikeSentence(text)) return openCreate(null, text)
+  // “iPhone 13 128G”是一个搜索词；只有逗号 / 顿号才表示多个关键词
+  const keywords = text.split(/[,，、;；]+/).map((k) => k.trim()).filter(Boolean).slice(0, 8)
+  openCreate({ name: (keywords[0] || text).slice(0, 32), keywords })
 }
 
 async function onSaved(t: TaskOut, created: boolean) {
@@ -426,7 +442,7 @@ onBeforeUnmount(stopTimer)
         size="large"
         clearable
         :prefix-icon="Search"
-        placeholder="想买什么？例如：iPhone 13 128G、宜家书桌，回车新建智能搜索"
+        placeholder="想买什么？输入关键词，或直接说需求：2000 以内的 iPhone 13，电池 85 以上，不要维修过的"
         @keyup.enter="quickCreate"
       />
       <el-button size="large" type="primary" :icon="Plus" @click="quickCreate">新建智能搜索</el-button>
@@ -551,7 +567,7 @@ onBeforeUnmount(stopTimer)
       </section>
     </div>
 
-    <SmartTaskDialog v-model="dialog.open" :task="dialog.task" :preset="dialog.preset" @saved="onSaved" />
+    <SmartTaskDialog v-model="dialog.open" :task="dialog.task" :preset="dialog.preset" :nl="dialog.nl" @saved="onSaved" />
 
     <ItemDrawer v-model="detail.open" :item-id="detail.result?.item_id || ''" :base="drawerBase" :task-id="detail.result?.task_id">
       <template #verdict>
