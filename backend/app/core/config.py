@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     llm_daily_token_budget: int = 0  # 0 表示不限制；超出后降级为仅规则
 
     # ---------- 风控 ----------
+    guard_rate_multiplier: float = 1.0  # 全局限流倍率：<1 更保守，>1 更激进
     guard_search_per_min: float = 6
     guard_detail_per_min: float = 10
     guard_message_per_min: float = 20

@@ -13,6 +13,7 @@ from app.domains.account import service as account_service
 from app.domains.buyer import scheduling as buyer_scheduling
 from app.domains.goods import service as goods_service
 from app.domains.message import service as message_service
+from app.domains.order import service as order_service
 from app.runtime import close_runtime, get_runtime, init_runtime
 from app.workers import scheduler
 from app.workers.im_gateway import ImGatewayManager, get_im_manager, set_im_manager
@@ -23,6 +24,7 @@ async def setup_runtime(transport=None) -> None:
     rt = get_runtime()
     rt.guard.on_state_change(account_service.on_guard_state_change)
     await account_service.load_guard_states()
+    bus.subscribe(Topics.ORDER_STATUS_CHANGED, order_service.on_order_event)
 
 
 async def start_workers() -> None:
@@ -30,6 +32,8 @@ async def start_workers() -> None:
     await buyer_scheduling.register_all()
     scheduler.add_interval_job("goods.publish_due", goods_service.publish_due_drafts, seconds=60, jitter=5)
     scheduler.add_cron_job("goods.polish_all", goods_service.polish_all, "30 9 * * *")
+    scheduler.add_interval_job("order.retry_failed", order_service.retry_failed, seconds=60, jitter=10)
+    scheduler.add_interval_job("order.sync", order_service.sync_all_auto_delivery, seconds=10 * 60, jitter=60)
     scheduler.start()
     manager = ImGatewayManager(message_service.handle_event)
     set_im_manager(manager)

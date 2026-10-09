@@ -19,6 +19,7 @@ def _env(tmp_path, monkeypatch):
     monkeypatch.setenv("RUN_WORKERS_IN_API", "false")
     monkeypatch.setenv("REDIS_URL", "")
     monkeypatch.setenv("GUARD_JITTER_MS_MAX", "0")
+    monkeypatch.setenv("GUARD_RATE_MULTIPLIER", "100")
     monkeypatch.setenv("GUARD_JITTER_MS_MIN", "0")
     get_settings.cache_clear()
     get_vault.cache_clear()

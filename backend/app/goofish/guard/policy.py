@@ -38,7 +38,7 @@ class ActionPolicy:
 
 def policies() -> dict[Action, ActionPolicy]:
     s = get_settings()
-    return {
+    base = {
         Action.SEARCH: ActionPolicy(rate=s.guard_search_per_min, burst=2, requires_login=False),
         Action.DETAIL: ActionPolicy(rate=s.guard_detail_per_min, burst=2, requires_login=False),
         Action.SELLER_PROFILE: ActionPolicy(rate=3, requires_login=False),
@@ -56,3 +56,7 @@ def policies() -> dict[Action, ActionPolicy]:
         Action.RATE: ActionPolicy(rate=2, write=True),
         Action.LOGIN: ActionPolicy(rate=2, per=300, exclusive=True, requires_login=False),
     }
+    m = s.guard_rate_multiplier
+    if m == 1:
+        return base
+    return {k: ActionPolicy(**{**v.__dict__, "rate": v.rate * m}) for k, v in base.items()}

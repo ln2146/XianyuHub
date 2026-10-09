@@ -97,7 +97,11 @@ async def test_guard_session_expired_blocks_login_actions_only():
         await guard.run("acc:2", Action.CONSIGN, fine)
 
 
-async def test_guard_rejects_when_queue_too_long():
+async def test_guard_rejects_when_queue_too_long(monkeypatch):
+    monkeypatch.setenv("GUARD_RATE_MULTIPLIER", "1")
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
     guard = RiskGuard()
 
     async def fine():

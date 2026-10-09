@@ -203,7 +203,11 @@ async def test_after_sale_handoff_and_injection(admin_client, im):
     assert "人工" in hook.calls[-1].request.content.decode()
 
 
+@respx.mock
 async def test_system_paid_message_emits_order_event(admin_client, im):
+    respx.post(url__regex=r".*trade\.order\.detail.*").mock(
+        return_value=httpx.Response(200, json={"ret": ["SUCCESS"], "data": {"components": []}})
+    )
     account_id, fake = im
     got = []
 
