@@ -5,7 +5,7 @@ import { useRouter } from 'vue-router'
 import { Refresh } from '@element-plus/icons-vue'
 import { getDashboard, type Dashboard } from '@/api/dashboard'
 import StatusTag from '@/components/StatusTag.vue'
-import { accountStatusMap, fmtMoney, fmtTime, orderStatusMap } from '@/utils/format'
+import { NEEDS_ACTION_STATUSES, accountStatusMap, fmtMoney, fmtTime, orderStatusMap } from '@/utils/format'
 
 const router = useRouter()
 const realtime = useRealtimeStore()
@@ -162,8 +162,8 @@ function healthColor(h: number) {
       </el-col>
 
       <el-col :xs="24" :lg="8">
-        <el-card shadow="never" class="block pending" @click="router.push({ path: '/orders/list', query: { status: 'manual' } })">
-          <div class="kpi-label">待人工处理订单</div>
+        <el-card shadow="never" class="block pending" @click="router.push({ path: '/orders/list', query: { status: NEEDS_ACTION_STATUSES } })">
+          <div class="kpi-label">需要我处理的订单</div>
           <div class="kpi-value" :class="{ warn: (data?.pending_manual_orders || 0) > 0 }">
             {{ data?.pending_manual_orders ?? 0 }}
           </div>

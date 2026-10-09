@@ -153,7 +153,9 @@ async def list_orders(
     if account_id is not None:
         stmt = stmt.where(Order.account_id == account_id)
     if status_:
-        stmt = stmt.where(Order.status == status_)
+        # 支持逗号分隔的多个状态，例如 manual,risk_hold,deliver_failed（总览「待人工处理」）
+        statuses = [st for st in status_.split(",") if st]
+        stmt = stmt.where(Order.status.in_(statuses))
     if q:
         stmt = stmt.where(Order.order_id.contains(q) | Order.item_title.contains(q) | Order.buyer_nick.contains(q))
     await set_total(response, session, stmt)

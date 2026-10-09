@@ -66,6 +66,9 @@ export const orderStatusMap: Record<string, { label: string; type: TagType }> = 
   closed: { label: '已关闭', type: 'info' },
 }
 
+/** 需要卖家处理的订单状态（与后端总览 pending_manual_orders 的统计口径一致） */
+export const NEEDS_ACTION_STATUSES = 'manual,risk_hold,deliver_failed'
+
 export const goodsStatusMap: Record<string, { label: string; type: TagType }> = {
   on_sale: { label: '在售', type: 'success' },
   sold: { label: '已售出', type: 'info' },

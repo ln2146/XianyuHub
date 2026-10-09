@@ -145,6 +145,13 @@ async def test_out_of_stock_goes_manual(admin_client, im):  # noqa: F811
     order = (await admin_client.get("/api/v1/orders")).json()[0]
     assert order["status"] == "manual" and "库存不足" in order["fail_reason"]
 
+    # 多状态筛选：与总览「需要我处理的订单」的统计口径一致
+    needs = (await admin_client.get("/api/v1/orders?status=manual,risk_hold,deliver_failed")).json()
+    assert [o["order_id"] for o in needs] == ["4400020"]
+    assert (await admin_client.get("/api/v1/orders?status=delivered,completed")).json() == []
+    d = (await admin_client.get("/api/v1/dashboard")).json()
+    assert d["pending_manual_orders"] == len(needs)
+
 
 async def enable_auto_delivery(client, account_id):
     await client.patch(

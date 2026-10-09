@@ -9,7 +9,7 @@ import StatusTag from '@/components/StatusTag.vue'
 import ListPager from '@/components/ListPager.vue'
 import { useAccountsStore } from '@/stores/accounts'
 import { useMobile } from '@/composables/useMobile'
-import { fmtMoney, fmtTime, itemUrl, orderStatusMap } from '@/utils/format'
+import { NEEDS_ACTION_STATUSES, fmtMoney, fmtTime, itemUrl, orderStatusMap } from '@/utils/format'
 
 const route = useRoute()
 const router = useRouter()
@@ -181,6 +181,7 @@ async function openDetail(o: Order) {
         </el-select>
         <el-button type="primary" :icon="Refresh" :loading="syncing" :disabled="!filter.account_id" @click="sync">同步订单</el-button>
         <el-select v-model="filter.status" clearable placeholder="全部状态" class="w140" @change="load()">
+          <el-option :value="NEEDS_ACTION_STATUSES" label="⚠️ 需要我处理" />
           <el-option v-for="(v, k) in orderStatusMap" :key="k" :value="k" :label="v.label" />
         </el-select>
         <el-input v-model="filter.q" placeholder="订单号 / 商品 / 买家" clearable class="w200" :prefix-icon="Search" @keyup.enter="load()" @clear="load()" />
