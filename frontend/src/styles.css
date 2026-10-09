@@ -1,0 +1,144 @@
+:root {
+  --xh-primary: #1e9e6a;
+  --xh-bg: #f5f7fa;
+  --xh-card: #ffffff;
+  --xh-border: #e8ebf0;
+  --xh-text: #1f2329;
+  --xh-muted: #8a919f;
+  --el-color-primary: #1e9e6a;
+  --el-color-primary-light-3: #62bb97;
+  --el-color-primary-light-5: #8fcfb5;
+  --el-color-primary-light-7: #bce2d2;
+  --el-color-primary-light-8: #d2ece1;
+  --el-color-primary-light-9: #e9f5f0;
+  --el-color-primary-dark-2: #187e55;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--xh-bg);
+  color: var(--xh-text);
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Segoe UI', Roboto,
+    sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 页面通用容器 */
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.page-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.page-head h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.page-head .sub {
+  color: var(--xh-muted);
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.muted {
+  color: var(--xh-muted);
+}
+
+.small {
+  font-size: 12px;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.form-tip {
+  color: var(--xh-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  margin-top: 2px;
+}
+
+.el-card {
+  border-radius: 10px;
+  border-color: var(--xh-border);
+}
+
+.json-box {
+  background: #f6f8fa;
+  border: 1px solid var(--xh-border);
+  border-radius: 6px;
+  padding: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 360px;
+  overflow: auto;
+  margin: 0;
+}
+
+.table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+/* 移动端：对话框 / 抽屉占满宽度 */
+@media (max-width: 768px) {
+  .el-dialog {
+    --el-dialog-width: 94vw !important;
+    width: 94vw !important;
+  }
+  .el-drawer.rtl,
+  .el-drawer.ltr {
+    width: 100vw !important;
+  }
+  .el-form--label-left .el-form-item,
+  .el-form--label-right .el-form-item {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .el-form--label-left .el-form-item__label,
+  .el-form--label-right .el-form-item__label {
+    justify-content: flex-start;
+    width: auto !important;
+  }
+  .page-head h2 {
+    font-size: 16px;
+  }
+}

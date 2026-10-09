@@ -1,0 +1,14 @@
+{
+  "name": "鱼塘管家 XianyuHub",
+  "short_name": "鱼塘管家",
+  "description": "自托管闲鱼买卖助手：选品雷达、自动回复、自动发货",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f5f7fa",
+  "theme_color": "#1e9e6a",
+  "lang": "zh-CN",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

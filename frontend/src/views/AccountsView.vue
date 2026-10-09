@@ -1,0 +1,670 @@
+<script setup lang="ts">
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Plus, Refresh, Upload } from '@element-plus/icons-vue'
+import QRCode from 'qrcode'
+import {
+  deleteAccount,
+  importCookies,
+  listRiskEvents,
+  probeAccount,
+  qrPoll,
+  qrStart,
+  resolveRisk,
+  updateAccount,
+  type Account,
+  type AccountSettings,
+  type QrStatus,
+  type RiskEvent,
+} from '@/api/account'
+import { getImStatus, type ImStatus } from '@/api/message'
+import StatusTag from '@/components/StatusTag.vue'
+import { useAccountsStore } from '@/stores/accounts'
+import { useMobile } from '@/composables/useMobile'
+import { accountStatusMap, fmtTime } from '@/utils/format'
+
+const store = useAccountsStore()
+const isMobile = useMobile()
+const loading = ref(false)
+const im = ref<ImStatus>({ running: false, accounts: {} })
+const busy = reactive<Record<string, boolean>>({})
+
+async function load() {
+  loading.value = true
+  try {
+    await store.load(true)
+    im.value = await getImStatus().catch(() => ({ running: false, accounts: {} }))
+  } finally {
+    loading.value = false
+  }
+}
+onMounted(load)
+
+function imConnected(id: number) {
+  return !!im.value.accounts[String(id)]?.connected
+}
+
+function healthColor(h: number) {
+  if (h >= 80) return '#67c23a'
+  if (h >= 50) return '#e6a23c'
+  return '#f56c6c'
+}
+
+async function withBusy(key: string, fn: () => Promise<void>) {
+  busy[key] = true
+  try {
+    await fn()
+  } catch {
+    /* 拦截器已提示 */
+  } finally {
+    busy[key] = false
+  }
+}
+
+function probe(a: Account) {
+  return withBusy(`probe-${a.id}`, async () => {
+    const r = await probeAccount(a.id)
+    if (r.ok) ElMessage.success('探活成功，登录态有效')
+    else ElMessage.warning(`探活失败，当前状态：${accountStatusMap[r.status]?.label || r.status}`)
+    await load()
+  })
+}
+
+async function resolve(a: Account) {
+  await ElMessageBox.confirm(
+    '请确认已在闲鱼 App / 网页完成滑块、短信或人脸等验证。确认后账号将恢复为正常状态，自动化任务会重新开始执行。',
+    '标记风控已处理',
+    { type: 'warning', confirmButtonText: '我已处理' },
+  )
+  await withBusy(`resolve-${a.id}`, async () => {
+    const r = await resolveRisk(a.id)
+    ElMessage.success(`已恢复，当前状态：${accountStatusMap[r.status]?.label || r.status}`)
+    await load()
+  })
+}
+
+async function toggleEnabled(a: Account) {
+  const enable = a.status === 'disabled'
+  await ElMessageBox.confirm(enable ? '启用后将恢复该账号的所有自动化任务。' : '停用后该账号不再执行任何自动操作。', enable ? '启用账号' : '停用账号', {
+    type: 'warning',
+  })
+  await withBusy(`enable-${a.id}`, async () => {
+    await updateAccount(a.id, { enabled: enable })
+    ElMessage.success(enable ? '已启用' : '已停用')
+    await load()
+  })
+}
+
+async function remove(a: Account) {
+  await ElMessageBox.confirm(
+    `将删除账号「${a.nickname || a.unb}」及其本地会话、商品、订单数据（不影响闲鱼上的真实数据），此操作不可恢复。`,
+    '删除账号',
+    { type: 'error', confirmButtonText: '删除', confirmButtonClass: 'el-button--danger' },
+  )
+  await withBusy(`del-${a.id}`, async () => {
+    await deleteAccount(a.id)
+    ElMessage.success('已删除')
+    await load()
+  })
+}
+
+// ---------------------------------------------------------------- 扫码登录
+const qr = reactive({
+  open: false,
+  proxy: '',
+  id: '',
+  image: '',
+  status: '' as QrStatus | '',
+  message: '',
+  verifyUrl: '',
+  starting: false,
+})
+let qrTimer: number | undefined
+
+const qrStatusText: Record<string, string> = {
+  NEW: '请使用闲鱼 App 扫描二维码',
+  SCANED: '已扫码，请在手机上确认登录',
+  CONFIRMED: '已确认，正在登录…',
+  EXPIRED: '二维码已过期，请刷新',
+  CANCELED: '已在手机上取消登录',
+  NEED_VERIFY: '需要身份验证',
+  SUCCESS: '登录成功',
+  ERROR: '登录失败',
+}
+
+function stopQrPoll() {
+  window.clearTimeout(qrTimer)
+  qrTimer = undefined
+}
+
+async function startQr() {
+  stopQrPoll()
+  qr.starting = true
+  qr.status = ''
+  qr.message = ''
+  qr.verifyUrl = ''
+  qr.image = ''
+  try {
+    const r = await qrStart(qr.proxy.trim() || null)
+    qr.id = r.qr_id
+    qr.image = await QRCode.toDataURL(r.qr_content, { width: 220, margin: 1 })
+    qr.status = 'NEW'
+    scheduleQrPoll()
+  } finally {
+    qr.starting = false
+  }
+}
+
+function scheduleQrPoll() {
+  stopQrPoll()
+  qrTimer = window.setTimeout(pollQr, 2000)
+}
+
+async function pollQr() {
+  if (!qr.open || !qr.id) return
+  try {
+    const r = await qrPoll(qr.id)
+    qr.status = r.status
+    qr.message = r.message || ''
+    qr.verifyUrl = r.verify_url || ''
+    if (r.status === 'SUCCESS') {
+      ElMessage.success('扫码登录成功，账号已添加')
+      qr.open = false
+      await load()
+      return
+    }
+    // 过期 / 取消 / 出错 / 需要验证 时停止轮询
+    if (['EXPIRED', 'CANCELED', 'ERROR', 'NEED_VERIFY'].includes(r.status)) return
+    scheduleQrPoll()
+  } catch (e) {
+    qr.status = 'ERROR'
+    qr.message = (e as { response?: { data?: { detail?: string } } }).response?.data?.detail || '轮询失败'
+  }
+}
+
+function openQr() {
+  qr.open = true
+  qr.proxy = ''
+  qr.id = ''
+  qr.image = ''
+  qr.status = ''
+}
+
+function closeQr() {
+  stopQrPoll()
+  qr.id = ''
+}
+
+// ---------------------------------------------------------------- 导入 Cookie
+const cookie = reactive({ open: false, cookies: '', proxy: '', verify: true, saving: false })
+
+function openCookie() {
+  Object.assign(cookie, { open: true, cookies: '', proxy: '', verify: true })
+}
+
+async function submitCookie() {
+  if (!cookie.cookies.trim()) {
+    ElMessage.warning('请粘贴 Cookie')
+    return
+  }
+  cookie.saving = true
+  try {
+    const acc = await importCookies({ cookies: cookie.cookies.trim(), proxy: cookie.proxy.trim() || null, verify: cookie.verify })
+    ElMessage.success(`已导入账号 ${acc.nickname || acc.unb}`)
+    cookie.open = false
+    await load()
+  } catch {
+    /* 拦截器已提示 */
+  } finally {
+    cookie.saving = false
+  }
+}
+
+// ---------------------------------------------------------------- 账号设置
+const settings = reactive({
+  open: false,
+  saving: false,
+  account: null as Account | null,
+  remark: '',
+  proxy: '',
+  clearProxy: false,
+  form: {} as AccountSettings,
+  workAllDay: true,
+  workStart: '09:00',
+  workEnd: '23:00',
+})
+
+function openSettings(a: Account) {
+  settings.account = a
+  settings.remark = a.remark
+  settings.proxy = ''
+  settings.clearProxy = false
+  settings.form = { ...a.settings }
+  const wh = a.settings.work_hours
+  settings.workAllDay = !wh
+  if (wh && wh.includes('-')) {
+    const [s, e] = wh.split('-')
+    settings.workStart = s ?? '09:00'
+    settings.workEnd = e ?? '23:00'
+  }
+  settings.open = true
+}
+
+async function saveSettings() {
+  const a = settings.account
+  if (!a) return
+  const f = settings.form
+  if (f.reply_delay_max < f.reply_delay_min) {
+    ElMessage.warning('最大回复延迟不能小于最小延迟')
+    return
+  }
+  const body = {
+    remark: settings.remark,
+    settings: {
+      ...f,
+      work_hours: settings.workAllDay ? null : `${settings.workStart}-${settings.workEnd}`,
+      default_reply: f.default_reply?.trim() ? f.default_reply : null,
+    },
+    proxy: settings.clearProxy ? '' : settings.proxy.trim() || undefined,
+  }
+  settings.saving = true
+  try {
+    await updateAccount(a.id, body)
+    ElMessage.success('设置已保存')
+    settings.open = false
+    await load()
+  } catch {
+    /* 拦截器已提示 */
+  } finally {
+    settings.saving = false
+  }
+}
+
+const automationOn = computed(() => {
+  const f = settings.form
+  return f.auto_reply || f.auto_delivery || f.auto_polish || f.auto_rate
+})
+
+// ---------------------------------------------------------------- 风控记录
+const risk = reactive({ open: false, loading: false, list: [] as RiskEvent[], account: null as Account | null })
+
+async function openRisk(a: Account) {
+  risk.account = a
+  risk.open = true
+  risk.loading = true
+  try {
+    risk.list = await listRiskEvents(a.id)
+  } finally {
+    risk.loading = false
+  }
+}
+
+onBeforeUnmount(stopQrPoll)
+</script>
+
+<template>
+  <div class="page">
+    <div class="page-head">
+      <div>
+        <h2>账号中心</h2>
+        <div class="sub">管理闲鱼账号的登录态、风控状态与自动化开关。所有自动化默认关闭，需在「设置」中逐项开启。</div>
+      </div>
+      <div class="toolbar">
+        <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
+        <el-button :icon="Upload" @click="openCookie">导入 Cookie</el-button>
+        <el-button type="primary" :icon="Plus" @click="openQr">扫码登录</el-button>
+      </div>
+    </div>
+
+    <el-alert v-if="!im.running" type="info" show-icon :closable="false" title="IM 网关未运行：收发消息、自动回复和自动发货暂不可用（检查后端 worker 配置）。" />
+
+    <el-card shadow="never">
+      <div class="table-wrap">
+        <el-table v-loading="loading" :data="store.list" empty-text="还没有账号，点击右上角「扫码登录」添加">
+          <el-table-column label="账号" min-width="200">
+            <template #default="{ row }">
+              <div class="acc">
+                <el-avatar :size="36" :src="row.avatar || undefined">{{ (row.nickname || row.unb).slice(0, 1) }}</el-avatar>
+                <div class="acc-info">
+                  <div class="acc-name">{{ row.nickname || row.unb }}</div>
+                  <div class="muted small">
+                    {{ row.remark || 'UNB ' + row.unb }}
+                    <el-tag v-if="row.has_proxy" size="small" effect="plain" class="ml">代理</el-tag>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="状态" width="120">
+            <template #default="{ row }">
+              <StatusTag :value="row.status" :map="accountStatusMap" />
+              <div v-if="row.status === 'cooldown' && row.cooldown_until" class="muted small">至 {{ fmtTime(row.cooldown_until) }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column label="健康度" width="150">
+            <template #default="{ row }">
+              <el-progress :percentage="row.health_score" :color="healthColor(row.health_score)" :stroke-width="8" />
+              <div v-if="row.strikes" class="muted small">风控计数 {{ row.strikes }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column label="IM" width="80">
+            <template #default="{ row }">
+              <el-tag :type="imConnected(row.id) ? 'success' : 'info'" size="small">{{ imConnected(row.id) ? '在线' : '离线' }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="自动化" min-width="150">
+            <template #default="{ row }">
+              <div class="flags">
+                <el-tag size="small" :type="row.settings.auto_reply ? 'success' : 'info'" effect="plain">回复{{ row.settings.auto_reply ? '开' : '关' }}</el-tag>
+                <el-tag size="small" :type="row.settings.auto_delivery ? 'success' : 'info'" effect="plain">发货{{ row.settings.auto_delivery ? '开' : '关' }}</el-tag>
+                <el-tag size="small" effect="plain">AI {{ { off: '关', suggest: '建议', auto: '自动' }[row.settings.ai_mode as string] }}</el-tag>
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="最近探活 / 错误" min-width="180">
+            <template #default="{ row }">
+              <div class="small">{{ fmtTime(row.last_probe_at) }}</div>
+              <el-tooltip v-if="row.last_error" :content="row.last_error" placement="top">
+                <div class="small err ellipsis">{{ row.last_error }}</div>
+              </el-tooltip>
+              <el-link v-if="row.punish_url" :href="row.punish_url" target="_blank" type="danger" class="small">打开验证页面</el-link>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" :width="isMobile ? 120 : 330" :fixed="isMobile ? undefined : 'right'">
+            <template #default="{ row }">
+              <div class="ops">
+                <el-button size="small" type="primary" plain @click="openSettings(row as Account)">设置</el-button>
+                <el-button size="small" :loading="busy[`probe-${row.id}`]" @click="probe(row as Account)">探活</el-button>
+                <el-button
+                  v-if="row.status === 'circuit_open' || row.status === 'cooldown'"
+                  size="small"
+                  type="warning"
+                  :loading="busy[`resolve-${row.id}`]"
+                  @click="resolve(row as Account)"
+                >已处理风控</el-button>
+                <el-dropdown trigger="click">
+                  <el-button size="small">更多</el-button>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item @click="openRisk(row as Account)">风控记录</el-dropdown-item>
+                      <el-dropdown-item @click="toggleEnabled(row as Account)">{{ row.status === 'disabled' ? '启用账号' : '停用账号' }}</el-dropdown-item>
+                      <el-dropdown-item divided @click="remove(row as Account)"><span class="err">删除账号</span></el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
+              </div>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+    </el-card>
+
+    <!-- 扫码登录 -->
+    <el-dialog v-model="qr.open" title="扫码登录" width="420px" @closed="closeQr">
+      <div class="qr-box">
+        <template v-if="!qr.id">
+          <el-form label-position="top" class="full">
+            <el-form-item label="代理（可选）">
+              <el-input v-model="qr.proxy" placeholder="http://user:pass@host:port 或 socks5://…" />
+              <div class="form-tip">多账号建议每个账号使用独立的住宅代理，降低关联风控。</div>
+            </el-form-item>
+          </el-form>
+          <el-button type="primary" :loading="qr.starting" @click="startQr">生成二维码</el-button>
+        </template>
+        <template v-else>
+          <div class="qr-img" :class="{ dim: ['EXPIRED', 'CANCELED', 'ERROR'].includes(qr.status) }">
+            <img v-if="qr.image" :src="qr.image" alt="登录二维码" />
+          </div>
+          <div class="qr-status" :class="qr.status">{{ qrStatusText[qr.status] || qr.status }}</div>
+          <div v-if="qr.message && qr.status !== 'NEW'" class="muted small">{{ qr.message }}</div>
+          <el-alert v-if="qr.status === 'NEED_VERIFY'" type="warning" :closable="false" class="mt">
+            <div>闲鱼要求进行身份验证（人脸 / 短信），请在浏览器中打开以下链接完成验证：</div>
+            <el-link v-if="qr.verifyUrl" :href="qr.verifyUrl" target="_blank" type="primary">打开验证页面</el-link>
+            <div class="mt-s"><el-button size="small" type="primary" @click="pollQr">我已完成验证，继续检测</el-button></div>
+          </el-alert>
+          <el-button v-if="['EXPIRED', 'CANCELED', 'ERROR'].includes(qr.status)" type="primary" class="mt" :loading="qr.starting" @click="startQr">刷新二维码</el-button>
+        </template>
+      </div>
+    </el-dialog>
+
+    <!-- 导入 Cookie -->
+    <el-dialog v-model="cookie.open" title="导入 Cookie" width="560px">
+      <el-form label-position="top">
+        <el-form-item label="Cookie" required>
+          <el-input v-model="cookie.cookies" type="textarea" :rows="6" placeholder="粘贴浏览器中 goofish.com 的 Cookie 字符串（a=1; b=2）或 JSON 数组" />
+          <div class="form-tip">需包含 unb、cookie2、_m_h5_tk。Cookie 会加密存储，不会明文展示。</div>
+        </el-form-item>
+        <el-form-item label="代理（可选）">
+          <el-input v-model="cookie.proxy" placeholder="http://user:pass@host:port" />
+        </el-form-item>
+        <el-form-item>
+          <el-checkbox v-model="cookie.verify">导入前校验登录态（推荐）</el-checkbox>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="cookie.open = false">取消</el-button>
+        <el-button type="primary" :loading="cookie.saving" @click="submitCookie">导入</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 账号设置 -->
+    <el-drawer v-model="settings.open" :title="`账号设置 · ${settings.account?.nickname || ''}`" size="560px" destroy-on-close>
+      <el-alert type="warning" show-icon :closable="false" class="mb">
+        <template #title>自动化默认全部关闭</template>
+        开启自动回复 / 自动发货 / 自动擦亮后，系统将以你的账号身份对外发送消息或执行操作。请先在「消息中心 → 试运行」中确认回复效果，再逐项开启。
+      </el-alert>
+      <el-form label-position="top" class="settings-form">
+        <el-divider content-position="left">基本信息</el-divider>
+        <el-form-item label="备注">
+          <el-input v-model="settings.remark" maxlength="128" placeholder="例如：数码店 / 小号" />
+        </el-form-item>
+        <el-form-item label="代理">
+          <el-input v-model="settings.proxy" :disabled="settings.clearProxy" :placeholder="settings.account?.has_proxy ? '已设置代理，留空表示不修改' : '未设置，留空表示直连'" />
+          <el-checkbox v-if="settings.account?.has_proxy" v-model="settings.clearProxy">清除代理</el-checkbox>
+        </el-form-item>
+
+        <el-divider content-position="left">消息</el-divider>
+        <el-form-item label="自动回复总开关">
+          <el-switch v-model="settings.form.auto_reply" />
+          <div class="form-tip">关闭时只记录消息，不做任何自动回复（关键词、AI、默认回复都不会发出）。</div>
+        </el-form-item>
+        <el-form-item label="关键词回复">
+          <el-switch v-model="settings.form.keyword_reply" />
+          <div class="form-tip">命中「回复规则」中的关键词时直接回复，优先于 AI。</div>
+        </el-form-item>
+        <el-form-item label="AI 模式">
+          <el-radio-group v-model="settings.form.ai_mode">
+            <el-radio-button value="off">关闭</el-radio-button>
+            <el-radio-button value="suggest">建议</el-radio-button>
+            <el-radio-button value="auto">自动发送</el-radio-button>
+          </el-radio-group>
+          <div class="form-tip">建议模式：AI 生成候选回复，在收件箱中人工一键发送；自动模式：AI 直接回复买家（议价不会低于商品底价）。</div>
+        </el-form-item>
+        <el-form-item label="人工接管时长（分钟）">
+          <el-input-number v-model="settings.form.takeover_minutes" :min="1" :max="1440" />
+          <div class="form-tip">你在收件箱或闲鱼 App 手动回复后，该会话暂停自动回复的时长。</div>
+        </el-form-item>
+        <el-form-item label="回复延迟（秒）">
+          <div class="range">
+            <el-input-number v-model="settings.form.reply_delay_min" :min="0" :step="1" :precision="1" />
+            <span>至</span>
+            <el-input-number v-model="settings.form.reply_delay_max" :min="0" :step="1" :precision="1" />
+          </div>
+          <div class="form-tip">在区间内随机等待后再回复，模拟真人节奏，降低风控风险。</div>
+        </el-form-item>
+        <el-form-item label="消息合并窗口（秒）">
+          <el-input-number v-model="settings.form.merge_window_seconds" :min="0" :max="30" :precision="1" />
+          <div class="form-tip">买家连续发送多条消息时，等待该时长后合并为一次回复。</div>
+        </el-form-item>
+        <el-form-item label="工作时段">
+          <el-checkbox v-model="settings.workAllDay">全天</el-checkbox>
+          <div v-if="!settings.workAllDay" class="range">
+            <el-time-select v-model="settings.workStart" start="00:00" step="00:30" end="23:30" placeholder="开始" />
+            <span>至</span>
+            <el-time-select v-model="settings.workEnd" start="00:00" step="00:30" end="23:59" placeholder="结束" />
+          </div>
+          <div class="form-tip">AI 只在工作时段内回复；时段外仅发送默认回复（如已设置）。</div>
+        </el-form-item>
+        <el-form-item label="默认回复">
+          <el-input v-model="settings.form.default_reply" type="textarea" :rows="2" placeholder="留空不发送。例如：在的，稍等马上回复您～" />
+          <div class="form-tip">没有命中关键词、AI 未开启或不在工作时段时，每个会话最多发送一次。</div>
+        </el-form-item>
+
+        <el-divider content-position="left">发货</el-divider>
+        <el-form-item label="自动发货">
+          <el-switch v-model="settings.form.auto_delivery" />
+          <div class="form-tip">买家付款后按「卡券绑定」自动发送卡密 / 文本，并在闲鱼上点击发货。</div>
+        </el-form-item>
+        <el-form-item label="发货方式">
+          <el-select v-model="settings.form.delivery_mode" class="full">
+            <el-option value="send_then_confirm" label="先发消息，再确认发货（推荐）" />
+            <el-option value="confirm_then_send" label="先确认发货，再发消息" />
+            <el-option value="send_only" label="只发消息，不点发货" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="自动评价">
+          <el-switch v-model="settings.form.auto_rate" />
+          <div class="form-tip">交易完成后自动给买家好评。</div>
+        </el-form-item>
+        <el-form-item v-if="settings.form.auto_rate" label="评价内容">
+          <el-input v-model="settings.form.rate_text" />
+        </el-form-item>
+
+        <el-divider content-position="left">运营</el-divider>
+        <el-form-item label="自动擦亮">
+          <el-switch v-model="settings.form.auto_polish" />
+          <div class="form-tip">每天定时擦亮在售商品，提升曝光（受频率限制保护）。</div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <div class="drawer-foot">
+          <span v-if="automationOn" class="warn small">已开启自动化功能</span>
+          <el-button @click="settings.open = false">取消</el-button>
+          <el-button type="primary" :loading="settings.saving" @click="saveSettings">保存</el-button>
+        </div>
+      </template>
+    </el-drawer>
+
+    <!-- 风控记录 -->
+    <el-dialog v-model="risk.open" :title="`风控记录 · ${risk.account?.nickname || ''}`" width="720px">
+      <div class="table-wrap">
+        <el-table v-loading="risk.loading" :data="risk.list" size="small" empty-text="暂无风控记录" max-height="420">
+          <el-table-column label="时间" width="150">
+            <template #default="{ row }">{{ fmtTime(row.created_at) }}</template>
+          </el-table-column>
+          <el-table-column label="状态" width="110">
+            <template #default="{ row }"><StatusTag :value="row.state" :map="accountStatusMap" /></template>
+          </el-table-column>
+          <el-table-column label="原因" prop="reason" min-width="200" show-overflow-tooltip />
+          <el-table-column label="验证链接" width="100">
+            <template #default="{ row }">
+              <el-link v-if="row.punish_url" :href="row.punish_url" target="_blank" type="primary">打开</el-link>
+              <span v-else class="muted">-</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="处理时间" width="150">
+            <template #default="{ row }">
+              <span v-if="row.resolved_at">{{ fmtTime(row.resolved_at) }}</span>
+              <el-tag v-else size="small" type="warning">未处理</el-tag>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+    </el-dialog>
+  </div>
+</template>
+
+<style scoped>
+.acc {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.acc-info {
+  min-width: 0;
+}
+.acc-name {
+  font-weight: 600;
+}
+.ml {
+  margin-left: 4px;
+}
+.flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.ops {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ops .el-button + .el-button {
+  margin-left: 0;
+}
+.err {
+  color: var(--el-color-danger);
+}
+.warn {
+  color: var(--el-color-warning);
+  margin-right: auto;
+}
+.qr-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+.full {
+  width: 100%;
+}
+.qr-img {
+  width: 232px;
+  height: 232px;
+  border: 1px solid var(--xh-border);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.qr-img.dim img {
+  opacity: 0.2;
+}
+.qr-status {
+  margin-top: 12px;
+  font-weight: 600;
+}
+.qr-status.SUCCESS,
+.qr-status.SCANED {
+  color: var(--el-color-success);
+}
+.qr-status.EXPIRED,
+.qr-status.ERROR {
+  color: var(--el-color-danger);
+}
+.mt {
+  margin-top: 12px;
+}
+.mt-s {
+  margin-top: 8px;
+}
+.mb {
+  margin-bottom: 8px;
+}
+.range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.settings-form :deep(.el-form-item__content) {
+  flex-direction: column;
+  align-items: flex-start;
+}
+.drawer-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+</style>
