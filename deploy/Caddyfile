@@ -1,0 +1,26 @@
+# SITE_ADDRESS 默认 :80（局域网 HTTP）。填入域名（如 hub.example.com）后 Caddy 会自动申请 HTTPS 证书。
+{$SITE_ADDRESS::80} {
+	encode zstd gzip
+
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	# 后端 API 与 WebSocket
+	handle /api/* {
+		reverse_proxy backend:8000
+	}
+	handle /healthz {
+		reverse_proxy backend:8000
+	}
+
+	# 前端单页应用
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

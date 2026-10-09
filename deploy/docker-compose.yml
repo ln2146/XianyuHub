@@ -1,0 +1,71 @@
+name: xianyuhub
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: xianyu
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请在 .env 中设置 POSTGRES_PASSWORD}
+      POSTGRES_DB: xianyuhub
+      TZ: Asia/Shanghai
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U xianyu -d xianyuhub"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build:
+      context: ../backend
+      args:
+        WITH_BROWSER: ${WITH_BROWSER:-false}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://xianyu:${POSTGRES_PASSWORD}@postgres:5432/xianyuhub
+      REDIS_URL: redis://redis:6379/0
+      RUN_WORKERS_IN_API: "true"
+    volumes:
+      - backend-data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/web.Dockerfile
+    restart: unless-stopped
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    ports:
+      # 默认只监听本机；局域网访问改为 "8080:80"，公网请配置域名启用 HTTPS
+      - "${WEB_BIND:-127.0.0.1}:${WEB_PORT:-8080}:80"
+      - "${WEB_BIND:-127.0.0.1}:${WEB_TLS_PORT:-8443}:443"
+    volumes:
+      - caddy-data:/data
+    depends_on:
+      - backend
+
+volumes:
+  pg-data:
+  redis-data:
+  backend-data:
+  caddy-data:
