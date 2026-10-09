@@ -20,6 +20,7 @@ const routes: RouteRecordRaw[] = [
     children: [
       { path: 'dashboard', component: () => import('@/views/DashboardView.vue'), meta: { title: '总览' } },
       { path: 'accounts', component: () => import('@/views/AccountsView.vue'), meta: { title: '账号中心' } },
+      { path: 'radar/search', component: () => import('@/views/RadarSearchView.vue'), meta: { title: '商品搜索' } },
       { path: 'radar/tasks', component: () => import('@/views/RadarTasksView.vue'), meta: { title: '选品任务' } },
       { path: 'radar/results', component: () => import('@/views/RadarResultsView.vue'), meta: { title: '好货看板' } },
       { path: 'messages/inbox', component: () => import('@/views/InboxView.vue'), meta: { title: '收件箱' } },
