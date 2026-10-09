@@ -1,10 +1,57 @@
 :root {
+  /* ============ 设计令牌（唯一来源，组件里不要再写死颜色 / 字号 / 圆角） ============
+     规范说明见 docs/design/ui-guidelines.md */
+
+  /* 品牌：鱼塘管家绿 */
   --xh-primary: #1e9e6a;
+  --xh-primary-hover: #187e55;
+  --xh-primary-soft: #e8f5f0;
+  --xh-primary-border: #bce2d2;
+
+  /* 中性色 */
   --xh-bg: #f5f7fa;
   --xh-card: #ffffff;
+  --xh-fill: #f7f8fa;
+  --xh-fill-strong: #eef0f3;
   --xh-border: #e8ebf0;
+  --xh-border-strong: #d5dae1;
   --xh-text: #1f2329;
+  --xh-text-2: #4e5969;
   --xh-muted: #8a919f;
+  --xh-disabled: #c0c4cc;
+
+  /* 语义色：只用于状态，并且总是配文字 */
+  --xh-success: #1e9e6a;
+  --xh-warning: #d98a1c;
+  --xh-warning-text: #ae6e16;
+  --xh-danger: #e5484d;
+  --xh-info: #8a919f;
+  --xh-price: #ff4400;
+
+  /* 字号：只用这 6 档 */
+  --xh-fs-xs: 12px;
+  --xh-fs-sm: 13px;
+  --xh-fs-md: 14px;
+  --xh-fs-lg: 16px;
+  --xh-fs-xl: 20px;
+  --xh-fs-xxl: 28px;
+
+  /* 间距：4 的倍数 */
+  --xh-space-1: 4px;
+  --xh-space-2: 8px;
+  --xh-space-3: 12px;
+  --xh-space-4: 16px;
+  --xh-space-5: 24px;
+
+  /* 圆角 / 阴影 */
+  --xh-radius-sm: 6px;
+  --xh-radius-md: 10px;
+  --xh-radius-lg: 16px;
+  --xh-radius-pill: 999px;
+  --xh-shadow-1: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --xh-shadow-2: 0 6px 20px rgba(15, 23, 42, 0.08);
+
+  /* Element Plus 映射：让组件库与令牌一致（浅色梯度按 10% 白混合计算） */
   --el-color-primary: #1e9e6a;
   --el-color-primary-light-3: #62bb97;
   --el-color-primary-light-5: #8fcfb5;
@@ -12,6 +59,46 @@
   --el-color-primary-light-8: #d2ece1;
   --el-color-primary-light-9: #e9f5f0;
   --el-color-primary-dark-2: #187e55;
+  --el-color-success: #1e9e6a;
+  --el-color-success-light-3: #62bb97;
+  --el-color-success-light-5: #8eceb4;
+  --el-color-success-light-7: #bce2d2;
+  --el-color-success-light-8: #d2ece1;
+  --el-color-success-light-9: #e8f5f0;
+  --el-color-success-dark-2: #187e55;
+  --el-color-warning: #d98a1c;
+  --el-color-warning-light-3: #e4ad60;
+  --el-color-warning-light-5: #ecc48e;
+  --el-color-warning-light-7: #f4dcbb;
+  --el-color-warning-light-8: #f7e8d2;
+  --el-color-warning-light-9: #fbf3e8;
+  --el-color-warning-dark-2: #ae6e16;
+  --el-color-danger: #e5484d;
+  --el-color-danger-light-3: #ed7f82;
+  --el-color-danger-light-5: #f2a4a6;
+  --el-color-danger-light-7: #f7c8ca;
+  --el-color-danger-light-8: #fadadb;
+  --el-color-danger-light-9: #fceded;
+  --el-color-danger-dark-2: #b73a3e;
+  --el-color-error: #e5484d;
+  --el-color-info: #8a919f;
+  --el-color-info-light-3: #adb2bc;
+  --el-color-info-light-5: #c4c8cf;
+  --el-color-info-light-7: #dcdee2;
+  --el-color-info-light-8: #e8e9ec;
+  --el-color-info-light-9: #f3f4f5;
+  --el-color-info-dark-2: #6e747f;
+  --el-text-color-primary: #1f2329;
+  --el-text-color-regular: #4e5969;
+  --el-text-color-secondary: #8a919f;
+  --el-text-color-placeholder: #a8adb7;
+  --el-border-color: #e8ebf0;
+  --el-border-color-light: #edf0f3;
+  --el-border-color-lighter: #f0f2f5;
+  --el-fill-color-light: #f7f8fa;
+  --el-fill-color-lighter: #fafbfc;
+  --el-border-radius-base: 8px;
+  --el-border-radius-small: 6px;
 }
 
 * {
@@ -52,7 +139,7 @@ body {
 
 .page-head h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: var(--xh-fs-xl);
   font-weight: 600;
 }
 
@@ -74,7 +161,7 @@ body {
 }
 
 .small {
-  font-size: 12px;
+  font-size: var(--xh-fs-xs);
 }
 
 .mono {
@@ -96,33 +183,33 @@ body {
 
 /* 现代化卡片规范 */
 .el-card {
-  border-radius: 12px;
-  border-color: #e2e8f0;
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.03), 0 1px 2px -1px rgba(0, 0, 0, 0.02);
+  border-radius: var(--xh-radius-md);
+  border-color: var(--xh-border);
+  box-shadow: var(--xh-shadow-1);
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .el-card.is-hover-shadow:hover {
-  box-shadow: 0 10px 18px -3px rgba(0, 0, 0, 0.06), 0 4px 6px -2px rgba(0, 0, 0, 0.03);
+  box-shadow: var(--xh-shadow-2);
 }
 
 /* 现代化表格外观 */
 .el-table {
-  --el-table-header-bg-color: #f8fafc;
+  --el-table-header-bg-color: var(--xh-fill);
   border-radius: 8px;
   overflow: hidden;
 }
 .el-table th.el-table__cell {
-  background-color: #f8fafc !important;
-  color: #475569;
+  background-color: var(--xh-fill) !important;
+  color: var(--xh-text-2);
   font-weight: 600;
-  font-size: 13px;
+  font-size: var(--xh-fs-sm);
   padding: 10px 0;
 }
 .el-table td.el-table__cell {
   padding: 10px 0;
 }
 .el-table--enable-row-hover .el-table__body tr:hover > td.el-table__cell {
-  background-color: #f8fafc !important;
+  background-color: var(--xh-fill) !important;
 }
 
 /* 控件圆角与质感 */
@@ -132,7 +219,11 @@ body {
   transition: all 0.15s ease;
 }
 .el-button--primary {
-  box-shadow: 0 1px 2px 0 rgba(16, 185, 129, 0.15);
+  box-shadow: none;
+}
+/* 警告色偏亮，文字用深一档保证可读 */
+.el-tag--warning {
+  --el-tag-text-color: var(--xh-warning-text);
 }
 .el-input__wrapper,
 .el-select__wrapper {
@@ -153,17 +244,17 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 999px;
+  background: var(--xh-border-strong);
+  border-radius: var(--xh-radius-pill);
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: var(--xh-muted);
 }
 
 .json-box {
-  background: #f6f8fa;
+  background: var(--xh-fill);
   border: 1px solid var(--xh-border);
-  border-radius: 8px;
+  border-radius: var(--xh-radius-sm);
   padding: 12px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
