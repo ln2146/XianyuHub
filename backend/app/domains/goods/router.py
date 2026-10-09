@@ -9,6 +9,7 @@ from sqlalchemy import select
 from app.core.deps import CurrentUser, SessionDep
 from app.domains.account.service import accessible_account_ids, get_account_for
 from app.domains.goods import service
+from app.domains.goods.ai_listing import Strategy, generate_listing
 from app.domains.goods.models import DraftStatus, MyItem, PublishDraftRecord
 from app.domains.system.audit import record_audit
 from app.goofish.errors import GoofishError, RiskBlockedError
@@ -79,14 +80,39 @@ class DraftIn(BaseModel):
         return self
 
 
-class DraftOut(DraftIn):
+class DraftOut(BaseModel):
+    """输出不做输入校验：AI 草稿在无法估价时售价为 0，需要卖家在确认页补全。"""
+
     model_config = {"from_attributes": True}
 
     id: int
+    account_id: int
+    title: str
+    desc: str
+    image_ids: list[str]
+    price: float
+    orig_price: float | None
+    quantity: int
+    shipping: str
+    post_fee: float
+    self_pickup: bool
+    floor_price: float | None
+    knowledge: str
+    is_virtual: bool
+    scheduled_at: datetime | None
     status: str
     item_id: str | None
     error: str | None
     created_at: datetime
+    ai_meta: dict[str, Any] | None = None
+
+
+class AiDraftIn(BaseModel):
+    account_id: int
+    image_ids: list[str] = Field(min_length=1, max_length=9)
+    hint: str = Field(default="", max_length=500, description="一句话补充说明，如：自用一年，1500 出，最低 1300")
+    strategy: Strategy = "market"
+    draft_id: int | None = Field(default=None, description="传入时用新结果覆盖该草稿（重新生成）")
 
 
 class CopyIn(BaseModel):
@@ -234,6 +260,72 @@ async def ai_copy(body: CopyIn, _: CurrentUser) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------- 草稿与发布
+@router.post("/ai-draft", response_model=DraftOut, status_code=201)
+async def ai_draft(body: AiDraftIn, user: CurrentUser, session: SessionDep) -> PublishDraftRecord:
+    """AI 根据图片（和可选的一句话说明）生成整份发布草稿，保存为待确认草稿，不会直接发布。"""
+    await get_account_for(session, user, body.account_id)
+    draft = None
+    if body.draft_id is not None:
+        draft = await session.get(PublishDraftRecord, body.draft_id)
+        if draft is None or draft.account_id != body.account_id:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "草稿不存在")
+        if draft.status in (DraftStatus.PUBLISHING, DraftStatus.PUBLISHED):
+            raise HTTPException(status.HTTP_409_CONFLICT, "已发布的草稿不能重新生成")
+    try:
+        images = []
+        for image_id in body.image_ids:
+            data, media = service.load_upload(image_id)
+            images.append((image_id, data, media))
+    except FileNotFoundError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "图片不存在，请重新上传") from e
+
+    async def lookup(keyword: str):  # noqa: ANN202
+        try:
+            return await service.market_for(keyword)
+        except RiskBlockedError as e:
+            raise RuntimeError("闲鱼风控保护中，暂停搜索") from e
+        except GoofishError as e:
+            raise RuntimeError(str(e)[:80]) from e
+
+    try:
+        out = await generate_listing(
+            get_llm(), images=images, hint=body.hint, strategy=body.strategy, market_lookup=lookup
+        )
+    except LLMUnavailable as e:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, f"大模型不可用：{e}") from e
+    except LLMError as e:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"AI 生成失败：{e}") from e
+
+    if draft is None:
+        draft = PublishDraftRecord(account_id=body.account_id, created_by=user.id)
+        session.add(draft)
+    draft.title = out.title[:60]
+    draft.desc = out.desc
+    draft.image_ids = out.image_ids
+    draft.price = out.price or 0
+    draft.orig_price = out.orig_price
+    draft.floor_price = out.floor_price
+    draft.shipping = out.shipping
+    draft.post_fee = out.post_fee
+    draft.is_virtual = out.is_virtual
+    draft.knowledge = out.knowledge
+    draft.status = DraftStatus.DRAFT
+    draft.scheduled_at = None
+    draft.error = None
+    draft.ai_meta = {**out.meta, "hint": body.hint}
+    await session.commit()
+    await record_audit(
+        "goods.ai_draft",
+        user_id=user.id,
+        actor_type="ai",
+        account_id=body.account_id,
+        target_type="draft",
+        target_id=draft.id,
+        detail={"model": out.meta.get("model"), "price_source": out.meta.get("price_source")},
+    )
+    return draft
+
+
 @router.get("/drafts", response_model=list[DraftOut])
 async def list_drafts(user: CurrentUser, session: SessionDep) -> list[PublishDraftRecord]:
     ids = await accessible_account_ids(session, user)
@@ -285,6 +377,10 @@ async def publish(draft_id: int, user: CurrentUser, session: SessionDep) -> dict
     if d is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "草稿不存在")
     await get_account_for(session, user, d.account_id)
+    if not d.price or d.price <= 0:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "请先在草稿里填写售价")
+    if not d.title.strip() or not d.desc.strip() or not d.image_ids:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "草稿缺少标题、描述或图片")
     try:
         item_id = await service.publish_draft(draft_id, user.id)
     except ValueError as e:

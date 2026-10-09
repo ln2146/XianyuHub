@@ -69,6 +69,43 @@ export interface DraftOut extends DraftIn {
   item_id: string | null
   error: string | null
   created_at: string
+  /** AI 生成草稿时的附加信息；手动创建的草稿为 null */
+  ai_meta: AiMeta | null
+}
+
+export type PriceStrategy = 'quick' | 'market' | 'premium'
+
+export interface AiMeta {
+  generated_at: string
+  model: string
+  strategy: PriceStrategy
+  hint?: string
+  titles: string[]
+  brand_model: string
+  condition: string
+  category_hint: string
+  highlights: string[]
+  flaws: string[]
+  accessories: string[]
+  shipping_reason: string
+  price_source: string
+  price_guess: number | null
+  search_keyword: string
+  market: MarketView | null
+  /** 需要卖家确认的信息 */
+  uncertain: string[]
+  /** 系统提醒（估价、已删除的违规表述等） */
+  warnings: string[]
+  removed: string[]
+  cover_changed: boolean
+}
+
+export interface AiDraftIn {
+  account_id: number
+  image_ids: string[]
+  hint: string
+  strategy: PriceStrategy
+  draft_id?: number | null
 }
 
 export interface CopyOut {
@@ -103,6 +140,9 @@ export const aiCopy = (image_ids: string[], hint: string) =>
   http.post<CopyOut>('/goods/ai-copy', { image_ids, hint }, { timeout: 180_000 }).then((r) => r.data)
 
 export const listDrafts = () => http.get<DraftOut[]>('/goods/drafts').then((r) => r.data)
+/** AI 根据图片生成整份草稿（耗时较长，通常 30~90 秒） */
+export const aiDraft = (body: AiDraftIn) =>
+  http.post<DraftOut>('/goods/ai-draft', body, { timeout: 300_000 }).then((r) => r.data)
 export const createDraft = (body: DraftIn) => http.post<DraftOut>('/goods/drafts', body).then((r) => r.data)
 export const updateDraft = (id: number, body: DraftIn) =>
   http.put<DraftOut>(`/goods/drafts/${id}`, body).then((r) => r.data)
