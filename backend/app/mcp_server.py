@@ -22,7 +22,7 @@ mcp = MCPServer(
     title="鱼塘管家",
     instructions=(
         "鱼塘管家是闲鱼买卖双端助手。可以查询同款行情、选品雷达推荐结果、收件箱会话、订单，"
-        "并能试运行客服回复、根据一句话需求生成监控任务草稿。所有对外写操作需要用户在管理台确认。"
+        "并能试运行客服回复、根据一句话需求生成智能搜索草稿。所有对外写操作需要用户在管理台确认。"
     ),
 )
 
@@ -94,7 +94,7 @@ async def radar_results(
 
 @mcp.tool(annotations=READ_ONLY)
 async def monitor_tasks() -> list[dict[str, Any]]:
-    """列出选品监控任务及最近一次运行情况。"""
+    """列出选品雷达的智能搜索及最近一次运行情况。"""
     rows = await client().get("/buyer/tasks")
     return [
         {
@@ -112,7 +112,7 @@ async def monitor_tasks() -> list[dict[str, Any]]:
 
 @mcp.tool(annotations=READ_ONLY)
 async def draft_monitor_task(description: str) -> dict[str, Any]:
-    """把一句话蹲货需求转换为监控任务草稿（不会保存，需在管理台确认创建）。"""
+    """把一句话蹲货需求转换为智能搜索草稿（不会保存，需在管理台确认创建）。"""
     return await client().post("/buyer/tasks/generate", {"description": description})
 
 

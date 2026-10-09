@@ -104,7 +104,7 @@ async def prescreen_item(llm: LLMGateway, *, criteria: str, title: str, price: f
 
 async def draft_task(llm: LLMGateway, description: str) -> TaskDraft:
     system = (
-        "你帮用户把闲鱼蹲货需求转换成监控任务配置。\n"
+        "你帮用户把闲鱼蹲货需求转换成智能搜索配置。\n"
         "- keywords：2~4 个搜索关键词（含常见别称 / 暗语，如“mba”“丐版”）\n"
         "- include_all：标题必须包含的词（谨慎，只放型号等硬条件）；exclude：排除词（如 配件、求购、坏、维修）\n"
         "- criteria：用 Markdown 写判定标准，包含“必须满足（一票否决）”“加分项”“危险信号”三部分，简洁即可\n"
