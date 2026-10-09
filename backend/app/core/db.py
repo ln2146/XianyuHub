@@ -36,6 +36,7 @@ class TimestampMixin:
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
+ALEMBIC_INI = Path(__file__).resolve().parents[2] / "alembic.ini"
 _engine: AsyncEngine | None = None
 _sessionmaker: async_sessionmaker[AsyncSession] | None = None
 
@@ -75,6 +76,18 @@ def session_factory() -> async_sessionmaker[AsyncSession]:
         init_engine()
     assert _sessionmaker is not None
     return _sessionmaker
+
+
+async def run_migrations(url: str | None = None) -> None:
+    """启动时把数据库升级到最新结构（Alembic）。在线程中运行，避免与当前事件循环冲突。"""
+    import asyncio
+
+    from alembic import command
+    from alembic.config import Config
+
+    cfg = Config(str(ALEMBIC_INI))
+    cfg.attributes["database_url"] = url or get_settings().database_url
+    await asyncio.to_thread(command.upgrade, cfg, "head")
 
 
 async def create_all() -> None:

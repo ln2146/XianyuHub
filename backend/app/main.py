@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app import bootstrap
 from app.api.router import api_router
 from app.core.config import DEV_SECRET, get_settings
-from app.core.db import create_all, dispose_engine, init_engine
+from app.core.db import dispose_engine, init_engine, run_migrations
 from app.core.events import bus
 from app.core.logging import setup_logging
 from app.domains.message.router import ws_router
@@ -22,7 +22,7 @@ async def lifespan(app: FastAPI):
     if settings.is_production and (settings.app_secret_key == DEV_SECRET or len(settings.app_secret_key) < 32):
         raise RuntimeError("生产环境必须设置至少 32 位的 APP_SECRET_KEY")
     init_engine()
-    await create_all()
+    await run_migrations()
     await ensure_admin()
     await bootstrap.setup_runtime()
     if bootstrap.workers_enabled():
