@@ -699,6 +699,7 @@ function healthColor(h: number) {
                 <el-icon class="wf-arrow"><Right /></el-icon>
               </div>
             </div>
+          </div>
         </div>
 
         <!-- 页面 3: AI 引擎与系统底座服务 -->
@@ -1222,6 +1223,78 @@ function healthColor(h: number) {
   font-size: 11px;
   color: #94a3b8;
 }
+
+/* 现代化胶囊操作按钮组（告别丑陋的裸露链接） */
+.panel-action-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.mini-capsule-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.16s ease;
+  user-select: none;
+}
+.mini-capsule-btn .arrow-ico {
+  font-size: 11px;
+  transition: transform 0.15s ease;
+}
+.mini-capsule-btn:hover .arrow-ico {
+  transform: translateX(2px);
+}
+.mini-capsule-btn.primary {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  color: #047857;
+}
+.mini-capsule-btn.primary:hover {
+  background: #10b981;
+  border-color: #10b981;
+  color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(16, 185, 129, 0.25);
+}
+.mini-capsule-btn.ghost {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+  color: #475569;
+}
+.mini-capsule-btn.ghost:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #0f172a;
+  transform: translateY(-1px);
+}
+
+.safe-guard-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: #059669;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+.safe-guard-chip .guard-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 5px rgba(16, 185, 129, 0.8);
+}
+
 .panel-body {
   flex: 1;
   min-height: 0;
@@ -1512,51 +1585,129 @@ function healthColor(h: number) {
   flex-shrink: 0;
 }
 
-/* 安全防御态势图 (充实专业感) */
+/* 安全防御态势大盘 (4维量化防御矩阵 + 立体自愈座舱，告别空洞死白) */
 .shield-cockpit {
   flex: 1;
   display: flex;
   flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+.defense-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  flex-shrink: 0;
+}
+.defense-metric-card {
+  background: #f8fafc;
+  border: 1px solid #eef2f6;
+  border-radius: 8px;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  transition: all 0.16s ease;
+}
+.defense-metric-card:hover {
+  background: #ffffff;
+  border-color: #cbd5e1;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
+}
+.dm-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.dm-icon {
+  font-size: 13px;
+}
+.dm-name {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #475569;
+}
+.dm-val {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 3px 0 2px;
+  letter-spacing: -0.2px;
+}
+.dm-sub {
+  font-size: 11px;
+  font-weight: 400;
+  color: #64748b;
+}
+.dm-status {
+  font-size: 10.5px;
+  font-weight: 500;
+}
+.dm-status.ok {
+  color: #059669;
+}
+.dm-status.info {
+  color: #0284c7;
+}
+
+/* 下方中心自愈光晕与策略标签展示区 */
+.shield-showcase-bar {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  text-align: center;
-  padding: 16px 20px;
-  background: radial-gradient(circle at 50% 30%, #f0fdf4 0%, #ffffff 70%);
+  padding: 12px 16px;
+  background: radial-gradient(circle at 50% 25%, #f0fdf4 0%, #ffffff 85%);
   border-radius: 8px;
   border: 1px solid #d1fae5;
+  text-align: center;
+  box-sizing: border-box;
+}
+.shield-mini-hero {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  text-align: left;
+  max-width: 440px;
+  margin-bottom: 10px;
 }
 .shield-aura {
   position: relative;
-  margin-bottom: 8px;
+  flex-shrink: 0;
 }
 .shield-big-icon {
-  font-size: 42px;
-  filter: drop-shadow(0 4px 12px rgba(16, 185, 129, 0.25));
+  font-size: 38px;
+  filter: drop-shadow(0 4px 10px rgba(16, 185, 129, 0.25));
 }
 .shield-safe-badge {
   position: absolute;
   bottom: -4px;
-  right: -16px;
+  right: -12px;
   background: #10b981;
   color: #ffffff;
-  font-size: 9px;
+  font-size: 8.5px;
   font-weight: 700;
-  padding: 1px 6px;
+  padding: 1px 5px;
   border-radius: 999px;
   letter-spacing: 0.5px;
 }
+.shield-hero-texts {
+  flex: 1;
+  min-width: 0;
+}
 .shield-status-title {
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 600;
   color: #065f46;
-  margin-bottom: 4px;
+  margin-bottom: 3px;
 }
 .shield-status-desc {
-  font-size: 11.5px;
+  font-size: 11px;
   color: #64748b;
-  max-width: 320px;
-  line-height: 1.5;
-  margin: 0 0 12px;
+  line-height: 1.45;
+  margin: 0;
 }
 .shield-feature-pills {
   display: flex;
@@ -1565,13 +1716,18 @@ function healthColor(h: number) {
   justify-content: center;
 }
 .shield-pill {
-  font-size: 11px;
+  font-size: 10.5px;
   background: #ffffff;
   border: 1px solid #a7f3d0;
   color: #047857;
-  padding: 2px 10px;
+  padding: 2px 9px;
   border-radius: 999px;
   font-weight: 500;
+  transition: all 0.15s ease;
+}
+.shield-pill:hover {
+  background: #ecfdf5;
+  border-color: #6ee7b7;
 }
 
 /* 风控时间线 */
