@@ -10,11 +10,14 @@ import {
   DataLine,
   Lightning,
   Money,
+  Plus,
   Promotion,
   Refresh,
   Right,
   Search,
   Setting,
+  Tools,
+  User,
   UserFilled,
   Warning,
 } from '@element-plus/icons-vue'
@@ -254,17 +257,63 @@ function healthColor(h: number) {
 
     <!-- 主工作区：满高弹性容器 (Flex-1 Fill Remaining Viewport) -->
     <main class="dash-main-container">
-      <el-tabs v-model="activeTab" class="custom-dash-tabs" type="border-card">
-        <!-- Tab 1: 闲鱼账号与风控防护 -->
-        <el-tab-pane name="accounts">
-          <template #label>
-            <div class="tab-item-label">
-              <el-icon><UserFilled /></el-icon>
-              <span>闲鱼账号与风控</span>
-              <span v-if="data?.accounts.length" class="tab-badge-num">{{ data.accounts.length }}</span>
-            </div>
-          </template>
+      <!-- 现代化 Segmented Capsule 分段药丸导航栏（告别老旧 tabs 边框与变形角标） -->
+      <nav class="dash-segmented-bar">
+        <div class="seg-nav-list" role="tablist">
+          <button
+            type="button"
+            class="seg-nav-item"
+            :class="{ 'is-active': activeTab === 'accounts' }"
+            role="tab"
+            :aria-selected="activeTab === 'accounts'"
+            @click="activeTab = 'accounts'"
+          >
+            <el-icon class="seg-icon"><UserFilled /></el-icon>
+            <span class="seg-label">闲鱼账号与风控</span>
+            <span v-if="data?.accounts.length" class="seg-counter-badge">{{ data.accounts.length }}</span>
+          </button>
 
+          <button
+            type="button"
+            class="seg-nav-item"
+            :class="{ 'is-active': activeTab === 'search' }"
+            role="tab"
+            :aria-selected="activeTab === 'search'"
+            @click="activeTab = 'search'"
+          >
+            <el-icon class="seg-icon"><Search /></el-icon>
+            <span class="seg-label">闲鱼实时找货</span>
+            <span class="seg-tag-pill">免建监控</span>
+          </button>
+
+          <button
+            type="button"
+            class="seg-nav-item"
+            :class="{ 'is-active': activeTab === 'system' }"
+            role="tab"
+            :aria-selected="activeTab === 'system'"
+            @click="activeTab = 'system'"
+          >
+            <el-icon class="seg-icon"><Cpu /></el-icon>
+            <span class="seg-label">AI 引擎与后台服务</span>
+            <span class="seg-status-dot" :class="llm?.available ? 'online' : 'offline'" />
+          </button>
+        </div>
+
+        <div class="seg-nav-meta">
+          <div class="im-health-pill">
+            <span class="pulse-indicator" :class="imOnlineCount > 0 ? 'online' : 'idle'" />
+            <span class="meta-label">IM 实时长连接:</span>
+            <span class="meta-val mono">{{ imOnlineCount }} / {{ data?.accounts.length || 0 }}</span>
+            <span class="meta-sub">在线</span>
+          </div>
+        </div>
+      </nav>
+
+      <!-- 标签页视口容器 -->
+      <div class="dash-tabs-viewport">
+        <!-- 页面 1: 闲鱼账号与风控防护 -->
+        <div v-show="activeTab === 'accounts'" class="tab-pane-view">
           <div class="tab-grid-layout two-cols">
             <!-- 左侧：账号管理与自动化运行大盘 -->
             <div class="panel-box accounts-panel">
@@ -273,10 +322,16 @@ function healthColor(h: number) {
                   <span class="panel-title">已接入闲鱼账号</span>
                   <span class="panel-desc">长连接在线状态与一键自动化托管控制</span>
                 </div>
-                <div class="panel-actions">
-                  <el-button link type="primary" size="small" @click="router.push('/accounts')">
-                    进入账号管理中心 &gt;
-                  </el-button>
+                <div class="panel-action-group">
+                  <button type="button" class="mini-capsule-btn ghost" @click="router.push('/accounts')">
+                    <el-icon><Plus /></el-icon>
+                    <span>接入账号</span>
+                  </button>
+                  <button type="button" class="mini-capsule-btn primary" @click="router.push('/accounts')">
+                    <el-icon><User /></el-icon>
+                    <span>账号管理中心</span>
+                    <el-icon class="arrow-ico"><Right /></el-icon>
+                  </button>
                 </div>
               </div>
 
@@ -445,30 +500,82 @@ function healthColor(h: number) {
                 </div>
               </div>
 
-              <!-- 下部：近 7 天智能安全防护 (充实专业感) -->
+              <!-- 下部：近 7 天智能安全防护 (充实专业感与风控座舱) -->
               <div class="panel-box risk-panel">
                 <div class="panel-header">
                   <div class="title-with-subtitle">
                     <span class="panel-title">近 7 天全域安全防御态势</span>
                     <span class="panel-desc">频控、滑块验证自愈与风控记录</span>
                   </div>
+                  <div class="panel-actions">
+                    <span class="safe-guard-chip">
+                      <span class="guard-dot" />
+                      <span>风控防护最高级</span>
+                    </span>
+                  </div>
                 </div>
 
                 <div class="panel-body">
-                  <!-- 空状态：安全防御态势图 (充实专业，告别空荡感) -->
+                  <!-- 安全防御态势大盘：指标矩阵 + 立体自愈座舱 (告别空洞与死白) -->
                   <div v-if="!data?.risk_events.length" class="shield-cockpit">
-                    <div class="shield-aura">
-                      <div class="shield-big-icon">🛡️</div>
-                      <div class="shield-safe-badge">SAFE 99.8</div>
+                    <!-- 4 维量化防御矩阵 (2x2 Grid) -->
+                    <div class="defense-metrics-grid">
+                      <div class="defense-metric-card">
+                        <div class="dm-header">
+                          <span class="dm-icon">🛡️</span>
+                          <span class="dm-name">连续安全运行</span>
+                        </div>
+                        <div class="dm-val">7 天 <span class="dm-sub">0 告警</span></div>
+                        <div class="dm-status ok">🟢 拦截率 0.00%</div>
+                      </div>
+
+                      <div class="defense-metric-card">
+                        <div class="dm-header">
+                          <span class="dm-icon">⚡</span>
+                          <span class="dm-name">拟人随机抖动</span>
+                        </div>
+                        <div class="dm-val mono">2.0s ~ 4.5s</div>
+                        <div class="dm-status info">🎲 离散延时生效</div>
+                      </div>
+
+                      <div class="defense-metric-card">
+                        <div class="dm-header">
+                          <span class="dm-icon">🧩</span>
+                          <span class="dm-name">滑块熔断自愈</span>
+                        </div>
+                        <div class="dm-val mono">120s <span class="dm-sub">冷却保护</span></div>
+                        <div class="dm-status ok">✨ 自动阻断重试</div>
+                      </div>
+
+                      <div class="defense-metric-card">
+                        <div class="dm-header">
+                          <span class="dm-icon">🔒</span>
+                          <span class="dm-name">设备指纹隔离</span>
+                        </div>
+                        <div class="dm-val">100% <span class="dm-sub">沙箱隔离</span></div>
+                        <div class="dm-status ok">🛡️ 独立特征栈</div>
+                      </div>
                     </div>
-                    <div class="shield-status-title">风控防护引擎平稳运行</div>
-                    <p class="shield-status-desc">
-                      近 7 天未触发平台限制或人机滑块拦截。系统已自动启用随机拟人化延迟与流量整形策略。
-                    </p>
-                    <div class="shield-feature-pills">
-                      <span class="shield-pill">⚡ 拟人访问控频</span>
-                      <span class="shield-pill">🧩 滑块自愈就绪</span>
-                      <span class="shield-pill">🔒 设备指纹模拟</span>
+
+                    <!-- 下方中心自愈光晕与策略标签 -->
+                    <div class="shield-showcase-bar">
+                      <div class="shield-mini-hero">
+                        <div class="shield-aura">
+                          <div class="shield-big-icon">🛡️</div>
+                          <div class="shield-safe-badge">SAFE 99.8</div>
+                        </div>
+                        <div class="shield-hero-texts">
+                          <div class="shield-status-title">全域风控智能防护引擎平稳值守</div>
+                          <p class="shield-status-desc">
+                            近 7 天未触发平台限制或人机滑块拦截。系统已自动启用随机拟人化延迟与流量整形策略。
+                          </p>
+                        </div>
+                      </div>
+                      <div class="shield-feature-pills">
+                        <span class="shield-pill">⚡ 拟人访问控频</span>
+                        <span class="shield-pill">🧩 滑块自愈阻断</span>
+                        <span class="shield-pill">🔒 独立指纹模拟</span>
+                      </div>
                     </div>
                   </div>
 
@@ -504,16 +611,10 @@ function healthColor(h: number) {
               </div>
             </div>
           </div>
-        </el-tab-pane>
+        </div>
 
-        <!-- Tab 2: 闲鱼实时找货引擎 -->
-        <el-tab-pane name="search">
-          <template #label>
-            <div class="tab-item-label">
-              <el-icon><Search /></el-icon>
-              <span>闲鱼实时找货</span>
-            </div>
-          </template>
+        <!-- 页面 2: 闲鱼实时找货引擎 -->
+        <div v-show="activeTab === 'search'" class="tab-pane-view">
 
           <div class="tab-search-wrapper">
             <!-- 找货 Hero 卡片 -->
@@ -598,19 +699,10 @@ function healthColor(h: number) {
                 <el-icon class="wf-arrow"><Right /></el-icon>
               </div>
             </div>
-          </div>
-        </el-tab-pane>
+        </div>
 
-        <!-- Tab 3: AI 引擎与系统底座服务 -->
-        <el-tab-pane name="system">
-          <template #label>
-            <div class="tab-item-label">
-              <el-icon><Cpu /></el-icon>
-              <span>AI 引擎与后台服务</span>
-              <span v-if="llm?.available" class="dot-status-green" />
-            </div>
-          </template>
-
+        <!-- 页面 3: AI 引擎与系统底座服务 -->
+        <div v-show="activeTab === 'system'" class="tab-pane-view">
           <div class="tab-grid-layout two-cols">
             <!-- 左侧：AI 大模型算力与分工 -->
             <div class="panel-box llm-panel">
@@ -619,13 +711,15 @@ function healthColor(h: number) {
                   <span class="panel-title">AI 大模型服务引擎</span>
                   <span class="panel-desc">驱动买家意图接待、自动发货决策与商品真伪鉴定</span>
                 </div>
-                <div class="panel-actions">
+                <div class="panel-action-group">
                   <el-tag v-if="llm" :type="llm.available ? 'success' : 'danger'" size="small" effect="light">
                     {{ llm.available ? '🟢 引擎连接正常' : '🔴 连接异常' }}
                   </el-tag>
-                  <el-button link type="primary" size="small" class="ml-s" @click="router.push('/llm')">
-                    配置模型 &gt;
-                  </el-button>
+                  <button type="button" class="mini-capsule-btn primary" @click="router.push('/llm')">
+                    <el-icon><Setting /></el-icon>
+                    <span>模型配置中心</span>
+                    <el-icon class="arrow-ico"><Right /></el-icon>
+                  </button>
                 </div>
               </div>
 
@@ -686,10 +780,12 @@ function healthColor(h: number) {
                   <span class="panel-title">系统后台常驻进程与调度</span>
                   <span class="panel-desc">WebSocket 实时推送通道与定时巡检队列</span>
                 </div>
-                <div class="panel-actions">
-                  <el-button link type="primary" size="small" @click="router.push('/system')">
-                    系统设置 &gt;
-                  </el-button>
+                <div class="panel-action-group">
+                  <button type="button" class="mini-capsule-btn primary" @click="router.push('/system')">
+                    <el-icon><Tools /></el-icon>
+                    <span>系统调度设置</span>
+                    <el-icon class="arrow-ico"><Right /></el-icon>
+                  </button>
                 </div>
               </div>
 
@@ -734,8 +830,8 @@ function healthColor(h: number) {
               </div>
             </div>
           </div>
-        </el-tab-pane>
-      </el-tabs>
+        </div>
+      </div>
     </main>
   </div>
 </template>
@@ -925,75 +1021,162 @@ function healthColor(h: number) {
   flex-direction: column;
 }
 
-/* 自定义 Border Card Tabs 样式：全屏撑满 */
-.custom-dash-tabs {
-  flex: 1;
-  height: 100%;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  border-radius: 12px;
-  border: 1px solid var(--xh-border);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
-  background: #ffffff;
-  overflow: hidden;
-}
-.custom-dash-tabs :deep(.el-tabs__header) {
-  background: #f8fafc;
-  margin: 0;
-  border-bottom: 1px solid var(--xh-border);
-  flex-shrink: 0;
-}
-.custom-dash-tabs :deep(.el-tabs__nav-wrap) {
-  padding: 0 14px;
-}
-.custom-dash-tabs :deep(.el-tabs__item) {
-  height: 42px;
-  line-height: 42px;
-  font-size: 13.5px;
-  color: #64748b;
-  border: none !important;
-  transition: all 0.15s ease;
-  padding: 0 16px !important;
-}
-.custom-dash-tabs :deep(.el-tabs__item.is-active) {
-  background: #ffffff;
-  color: var(--xh-primary, #10b981) !important;
-  font-weight: 600;
-  border-bottom: 2px solid var(--xh-primary, #10b981) !important;
-}
-.custom-dash-tabs :deep(.el-tabs__content) {
-  flex: 1;
-  min-height: 0;
-  height: 100%;
-  padding: 12px 14px;
-  box-sizing: border-box;
-}
-.custom-dash-tabs :deep(.el-tab-pane) {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-}
-
-.tab-item-label {
+/* 现代化分段药丸导航栏 (Segmented Capsule Navigation) */
+.dash-segmented-bar {
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 4px 6px;
+  margin-bottom: 10px;
+  flex-shrink: 0;
 }
-.tab-badge-num {
-  font-size: 10px;
+.seg-nav-list {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.seg-nav-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #64748b;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.16s ease;
+  user-select: none;
+}
+.seg-nav-item:hover {
+  color: #1e293b;
+  background: rgba(255, 255, 255, 0.5);
+}
+.seg-nav-item.is-active {
+  background: #ffffff;
+  color: #0f172a;
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+.seg-nav-item.is-active .seg-icon {
+  color: #10b981;
+}
+.seg-icon {
+  font-size: 14px;
+  color: #94a3b8;
+  transition: color 0.16s;
+}
+
+/* 彻底解决拉伸变形的精致计数微徽章 */
+.seg-counter-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  box-sizing: border-box;
   background: #e2e8f0;
   color: #475569;
-  padding: 1px 6px;
-  border-radius: 999px;
-  font-weight: 600;
 }
-.dot-status-green {
+.seg-nav-item.is-active .seg-counter-badge {
+  background: #ecfdf5;
+  color: #059669;
+  border: 1px solid #a7f3d0;
+}
+.seg-tag-pill {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #e0f2fe;
+  color: #0284c7;
+  line-height: 1;
+}
+.seg-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.seg-status-dot.online {
+  background: #10b981;
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
+}
+.seg-status-dot.offline {
+  background: #cbd5e1;
+}
+
+/* 导航栏右侧状态与微指标 */
+.seg-nav-meta {
+  display: flex;
+  align-items: center;
+  padding-right: 6px;
+}
+.im-health-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: #475569;
+  background: #ffffff;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+}
+.pulse-indicator {
   width: 6px;
   height: 6px;
-  background: #10b981;
   border-radius: 50%;
-  margin-left: 2px;
+}
+.pulse-indicator.online {
+  background: #10b981;
+  box-shadow: 0 0 6px #10b981;
+  animation: dotPulse 2s infinite ease-in-out;
+}
+.pulse-indicator.idle {
+  background: #94a3b8;
+}
+@keyframes dotPulse {
+  0% { transform: scale(0.9); opacity: 0.8; }
+  50% { transform: scale(1.2); opacity: 1; }
+  100% { transform: scale(0.9); opacity: 0.8; }
+}
+.meta-label {
+  color: #64748b;
+}
+.meta-val {
+  font-weight: 600;
+  color: #0f172a;
+}
+.meta-sub {
+  color: #10b981;
+  font-weight: 500;
+}
+
+/* 视口容器 */
+.dash-tabs-viewport {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.tab-pane-view {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
 }
 
 /* 网格双列撑满布局 */
