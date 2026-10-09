@@ -36,7 +36,7 @@ const viewMode = ref<'grid' | 'list'>('grid')
 const searchForm = reactive({
   keyword: '',
   page: 1,
-  sort: 'newest' as LiveSearchQuery['sort'],
+  sort: 'default' as LiveSearchQuery['sort'],
   min_price: null as number | null,
   max_price: null as number | null,
   province: null as string | null,
@@ -52,10 +52,10 @@ const hotKeywords = ['MacBook M1', 'iPhone 15', 'Switch OLED', 'PS5', '显卡 RT
 
 // 排序选项
 const sortOptions = [
+  { label: '综合排序', value: 'default' },
   { label: '最新发布', value: 'newest' },
   { label: '价格从低到高', value: 'price_asc' },
   { label: '价格从高到低', value: 'price_desc' },
-  { label: '综合排序', value: 'default' },
 ]
 
 // 发布时间选项
@@ -165,7 +165,7 @@ function resetFilters() {
   searchForm.personal_only = false
   searchForm.free_shipping = false
   searchForm.account_id = 0
-  searchForm.sort = 'newest'
+  searchForm.sort = 'default'
   if (searchForm.keyword.trim()) {
     doSearch(1)
   }
