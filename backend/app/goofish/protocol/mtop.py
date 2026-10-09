@@ -165,7 +165,9 @@ class MtopClient:
             return
         try:
             await self.call(TOKEN_BOOTSTRAP_API, {}, token_retries=1)
-        except TokenExpiredError:
+        except (TokenExpiredError, BizError):
+            # 只需要响应里的 Set-Cookie。该接口的业务参数随网页版变化（如 2026-10 起要求 piUrl），
+            # 业务报错不影响拿到 _m_h5_tk；风控类错误仍然向上抛出
             pass
         if not h5_token(self.cookies):
             raise NetworkError("无法获取 _m_h5_tk", api=TOKEN_BOOTSTRAP_API)

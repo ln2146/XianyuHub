@@ -215,3 +215,34 @@ def test_classify_notice():
     assert classify_notice("[记得及时发货]") == SystemNotice.PAID
     assert classify_notice("普通聊天") == SystemNotice.NONE
     assert extract_order_id("nothing here") is None
+
+
+@respx.mock
+async def test_ensure_token_tolerates_biz_error_on_bootstrap():
+    """2026-10：取令牌的接口在重试时报“缺少业务参数 piUrl”，但令牌已经通过 Set-Cookie 下发。"""
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        if len(calls) == 1:
+            return httpx.Response(
+                200,
+                json={"ret": ["FAIL_SYS_TOKEN_EMPTY::令牌为空"], "data": {}},
+                headers={"set-cookie": "_m_h5_tk=t1_9"},
+            )
+        return httpx.Response(200, json={"ret": ["FAIL_SYS_BIZPARAM_MISSED::缺少业务参数piUrl"], "data": {}})
+
+    respx.post(url__regex=r".*mtop\.gaia.*").mock(side_effect=handler)
+    async with MtopClient({}) as client:
+        await client.ensure_token()
+        assert h5_token(client.cookies) == "t1"
+
+
+@respx.mock
+async def test_ensure_token_still_raises_on_risk():
+    respx.post(url__regex=r".*mtop\.gaia.*").mock(
+        return_value=httpx.Response(200, json={"ret": ["RGV587_ERROR::SM::被挤爆啦"], "data": {}})
+    )
+    async with MtopClient({}) as client:
+        with pytest.raises(RiskControlError):
+            await client.ensure_token()
