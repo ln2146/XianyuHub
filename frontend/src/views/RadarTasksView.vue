@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { MagicStick, Plus, Refresh, Search } from '@element-plus/icons-vue'
@@ -18,9 +18,13 @@ import {
   type TaskOut,
 } from '@/api/buyer'
 import { useAccountsStore } from '@/stores/accounts'
+import { useKeepScroll } from '@/composables/useKeepScroll'
 import { useMobile } from '@/composables/useMobile'
 import RadarNav from '@/components/RadarNav.vue'
 import { fmtMoney, fmtTime, fmtRelative } from '@/utils/format'
+
+defineOptions({ name: 'RadarTasksView' })
+useKeepScroll()
 
 const router = useRouter()
 const accounts = useAccountsStore()
@@ -39,15 +43,38 @@ async function load(silent = false) {
   }
 }
 
-onMounted(() => {
-  load()
-  accounts.load().catch(() => undefined)
-  // 有任务运行时每 5 秒刷新状态
+function startTimer() {
+  if (timer) window.clearInterval(timer)
   timer = window.setInterval(() => {
     if (tasks.value.some((t) => t.running)) load(true)
   }, 5000)
+}
+
+function stopTimer() {
+  if (timer) {
+    window.clearInterval(timer)
+    timer = undefined
+  }
+}
+
+onMounted(() => {
+  load()
+  accounts.load().catch(() => undefined)
+  startTimer()
 })
-onBeforeUnmount(() => window.clearInterval(timer))
+
+onActivated(() => {
+  load(true)
+  startTimer()
+})
+
+onDeactivated(() => {
+  stopTimer()
+})
+
+onBeforeUnmount(() => {
+  stopTimer()
+})
 
 const statusLabel: Record<string, { label: string; type: 'success' | 'danger' | 'warning' }> = {
   ok: { label: '成功', type: 'success' },

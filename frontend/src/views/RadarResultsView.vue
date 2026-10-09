@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onActivated, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Bell, CopyDocument, DataAnalysis, Download, Link, Plus, Refresh, Search, TrendCharts, Upload } from '@element-plus/icons-vue'
@@ -17,7 +17,11 @@ import EChart from '@/components/EChart.vue'
 import ItemAnalysisPanel from '@/components/ItemAnalysisPanel.vue'
 import ListPager from '@/components/ListPager.vue'
 import RadarNav from '@/components/RadarNav.vue'
+import { useKeepScroll } from '@/composables/useKeepScroll'
 import { copyText, fmtMoney, fmtRelative, fmtTime, itemUrl, markMap, verdictMap } from '@/utils/format'
+
+defineOptions({ name: 'RadarResultsView' })
+useKeepScroll()
 
 const route = useRoute()
 const router = useRouter()
@@ -67,9 +71,21 @@ async function changePage() {
   root.value?.scrollIntoView({ block: 'start', behavior: 'smooth' })
 }
 
+let lastAppliedTaskId: number | undefined = route.query.task_id ? Number(route.query.task_id) : undefined
+
 onMounted(async () => {
   load()
   tasks.value = await listTasks().catch(() => [])
+})
+
+onActivated(() => {
+  const currentQueryTaskId = route.query.task_id ? Number(route.query.task_id) : undefined
+  if (currentQueryTaskId !== undefined && currentQueryTaskId !== lastAppliedTaskId) {
+    lastAppliedTaskId = currentQueryTaskId
+    filters.task_id = currentQueryTaskId
+    load(1)
+  }
+  listTasks().then((t) => { tasks.value = t }).catch(() => undefined)
 })
 
 const taskName = computed(() => {

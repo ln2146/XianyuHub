@@ -98,8 +98,10 @@ function onCommand(cmd: string) {
         </div>
       </el-header>
       <el-main class="main">
-        <router-view v-slot="{ Component }">
-          <component :is="Component" />
+        <router-view v-slot="{ Component, route }">
+          <keep-alive :include="['RadarSearchView', 'RadarTasksView', 'RadarResultsView', 'RadarWatchView']">
+            <component :is="Component" :key="route.path" />
+          </keep-alive>
         </router-view>
       </el-main>
     </el-container>

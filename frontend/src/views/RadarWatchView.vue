@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onActivated, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Bell, Delete, Edit, Link, Plus, Refresh, TrendCharts } from '@element-plus/icons-vue'
@@ -18,8 +18,12 @@ import {
 import EChart from '@/components/EChart.vue'
 import RadarNav from '@/components/RadarNav.vue'
 import { useAccountsStore } from '@/stores/accounts'
+import { useKeepScroll } from '@/composables/useKeepScroll'
 import { useMobile } from '@/composables/useMobile'
 import { fmtMoney, fmtRelative, fmtTime, itemUrl } from '@/utils/format'
+
+defineOptions({ name: 'RadarWatchView' })
+useKeepScroll()
 
 const route = useRoute()
 const router = useRouter()
@@ -40,9 +44,7 @@ async function load(silent = false) {
   }
 }
 
-onMounted(async () => {
-  accounts.load().catch(() => undefined)
-  await load()
+function checkRouteAdd() {
   // 从好货看板 / 实时搜货带过来的商品：直接打开添加弹窗
   const add = route.query.add
   if (typeof add === 'string' && add) {
@@ -50,6 +52,17 @@ onMounted(async () => {
     openCreate(add, String(route.query.title || ''), price)
     router.replace({ path: route.path })
   }
+}
+
+onMounted(async () => {
+  accounts.load().catch(() => undefined)
+  await load()
+  checkRouteAdd()
+})
+
+onActivated(() => {
+  checkRouteAdd()
+  load(true)
 })
 
 const statusMap: Record<WatchStatus, { label: string; type: 'success' | 'warning' | 'info' | 'danger' }> = {

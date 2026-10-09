@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { onActivated, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
@@ -24,8 +24,12 @@ import {
   type SearchItem,
 } from '@/api/buyer'
 import { useAccountsStore } from '@/stores/accounts'
+import { useKeepScroll } from '@/composables/useKeepScroll'
 import RadarNav from '@/components/RadarNav.vue'
 import { fmtMoney, fmtRelative } from '@/utils/format'
+
+defineOptions({ name: 'RadarSearchView' })
+useKeepScroll()
 
 const route = useRoute()
 const router = useRouter()
@@ -119,6 +123,7 @@ async function doSearch(page = 1) {
     ElMessage.warning('请输入搜索关键词')
     return
   }
+  lastQueryQ = kw
 
   // 智能降速保护：如果两次搜索发起间隔小于 1.8 秒，自动平滑缓冲，模拟真人操作节奏，降低触发平台风控几率
   const now = Date.now()
@@ -306,16 +311,27 @@ function watchPrice(it: SearchItem) {
   router.push({ path: '/radar/watch', query: { add: it.item_id, title: it.title, price: it.price ?? undefined } })
 }
 
-onMounted(() => {
-  accounts.load().catch(() => undefined)
-  const q = route.query.q
-  if (typeof q === 'string' && q.trim()) {
-    searchForm.keyword = q.trim()
+let lastQueryQ: string | null = null
+
+function checkRouteQuery() {
+  const q = typeof route.query.q === 'string' ? route.query.q.trim() : ''
+  if (q && q !== lastQueryQ) {
+    lastQueryQ = q
+    searchForm.keyword = q
     if (typeof route.query.sort === 'string') {
       searchForm.sort = route.query.sort as LiveSearchQuery['sort']
     }
     doSearch(1)
   }
+}
+
+onMounted(() => {
+  accounts.load().catch(() => undefined)
+  checkRouteQuery()
+})
+
+onActivated(() => {
+  checkRouteQuery()
 })
 </script>
 
