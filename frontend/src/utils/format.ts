@@ -123,6 +123,19 @@ export const notifyTypeMap: Record<string, string> = {
   email: '邮件',
 }
 
+/** 复制提问并打开闲鱼商品页：到闲鱼里点「我想要」进入聊天，直接粘贴发送 */
+export async function askSellerOnGoofish(questions: string[], link: string) {
+  // 先在当前页仍有焦点时发起复制，再同步打开新页面（避免剪贴板失败或被当作弹窗拦截）
+  const copying = navigator.clipboard?.writeText(questions.join('\n'))
+  window.open(link, '_blank', 'noopener')
+  try {
+    await copying
+    ElMessage.success('提问已复制：在闲鱼商品页点「我想要」进入聊天后粘贴发送')
+  } catch {
+    ElMessage.warning('已打开闲鱼商品页；复制失败，请回到这里点「复制全部」')
+  }
+}
+
 export async function copyText(text: string) {
   try {
     await navigator.clipboard.writeText(text)

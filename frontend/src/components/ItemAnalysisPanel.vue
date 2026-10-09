@@ -11,7 +11,7 @@ import {
   type SellerAnalysis,
 } from '@/api/buyer'
 import EChart from '@/components/EChart.vue'
-import { copyText, fmtMoney, fmtRelative, fmtTime } from '@/utils/format'
+import { askSellerOnGoofish, copyText, fmtMoney, fmtRelative, fmtTime, itemUrl } from '@/utils/format'
 
 const props = withDefaults(
   defineProps<{
@@ -486,7 +486,10 @@ function rateTag(rate: number | null): { label: string; type: TagType } {
             <div v-if="ai.data.questions_for_seller.length" class="block">
               <div class="block-title q-head">
                 可以问卖家
-                <el-button link size="small" :icon="CopyDocument" @click="copyText(ai.data.questions_for_seller.join('\n'))">复制全部</el-button>
+                <span>
+                  <el-button link size="small" :icon="CopyDocument" @click="copyText(ai.data.questions_for_seller.join('\n'))">复制全部</el-button>
+                  <el-button link size="small" type="primary" @click="askSellerOnGoofish(ai.data.questions_for_seller, itemUrl(itemId))">去闲鱼问卖家</el-button>
+                </span>
               </div>
               <div v-for="q in ai.data.questions_for_seller" :key="q" class="q" title="点击复制" @click="copyText(q)">{{ q }}</div>
             </div>

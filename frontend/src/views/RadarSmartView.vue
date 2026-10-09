@@ -41,7 +41,7 @@ import ListPager from '@/components/ListPager.vue'
 import RadarNav from '@/components/RadarNav.vue'
 import SmartTaskDialog from '@/components/SmartTaskDialog.vue'
 import { useKeepScroll } from '@/composables/useKeepScroll'
-import { copyText, fmtMoney, fmtRelative, fmtTime, itemUrl, markMap, verdictMap } from '@/utils/format'
+import { askSellerOnGoofish, copyText, fmtMoney, fmtRelative, fmtTime, itemUrl, markMap, verdictMap } from '@/utils/format'
 
 defineOptions({ name: 'RadarSmartView' })
 useKeepScroll()
@@ -595,7 +595,10 @@ onBeforeUnmount(stopTimer)
           <div v-if="detail.result.questions.length" class="v-block">
             <div class="v-label">
               可以这样问卖家
-              <el-button link size="small" :icon="CopyDocument" @click="copyText(detail.result.questions.join('\n'))">复制全部</el-button>
+              <span>
+                <el-button link size="small" :icon="CopyDocument" @click="copyText(detail.result.questions.join('\n'))">复制全部</el-button>
+                <el-button link size="small" type="primary" @click="askSellerOnGoofish(detail.result.questions, itemLink(detail.result))">去闲鱼问卖家</el-button>
+              </span>
             </div>
             <button v-for="q in detail.result.questions" :key="q" type="button" class="v-q" title="点击复制" @click="copyText(q)">{{ q }}</button>
           </div>
