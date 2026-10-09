@@ -111,6 +111,8 @@ export const notifyEventMap: Record<string, string> = {
 }
 
 export const notifyTypeMap: Record<string, string> = {
+  serverchan: 'Server酱（个人微信）',
+  pushplus: 'PushPlus（个人微信）',
   wecom: '企业微信',
   feishu: '飞书',
   dingtalk: '钉钉',

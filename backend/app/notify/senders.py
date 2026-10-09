@@ -1,6 +1,7 @@
 """各通知渠道的发送实现。每个 sender 接收统一的 Notification，自行转换为渠道格式。"""
 
 import asyncio
+import re
 import smtplib
 from email.mime.text import MIMEText
 from typing import Any
@@ -57,6 +58,30 @@ async def send_feishu(http: httpx.AsyncClient, cfg: dict, n: Notification) -> No
     }
     resp = await _post(http, cfg["webhook_url"], json=card)
     if resp.json().get("code", 0) != 0:
+        raise SendError(resp.text[:200])
+
+
+_SC3_UID = re.compile(r"^sctp(\d+)t")
+
+
+async def send_serverchan(http: httpx.AsyncClient, cfg: dict, n: Notification) -> None:
+    """Server酱（推送到个人微信）：Turbo 版 SCT… 与 Server酱³ sctp… 两种 SendKey 都支持。"""
+    key = cfg["sendkey"].strip()
+    m = _SC3_UID.match(key)
+    url = f"https://{m.group(1)}.push.ft07.com/send/{key}.send" if m else f"https://sctapi.ftqq.com/{key}.send"
+    resp = await _post(http, url, json={"title": n.title[:100], "desp": _markdown(n)})
+    if resp.json().get("code", 0) != 0:
+        raise SendError(resp.text[:200])
+
+
+async def send_pushplus(http: httpx.AsyncClient, cfg: dict, n: Notification) -> None:
+    """PushPlus 推送加（关注公众号即可推送到个人微信）。"""
+    resp = await _post(
+        http,
+        "https://www.pushplus.plus/send",
+        json={"token": cfg["token"], "title": n.title[:100], "content": _markdown(n), "template": "markdown"},
+    )
+    if resp.json().get("code") != 200:
         raise SendError(resp.text[:200])
 
 
@@ -122,6 +147,8 @@ async def send_email(http: httpx.AsyncClient, cfg: dict, n: Notification) -> Non
 
 
 SENDERS = {
+    "serverchan": (send_serverchan, ["sendkey"]),
+    "pushplus": (send_pushplus, ["token"]),
     "wecom": (send_wecom, ["webhook_url"]),
     "feishu": (send_feishu, ["webhook_url"]),
     "dingtalk": (send_dingtalk, ["webhook_url"]),

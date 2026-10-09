@@ -11,6 +11,7 @@ import {
   type TaskIn,
   type TaskOut,
 } from '@/api/buyer'
+import { listChannels } from '@/api/notify'
 import { useAccountsStore } from '@/stores/accounts'
 import { useMobile } from '@/composables/useMobile'
 
@@ -42,6 +43,8 @@ const cronPresets = [
 
 const state = reactive({ saving: false, tab: 'search', nl: '', generating: false, form: emptyTask(), advanced: [] as string[] })
 const selectedCronPreset = ref('*/30 8-23 * * *')
+// 没有推送渠道时，定时搜到的好货只会躺在页面里：在弹窗里直接提醒
+const hasChannel = ref(true)
 
 // AI 生成通常要 20~60 秒：显示已用时间，避免只有一个转圈
 const elapsed = ref(0)
@@ -109,6 +112,9 @@ watch(
     const match = cronPresets.find((p) => p.value === state.form.cron)
     selectedCronPreset.value = match ? match.value : 'custom'
     accounts.load().catch(() => undefined)
+    listChannels()
+      .then((list) => (hasChannel.value = list.some((c) => c.enabled)))
+      .catch(() => undefined)
     if (state.nl) generate()
   },
   { immediate: true },
@@ -230,6 +236,10 @@ async function save() {
           <el-option v-for="p in cronPresets" :key="p.value" :value="p.value" :label="p.label" />
           <el-option value="custom" label="自定义…" />
         </el-select>
+        <div v-if="state.form.enabled && !hasChannel" class="push-hint">
+          还没有设置推送：定时搜到好货只会显示在这里，不会通知你。
+          <a href="/notify" target="_blank" rel="noopener">去设置推送</a>（推荐 Server酱 / PushPlus，直接推到微信）
+        </div>
       </el-form-item>
     </el-form>
 
@@ -395,6 +405,16 @@ async function save() {
 }
 .basic {
   margin-top: var(--xh-space-4);
+}
+.push-hint {
+  width: 100%;
+  margin-top: 6px;
+  font-size: var(--xh-fs-xs);
+  line-height: 1.6;
+  color: var(--xh-warning-text);
+}
+.push-hint a {
+  color: var(--xh-primary);
 }
 .advanced {
   border-top: none;

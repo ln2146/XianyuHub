@@ -30,7 +30,8 @@ const fieldMeta: Record<string, { label: string; placeholder?: string; secret?: 
   server_url: { label: '服务器地址', placeholder: 'https://api.day.app 或 https://ntfy.sh' },
   device_key: { label: 'Device Key', secret: true },
   topic: { label: '主题 Topic', placeholder: '订阅的 topic 名称' },
-  token: { label: '访问令牌', secret: true },
+  token: { label: '访问令牌 / Token', secret: true },
+  sendkey: { label: 'SendKey', placeholder: 'SCT… 或 sctp…', secret: true },
   url: { label: '回调地址', placeholder: 'https://your-server/hook（POST JSON）', secret: true },
   headers: { label: '请求头', placeholder: '{"Authorization": "Bearer xxx"}' },
   host: { label: 'SMTP 服务器', placeholder: 'smtp.qq.com' },
@@ -43,6 +44,8 @@ const fieldMeta: Record<string, { label: string; placeholder?: string; secret?: 
 const labelOf = (k: string) => fieldMeta[k]?.label || k
 
 const typeHelp: Record<string, string> = {
+  serverchan: '推送到个人微信：在 sct.ftqq.com 用微信扫码登录，复制 SendKey（Turbo 版 SCT… 和 Server酱³ sctp… 都可以）',
+  pushplus: '推送到个人微信：在 pushplus.plus 微信扫码登录，复制「一对一推送」的 Token',
   wecom: '企业微信群 → 添加群机器人 → 复制 Webhook 地址',
   feishu: '飞书群 → 设置 → 群机器人 → 自定义机器人',
   dingtalk: '钉钉群 → 智能群助手 → 自定义机器人（安全设置建议用关键词「鱼塘」）',
