@@ -85,12 +85,24 @@ const searched = ref(false)
 const hasMore = ref(false)
 const searchError = ref('')
 
+let lastSearchTime = 0
+let filterDebounceTimer: number | undefined
+
 async function doSearch(page = 1) {
   const kw = searchForm.keyword.trim()
   if (!kw) {
     ElMessage.warning('请输入搜索关键词')
     return
   }
+
+  // 智能降速保护：如果两次搜索发起间隔小于 1.8 秒，自动平滑缓冲，模拟真人操作节奏，降低触发平台风控几率
+  const now = Date.now()
+  const timeSinceLast = now - lastSearchTime
+  if (timeSinceLast < 1800) {
+    await new Promise((resolve) => setTimeout(resolve, 1800 - timeSinceLast))
+  }
+  lastSearchTime = Date.now()
+
   searchForm.page = page
   loading.value = true
   searchError.value = ''
@@ -122,6 +134,15 @@ async function doSearch(page = 1) {
   }
 }
 
+function debouncedFilterSearch() {
+  window.clearTimeout(filterDebounceTimer)
+  filterDebounceTimer = window.setTimeout(() => {
+    if (searchForm.keyword.trim()) {
+      doSearch(1)
+    }
+  }, 350)
+}
+
 function onQuickSearch(kw: string) {
   searchForm.keyword = kw
   doSearch(1)
@@ -131,7 +152,7 @@ function selectCity(c: { province: string | null; city: string | null }) {
   searchForm.province = c.province
   searchForm.city = c.city
   if (searchForm.keyword.trim()) {
-    doSearch(1)
+    debouncedFilterSearch()
   }
 }
 
@@ -306,7 +327,7 @@ onMounted(() => {
       <div class="filter-row">
         <div class="filter-item">
           <span class="filter-label">排序：</span>
-          <el-radio-group v-model="searchForm.sort" size="small" @change="doSearch(1)">
+          <el-radio-group v-model="searchForm.sort" size="small" @change="debouncedFilterSearch">
             <el-radio-button v-for="o in sortOptions" :key="o.value" :value="o.value">
               {{ o.label }}
             </el-radio-button>
@@ -323,6 +344,7 @@ onMounted(() => {
             placeholder="最低价"
             class="w90"
             @keyup.enter="doSearch(1)"
+            @change="debouncedFilterSearch"
           />
           <span class="dash">-</span>
           <el-input-number
@@ -333,30 +355,32 @@ onMounted(() => {
             placeholder="最高价"
             class="w90"
             @keyup.enter="doSearch(1)"
+            @change="debouncedFilterSearch"
           />
         </div>
 
         <div class="filter-item">
           <span class="filter-label">发布：</span>
-          <el-select v-model="searchForm.publish_days" size="small" class="w110" placeholder="发布时间" @change="doSearch(1)">
+          <el-select v-model="searchForm.publish_days" size="small" class="w110" placeholder="发布时间" @change="debouncedFilterSearch">
             <el-option v-for="d in publishDayOptions" :key="String(d.value)" :label="d.label" :value="d.value" />
           </el-select>
         </div>
 
         <div class="filter-item checks">
-          <el-checkbox v-model="searchForm.personal_only" label="仅看个人闲置" @change="doSearch(1)" />
-          <el-checkbox v-model="searchForm.free_shipping" label="包邮" @change="doSearch(1)" />
+          <el-checkbox v-model="searchForm.personal_only" label="仅看个人闲置" @change="debouncedFilterSearch" />
+          <el-checkbox v-model="searchForm.free_shipping" label="包邮" @change="debouncedFilterSearch" />
         </div>
 
         <div class="filter-item">
           <span class="filter-label">账号通道：</span>
-          <el-select v-model="searchForm.account_id" size="small" clearable placeholder="自动 / 匿名通道" class="w140" @change="doSearch(1)">
+          <el-select v-model="searchForm.account_id" size="small" clearable placeholder="自动 / 匿名通道" class="w140" @change="debouncedFilterSearch">
             <el-option :value="0" label="自动 / 匿名通道" />
             <el-option v-for="a in accounts.list" :key="a.id" :value="a.id" :label="a.nickname || a.remark || a.unb" />
           </el-select>
         </div>
 
         <div class="filter-item ops-right">
+          <span class="pacing-protect-pill" title="两次搜索之间自动保持温和节奏，避免触发闲鱼官方 RGV587 频控限流">🛡️ 智能控频已开启</span>
           <el-button size="small" link @click="resetFilters">重置筛选</el-button>
           <el-button-group size="small" class="ml-s">
             <el-button :type="viewMode === 'grid' ? 'primary' : 'default'" :icon="Grid" @click="viewMode = 'grid'" />
@@ -1100,5 +1124,17 @@ onMounted(() => {
   font-size: 13px;
   color: #374151;
   line-height: 1.6;
+}
+.pacing-protect-pill {
+  font-size: 12px;
+  color: #10b981;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  padding: 2px 8px;
+  border-radius: 12px;
+  margin-right: 8px;
+  user-select: none;
+  display: inline-flex;
+  align-items: center;
 }
 </style>
