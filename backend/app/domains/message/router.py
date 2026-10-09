@@ -13,6 +13,7 @@ from app.core.realtime import hub
 from app.core.security import decode_access_token
 from app.domains.account.service import accessible_account_ids, get_account_for
 from app.domains.message import service
+from app.domains.message.evidence import build_evidence
 from app.domains.message.models import ChatMessage, Conversation, MessageSource, ReplyRule, ReplySuggestion
 from app.domains.system.models import User
 from app.goofish.errors import RiskBlockedError
@@ -117,6 +118,14 @@ async def list_conversations(
         stmt = stmt.where(Conversation.peer_name.contains(q) | Conversation.last_message.contains(q))
     await set_total(response, session, stmt)
     return [_conv_out(c) for c in (await session.execute(stmt.limit(limit).offset(offset))).scalars()]
+
+
+@router.get("/conversations/{conv_id}/evidence")
+async def conversation_evidence(conv_id: int, user: CurrentUser, session: SessionDep) -> dict[str, str]:
+    """售后 / 纠纷举证材料：订单、发货记录与完整聊天记录（Markdown）。"""
+    conv = await _own_conv(session, user, conv_id)
+    markdown, filename = await build_evidence(session, conv)
+    return {"markdown": markdown, "filename": filename}
 
 
 @router.get("/conversations/{conv_id}/messages", response_model=list[MessageOut])

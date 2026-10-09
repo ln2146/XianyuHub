@@ -100,3 +100,7 @@ export const updateRule = (id: number, body: RuleIn) =>
   http.put<RuleOut>(`/messages/rules/${id}`, body).then((r) => r.data)
 export const deleteRule = (id: number) => http.delete(`/messages/rules/${id}`)
 export const getImStatus = () => http.get<ImStatus>('/messages/im-status').then((r) => r.data)
+
+/** 售后 / 纠纷举证材料（Markdown）：订单、发货记录与完整聊天记录 */
+export const conversationEvidence = (id: number) =>
+  http.get<{ markdown: string; filename: string }>(`/messages/conversations/${id}/evidence`).then((r) => r.data)

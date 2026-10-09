@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft, Cpu, Promotion, Refresh, Search, UserFilled } from '@element-plus/icons-vue'
+import { ArrowLeft, Cpu, Document, Promotion, Refresh, Search, UserFilled } from '@element-plus/icons-vue'
 import {
+  conversationEvidence,
   handleSuggestion,
   listConversations,
   listMessages,
@@ -21,7 +22,7 @@ import JsonBlock from '@/components/JsonBlock.vue'
 import { useAccountsStore } from '@/stores/accounts'
 import { useRealtimeStore, type RealtimeEvent } from '@/stores/realtime'
 import { useMobile } from '@/composables/useMobile'
-import { fmtRelative, fmtTime, itemUrl, sourceMap } from '@/utils/format'
+import { copyText, fmtRelative, fmtTime, itemUrl, sourceMap } from '@/utils/format'
 
 const accounts = useAccountsStore()
 const realtime = useRealtimeStore()
@@ -124,6 +125,26 @@ function select(c: Conversation) {
 
 // ---------------------------------------------------------------- 发送
 const draft = ref('')
+
+// 售后举证：订单、发货记录与完整聊天记录整理成一份材料
+const evidence = reactive({ open: false, loading: false, markdown: '', filename: '' })
+async function openEvidence() {
+  if (!current.value) return
+  Object.assign(evidence, { open: true, loading: true, markdown: '', filename: '' })
+  try {
+    Object.assign(evidence, await conversationEvidence(current.value.id))
+  } finally {
+    evidence.loading = false
+  }
+}
+function downloadEvidence() {
+  const url = URL.createObjectURL(new Blob([evidence.markdown], { type: 'text/markdown;charset=utf-8' }))
+  const a = document.createElement('a')
+  a.href = url
+  a.download = evidence.filename || '举证材料.md'
+  a.click()
+  URL.revokeObjectURL(url)
+}
 
 // 买家分析：该不该卖给他（到手刀 / 仅退款 / 站外交易等风险）
 const buyerRiskOpen = ref(false)
@@ -350,6 +371,7 @@ const showThread = computed(() => !isMobile.value || !!currentId.value)
               <el-button size="small" type="primary" class="full" @click="applyTakeover(takeoverMinutes)">确定接管</el-button>
             </el-popover>
             <el-button size="small" type="danger" plain :icon="UserFilled" @click="buyerRiskOpen = true">买家分析</el-button>
+            <el-button size="small" :icon="Document" title="售后 / 纠纷时提交给闲鱼客服或小法庭" @click="openEvidence">举证材料</el-button>
             <el-button size="small" :icon="Cpu" @click="openTrial">试运行</el-button>
           </div>
         </header>
@@ -433,6 +455,19 @@ const showThread = computed(() => !isMobile.value || !!currentId.value)
             <JsonBlock :value="trial.plan" />
           </el-collapse-item>
         </el-collapse>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="evidence.open" title="举证材料" width="720px" :fullscreen="isMobile">
+      <p class="muted small evidence-tip">
+        已按时间整理订单、发货记录和完整聊天记录，可提交给闲鱼客服或小法庭；聊天记录以闲鱼 App 内为准，提交前请核对。
+      </p>
+      <div v-loading="evidence.loading">
+        <pre class="json-box evidence-box">{{ evidence.markdown }}</pre>
+      </div>
+      <template #footer>
+        <el-button :disabled="!evidence.markdown" @click="copyText(evidence.markdown)">复制全文</el-button>
+        <el-button type="primary" :disabled="!evidence.markdown" @click="downloadEvidence">下载 .md</el-button>
       </template>
     </el-dialog>
 
@@ -733,5 +768,12 @@ const showThread = computed(() => !isMobile.value || !!currentId.value)
   justify-content: center;
   gap: 8px;
   padding: 10px 0 14px;
+}
+.evidence-tip {
+  margin: 0 0 var(--xh-space-2);
+}
+.evidence-box {
+  max-height: 60vh;
+  white-space: pre-wrap;
 }
 </style>
