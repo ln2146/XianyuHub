@@ -17,7 +17,8 @@ from sqlalchemy import func, select
 from app.core.deps import CurrentUser, SessionDep
 from app.core.events import Topics, bus
 from app.core.pagination import set_total
-from app.domains.account.service import get_account_for
+from app.domains.account.models import XyAccount
+from app.domains.account.service import accessible_account_ids, get_account_for
 from app.domains.buyer import scheduling
 from app.domains.buyer import watch as watch_service
 from app.domains.buyer.ai import draft_task
@@ -399,6 +400,24 @@ def _channel_name(account_id: int | None) -> str:
     return "匿名通道" if account_id is None else "该账号"
 
 
+def _anon_paused() -> bool:
+    rt = get_runtime().gateway.guard.runtime(account_key(None))
+    return rt.state in ("cooldown", "circuit_open") and rt.cooldown_until > time.time()
+
+
+async def _fallback_account(session, user) -> XyAccount | None:  # noqa: ANN001
+    """匿名通道受限时可代为手动搜索的账号：用户可访问、已登录、当前未被限制。"""
+    stmt = select(XyAccount).where(XyAccount.status == "active").order_by(XyAccount.id)
+    allowed = await accessible_account_ids(session, user)
+    if allowed is not None:
+        stmt = stmt.where(XyAccount.id.in_(allowed))
+    guard = get_runtime().gateway.guard
+    for acc in (await session.execute(stmt)).scalars():
+        if guard.runtime(account_key(acc.id)).state == "active":
+            return acc
+    return None
+
+
 @contextmanager
 def _goofish_errors(action: str, account_id: int | None = None) -> Iterator[None]:
     try:
@@ -447,6 +466,7 @@ async def live_search(
     free_shipping: bool = False,
     quick_filters: str = Query(default="", max_length=300, description="逗号分隔，取值见 QUICK_FILTERS"),
     account_id: int | None = None,
+    fallback: bool = Query(default=True, description="未指定账号时：匿名通道受限则改用绑定的账号搜索"),
 ) -> dict[str, Any]:
     if account_id is not None:
         await get_account_for(session, user, account_id)
@@ -466,13 +486,33 @@ async def live_search(
         free_shipping=free_shipping,
         quick_filters=quick,
     )
-    with _goofish_errors("搜索", account_id):
-        res = await get_runtime().gateway.search_items(query, account_id=account_id)
+    gateway = get_runtime().gateway
+    used: XyAccount | None = None
+    channel_id = account_id
+    # 匿名通道已在暂停保护中：不再去试探（会延长闲鱼的限制），直接改用账号
+    if account_id is None and fallback and _anon_paused():
+        used = await _fallback_account(session, user)
+        channel_id = used.id if used else None
+    with _goofish_errors("搜索", channel_id):
+        try:
+            res = await gateway.search_items(query, account_id=channel_id)
+        except (RiskBlockedError, RiskControlError):
+            # 匿名搜索这一次被限制：手动搜索换账号重试一次
+            if channel_id is not None or not fallback or (used := await _fallback_account(session, user)) is None:
+                raise
+            channel_id = used.id
+            res = await gateway.search_items(query, account_id=channel_id)
     # 入市场商品库：给商品分析提供同类价格样本与价格走势
     for item in res.items:
         await upsert_market_item(session, item)
     await session.commit()
-    return res.model_dump()
+    out = res.model_dump()
+    out["channel"] = (
+        {"type": "account", "account_id": used.id, "name": used.nickname or used.remark or used.unb, "fallback": True}
+        if used
+        else {"type": "account" if account_id else "anonymous", "account_id": account_id, "fallback": False}
+    )
+    return out
 
 
 @router.get("/search/status")
@@ -481,12 +521,17 @@ async def search_status(user: CurrentUser, session: SessionDep, account_id: int 
     if account_id is not None:
         await get_account_for(session, user, account_id)
     rt = get_runtime().gateway.guard.runtime(account_key(account_id))
+    fallback = await _fallback_account(session, user) if account_id is None and _anon_paused() else None
     return {
         "state": rt.state,
         "cooldown_seconds": _cooldown_left(account_id),
         "strikes": rt.strikes,
         # 账号被要求滑块 / 安全验证：要去闲鱼完成验证后在账号页解除，等待不会自动恢复
         "needs_verify": account_id is not None and rt.state == "circuit_open",
+        # 匿名通道受限时，手动搜索会改用的账号
+        "fallback_account": {"id": fallback.id, "name": fallback.nickname or fallback.remark or fallback.unb}
+        if fallback
+        else None,
     }
 
 

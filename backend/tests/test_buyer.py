@@ -168,3 +168,40 @@ async def test_search_rate_limit_reports_real_cooldown(admin_client):
     assert r.status_code == 423 and int(r.headers["retry-after"]) > 0
     status = (await admin_client.get("/api/v1/buyer/search/status")).json()
     assert status["state"] == "cooldown" and status["cooldown_seconds"] > 0 and status["strikes"] == 1
+
+
+@respx.mock
+async def test_manual_search_falls_back_to_account_when_anonymous_is_limited(admin_client):
+    from tests.test_accounts import COOKIES, mock_probe
+
+    mock_probe()
+    acc = (await admin_client.post("/api/v1/accounts/import", json={"cookies": COOKIES})).json()
+    respx.post(url__regex=r".*mtop\.gaia.*").mock(
+        return_value=httpx.Response(200, json={"ret": ["SUCCESS"], "data": {}}, headers={"set-cookie": "_m_h5_tk=a_1"})
+    )
+    search = load("search_response.json")["data"]
+    calls = {"anon": 0, "acc": 0}
+
+    def handler(request):
+        if "unb=2200888" in request.headers.get("cookie", ""):
+            calls["acc"] += 1
+            return httpx.Response(200, json={"ret": ["SUCCESS::ok"], "data": search})
+        calls["anon"] += 1
+        return httpx.Response(200, json={"ret": ["RGV587_ERROR::SM::哎哟喂,被挤爆啦"], "data": {}})
+
+    respx.post(url__regex=r".*idlemtopsearch.*").mock(side_effect=handler)
+
+    r = await admin_client.get("/api/v1/buyer/search?keyword=iphone")
+    assert r.status_code == 200, r.text
+    ch = r.json()["channel"]
+    assert ch == {"type": "account", "account_id": acc["id"], "name": ch["name"], "fallback": True} and ch["name"]
+    assert calls == {"anon": 1, "acc": 1} and len(r.json()["items"]) == 2
+    assert (await admin_client.get("/api/v1/buyer/search/status")).json()["fallback_account"]["id"] == acc["id"]
+
+    # 匿名通道仍在暂停：直接用账号，不再试探匿名通道（以免延长闲鱼的限制）
+    r = await admin_client.get("/api/v1/buyer/search?keyword=iphone")
+    assert r.status_code == 200 and calls == {"anon": 1, "acc": 2}
+
+    # 仅匿名：不借用账号
+    r = await admin_client.get("/api/v1/buyer/search?keyword=iphone&fallback=false")
+    assert r.status_code == 423 and calls["acc"] == 2

@@ -220,7 +220,16 @@ export const QUICK_FILTERS = [
   { key: 'filterOneKeyResell', label: '转卖' },
 ] as const
 
+export interface SearchChannel {
+  type: 'anonymous' | 'account'
+  account_id: number | null
+  name?: string
+  /** 匿名通道受限，本次改用了账号 */
+  fallback: boolean
+}
+
 export interface SearchPage {
+  channel?: SearchChannel
   items: SearchItem[]
   page: number
   has_more: boolean
@@ -240,6 +249,8 @@ export interface LiveSearchQuery {
   /** 逗号分隔的 QUICK_FILTERS 键 */
   quick_filters?: string
   account_id?: number | null
+  /** 未指定账号时，匿名通道受限则改用绑定的账号（默认开启） */
+  fallback?: boolean
 }
 
 export interface SellerInfo {
@@ -260,7 +271,13 @@ export interface ItemDetail {
 /** 搜索通道（匿名 / 某个账号）是否在暂停保护中 */
 export const searchStatus = (account_id?: number | null) =>
   http
-    .get<{ state: string; cooldown_seconds: number; strikes: number; needs_verify: boolean }>('/buyer/search/status', {
+    .get<{
+      state: string
+      cooldown_seconds: number
+      strikes: number
+      needs_verify: boolean
+      fallback_account: { id: number; name: string } | null
+    }>('/buyer/search/status', {
       params: account_id ? { account_id } : undefined,
       silent: true,
     })

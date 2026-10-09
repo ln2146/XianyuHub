@@ -9,6 +9,7 @@ import {
   liveSearch,
   QUICK_FILTERS,
   searchStatus,
+  type SearchPage,
   type LiveSearchQuery,
   type SearchItem,
 } from '@/api/buyer'
@@ -164,6 +165,12 @@ const searchError = ref('')
 // 闲鱼限流后的暂停保护：显示真实剩余时间，到点再试
 const cooldown = ref(0)
 const needsVerify = ref(false)
+// 「自动」通道：匿名受限时手动搜索改用的账号（来自状态接口），以及最近一次搜索实际用的通道
+const fallbackAccount = ref<{ id: number; name: string } | null>(null)
+const usedChannel = ref<SearchPage['channel'] | null>(null)
+const fallbackName = computed(() =>
+  usedChannel.value?.fallback ? usedChannel.value.name : searchForm.account_id === 0 ? fallbackAccount.value?.name : '',
+)
 let cooldownTimer: number | undefined
 function startCooldown(seconds: number) {
   cooldown.value = Math.max(0, Math.round(seconds))
@@ -186,6 +193,7 @@ async function refreshChannelStatus() {
   try {
     const st = await searchStatus(channelAccountId())
     needsVerify.value = st.needs_verify
+    fallbackAccount.value = st.fallback_account
     startCooldown(st.cooldown_seconds)
   } catch {
     /* 静默 */
@@ -229,13 +237,17 @@ async function doSearch(page = 1) {
       free_shipping: searchForm.free_shipping,
       quick_filters: quickExtra.value.join(',') || undefined,
       account_id: searchForm.account_id > 0 ? searchForm.account_id : null,
+      fallback: searchForm.account_id !== -1,
     })
     items.value = res.items || []
+    usedChannel.value = res.channel || null
+    if (res.channel?.fallback) refreshChannelStatus()
     hasMore.value = !!res.has_more
     // 顺便把参数同步到 URL，方便刷新与分享
     router.replace({ query: { q: kw, sort: searchForm.sort } })
   } catch (e: unknown) {
     items.value = []
+    usedChannel.value = null
     const err = e as { response?: { data?: { detail?: string }; headers?: Record<string, string> }; message?: string }
     searchError.value = err.response?.data?.detail || err.message || '搜索失败，请稍后重试'
     const retry = Number(err.response?.headers?.['retry-after'] || 0)
@@ -524,11 +536,17 @@ onActivated(() => {
           到「账号配置」点该账号的「打开验证页面」，在闲鱼完成滑块 / 安全验证后点「我已完成验证」。也可以先把「请求通道」切回匿名通道。
         </div>
       </el-alert>
+      <el-alert v-else-if="cooldown > 0 && fallbackName" type="info" show-icon :closable="false" class="cooldown">
+        <template #title>
+          匿名通道受限（约 {{ cooldownText }}后恢复），{{ usedChannel?.fallback ? '本次' : '手动搜索会' }}改用账号「{{ fallbackName }}」搜索
+        </template>
+        <div class="error-tip">账号搜索也有频率限制，请避免短时间内连续大量搜索；不想占用账号可以在下方「请求通道」选「仅匿名」。</div>
+      </el-alert>
       <el-alert v-else-if="cooldown > 0" type="warning" show-icon :closable="false" class="cooldown">
         <template #title>闲鱼临时限制了{{ searchForm.account_id > 0 ? '该账号' : '匿名通道' }}的搜索，{{ cooldownText }}后可以再试</template>
         <div class="error-tip">
           这是闲鱼的频率保护，系统已自动暂停这个通道，到点后再搜即可；连续被限制时暂停时间会逐步加长。
-          急用的话可以在下方「请求通道」临时选一个闲鱼账号搜索，但会占用该账号的请求额度，频繁使用有被限制的风险。
+          如果到点后仍被限制，说明闲鱼限制的是你当前网络的 IP，可以换个网络（如手机热点）或在「账号配置」绑定闲鱼账号后用账号搜索。
         </div>
       </el-alert>
       <el-alert v-else-if="searchError" type="error" show-icon :closable="false">
@@ -544,7 +562,8 @@ onActivated(() => {
             <span class="pacing">智能控频</span>
           </el-tooltip>
           <el-select v-model="searchForm.account_id" size="small" class="channel" @change="refreshChannelStatus(); debouncedFilterSearch()">
-            <el-option :value="0" label="请求通道：自动 / 匿名" />
+            <el-option :value="0" label="请求通道：自动（匿名优先，受限时用账号）" />
+            <el-option :value="-1" label="请求通道：仅匿名" />
             <el-option v-for="a in accounts.list" :key="a.id" :value="a.id" :label="`请求通道：${a.nickname || a.remark || a.unb}`" />
           </el-select>
           <el-button-group size="small">
@@ -1001,7 +1020,7 @@ onActivated(() => {
   cursor: help;
 }
 .channel {
-  width: 190px;
+  width: 260px;
 }
 .grid {
   display: grid;
