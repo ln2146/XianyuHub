@@ -20,6 +20,7 @@ from app.core.db import session_factory
 from app.core.events import Topics, bus
 from app.core.realtime import hub
 from app.domains.account.models import XyAccount
+from app.domains.goods.models import MyItem
 from app.domains.message import service as message_service
 from app.domains.message.models import MessageSource
 from app.domains.order.models import (
@@ -42,6 +43,7 @@ from app.runtime import get_runtime
 
 RETRY_DELAYS = [60, 120, 300, 600]  # 秒
 DEFAULT_TEMPLATE = "您好，订单已发货，内容如下：\n{content}\n如有问题请随时联系～"
+NO_BINDING_REASON = "该商品还没有关联发货内容，请在「订单发货 → 自动发货 → 商品关联」中设置后再发货"
 _order_locks: dict[int, asyncio.Lock] = {}
 _push_tasks: set[asyncio.Task] = set()
 
@@ -346,8 +348,31 @@ async def _deliver(order_pk: int, *, force: bool, user_id: int | None) -> bool:
             await transition(s, order, OrderState.PAID)
         binding = await find_binding(s, order, owner_id)
         if binding is None:
+            if force:
+                # 人工点「手动发货」：记录原因，前端据此提示去关联
+                order.fail_reason = NO_BINDING_REASON
+                await s.commit()
+                return False
+            # 标记为虚拟商品却没有关联发货内容：大概率是忘了设置，转人工并提醒；
+            # 实物商品本来就需要卖家自己发货，保持「已付款」不打扰
+            is_virtual = (
+                await s.execute(
+                    select(MyItem.is_virtual).where(
+                        MyItem.account_id == order.account_id, MyItem.item_id == order.item_id
+                    )
+                )
+            ).scalar_one_or_none()
+            moved = bool(is_virtual) and await transition(s, order, OrderState.MANUAL, reason=NO_BINDING_REASON)
             await s.commit()
             logger.info("订单 {} 的商品未关联发货内容，跳过自动发货", order.order_id)
+            if moved:
+                await _notify_owner(
+                    order.account_id,
+                    NotifyEvents.DELIVERY_FAILED,
+                    f"⚠️ 订单 {order.order_id} 没有自动发货",
+                    f"商品「{order.item_title or order.item_id}」标记为虚拟商品，但还没有关联发货内容。"
+                    "订单已转为待人工，请在「订单发货 → 自动发货 → 商品关联」中设置后手动发货。",
+                )
             return False
         if not force:
             reason = await precheck(s, order, owner_id, binding)

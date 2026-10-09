@@ -5,6 +5,7 @@ import respx
 from sqlalchemy import select
 
 from app.core.db import session_factory
+from app.domains.goods.models import MyItem
 from app.domains.order import service as order_service
 from app.domains.order.models import CardItem, Order
 from app.goofish.dto import SystemNotice
@@ -143,6 +144,44 @@ async def test_out_of_stock_goes_manual(admin_client, im):  # noqa: F811
     await paid(account_id, "4400020")
     order = (await admin_client.get("/api/v1/orders")).json()[0]
     assert order["status"] == "manual" and "库存不足" in order["fail_reason"]
+
+
+async def enable_auto_delivery(client, account_id):
+    await client.patch(
+        f"/api/v1/accounts/{account_id}", json={"settings": {"auto_delivery": True, "auto_reply": False}}
+    )
+
+
+@respx.mock
+async def test_unbound_virtual_item_goes_manual_with_reason(admin_client, im):  # noqa: F811
+    account_id, fake = im
+    await enable_auto_delivery(admin_client, account_id)
+    async with session_factory()() as s:
+        item = (
+            await s.execute(select(MyItem).where(MyItem.account_id == account_id, MyItem.item_id == "900"))
+        ).scalar_one_or_none()
+        if item is None:
+            item = MyItem(account_id=account_id, item_id="900", title="会员月卡")
+            s.add(item)
+        item.is_virtual = True
+        await s.commit()
+    mock_trade()
+    await receive(account_id, chat("在吗"))
+    await paid(account_id, "4400040")
+    order = (await admin_client.get("/api/v1/orders")).json()[0]
+    assert order["status"] == "manual" and "关联发货内容" in order["fail_reason"]
+    assert len(fake.sent) == 0
+
+
+@respx.mock
+async def test_unbound_physical_item_stays_paid(admin_client, im):  # noqa: F811
+    account_id, fake = im
+    await enable_auto_delivery(admin_client, account_id)
+    mock_trade()
+    await receive(account_id, chat("在吗"))
+    await paid(account_id, "4400041")
+    order = (await admin_client.get("/api/v1/orders")).json()[0]
+    assert order["status"] == "paid" and not order["fail_reason"]
 
 
 @respx.mock
