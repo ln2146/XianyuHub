@@ -122,3 +122,21 @@ async def test_task_validation(admin_client):
     assert r.status_code == 422
     r = await admin_client.post("/api/v1/buyer/tasks/generate", json={"description": "想要一台 M1 Air"})
     assert r.status_code == 503  # 未配置大模型
+
+
+@respx.mock
+async def test_live_search_and_item_detail(admin_client):
+    search = load("search_response.json")["data"]
+    mock_market(search)
+    res = await admin_client.get("/api/v1/buyer/search?keyword=macbook&page=1&sort=newest")
+    assert res.status_code == 200
+    data = res.json()
+    assert len(data["items"]) == 2
+    assert data["items"][0]["title"]
+    assert data["items"][0]["item_id"] == "900000000001"
+
+    detail_res = await admin_client.get("/api/v1/buyer/items/900000000001/detail")
+    assert detail_res.status_code == 200
+    detail = detail_res.json()
+    assert detail["item"]["item_id"] == "900000000001"
+    assert detail["seller"]["nick"]

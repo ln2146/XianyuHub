@@ -13,13 +13,17 @@ from sqlalchemy import func, select
 from app.core.deps import CurrentUser, SessionDep
 from app.core.events import Topics, bus
 from app.core.pagination import set_total
+from app.domains.account.service import get_account_for
 from app.domains.buyer import scheduling
 from app.domains.buyer.ai import draft_task
 from app.domains.buyer.models import MarketItemRecord, MonitorTask, PriceSnapshot, TaskResult, UserMark, Verdict
 from app.domains.buyer.pipeline import run_task, task_lock
+from app.goofish.dto import SearchQuery
+from app.goofish.errors import GoofishError, RiskBlockedError, RiskControlError
 from app.intelligence.llm import LLMError, LLMUnavailable, get_llm
 from app.intelligence.pricing import deal_label, market_stats
 from app.intelligence.rules import ItemRules
+from app.runtime import get_runtime
 
 router = APIRouter(prefix="/buyer", tags=["buyer"])
 _background: set[asyncio.Task] = set()
@@ -354,3 +358,67 @@ async def task_market(task_id: int, user: CurrentUser, session: SessionDep) -> d
         .where(TaskResult.task_id == task_id)
     )
     return market_stats([r[0] for r in rows]).model_dump()
+
+
+# ---------------------------------------------------------------- 实时搜索与详情
+@router.get("/search")
+async def live_search(
+    user: CurrentUser,
+    session: SessionDep,
+    keyword: str = Query(min_length=1, max_length=100),
+    page: int = Query(default=1, ge=1, le=50),
+    sort: str = Query(default="newest", pattern="^(newest|price_asc|price_desc|default)$"),
+    min_price: int | None = Query(default=None, ge=0),
+    max_price: int | None = Query(default=None, ge=0),
+    province: str | None = None,
+    city: str | None = None,
+    publish_days: int | None = Query(default=None, ge=1, le=30),
+    personal_only: bool = False,
+    free_shipping: bool = False,
+    account_id: int | None = None,
+) -> dict[str, Any]:
+    if account_id is not None:
+        await get_account_for(session, user, account_id)
+    query = SearchQuery(
+        keyword=keyword.strip(),
+        page=page,
+        sort=sort,
+        min_price=min_price,
+        max_price=max_price,
+        province=province.strip() if province else None,
+        city=city.strip() if city else None,
+        publish_days=publish_days,
+        personal_only=personal_only,
+        free_shipping=free_shipping,
+    )
+    gateway = get_runtime().gateway
+    try:
+        res = await gateway.search_items(query, account_id=account_id)
+        return res.model_dump()
+    except RiskBlockedError as e:
+        raise HTTPException(status.HTTP_423_LOCKED, f"账号保护中：{e}") from e
+    except RiskControlError as e:
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, f"触发闲鱼安全限制：{e}") from e
+    except GoofishError as e:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"搜索失败：{e}") from e
+
+
+@router.get("/items/{item_id}/detail")
+async def get_item_detail(
+    item_id: str,
+    user: CurrentUser,
+    session: SessionDep,
+    account_id: int | None = None,
+) -> dict[str, Any]:
+    if account_id is not None:
+        await get_account_for(session, user, account_id)
+    gateway = get_runtime().gateway
+    try:
+        detail = await gateway.get_item_detail(item_id, account_id=account_id)
+        return detail.model_dump()
+    except RiskBlockedError as e:
+        raise HTTPException(status.HTTP_423_LOCKED, f"账号保护中：{e}") from e
+    except RiskControlError as e:
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, f"触发闲鱼安全限制：{e}") from e
+    except GoofishError as e:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"获取商品详情失败：{e}") from e
