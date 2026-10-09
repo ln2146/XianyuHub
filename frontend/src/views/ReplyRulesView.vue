@@ -66,6 +66,7 @@ async function save() {
   const f = edit.form
   if (!f.keywords.length) return ElMessage.warning('至少需要一个关键词')
   if (!f.reply.trim()) return ElMessage.warning('请填写回复内容')
+  if (PLACEHOLDER.test(f.reply)) return ElMessage.warning('请先把【】里的内容改成你的实际情况，再保存')
   if (f.match === 'regex') {
     for (const k of f.keywords) {
       try {
@@ -135,30 +136,54 @@ async function toggleAccountKeywordReply(a: Account, val: boolean) {
 }
 
 // ---------------------------------------------------------------- 常用模版
-const presetTemplates = [
+// 关键词回复会以卖家本人的口吻发出，也是闲鱼小法庭认定承诺的依据。
+// 只有不含任何承诺的模版可以一键启用；涉及发货时效、快递、正品、运费的模版必须先改成你的实际情况。
+const PLACEHOLDER = /【[^】]*】/
+
+interface PresetTemplate {
+  name: string
+  keywords: string[]
+  reply: string
+  /** 不含承诺，可直接启用 */
+  safe: boolean
+  note?: string
+}
+
+const presetTemplates: PresetTemplate[] = [
   {
-    name: '常在线问候',
+    name: '在线问候',
     keywords: ['在吗', '还在吗', '在不在', '有人吗'],
-    reply: '在的，宝贝！商品成色完好，随时可以拍下，当天为您安排发出～',
+    reply: '在的～商品还在，有什么想了解的可以直接问我。',
+    safe: true,
   },
   {
-    name: '快递与发货时效',
+    name: '议价应答',
+    keywords: ['少点', '便宜点', '最低多少', '能少吗', '大刀'],
+    reply: '价格已经比较实在啦，诚心要的话可以直接拍下，我看到会尽快处理～',
+    safe: true,
+    note: '商品已在「商品管理」设置底价和议价阶梯时，建议不启用：关键词回复优先于 AI，会挡住 AI 按底价议价。',
+  },
+  {
+    name: '发货与快递',
     keywords: ['发什么快递', '什么时候发货', '今天能发吗', '发货时效'],
-    reply: '一般下单后当天或次日上午发出，支持顺丰/中通，需要加急可以随时备注哦～',
+    reply: '拍下后【24 小时内】发出，默认【中通】，需要其他快递可以留言。',
+    safe: false,
   },
   {
-    name: '正品与验货保障',
+    name: '包邮与运费',
+    keywords: ['包邮吗', '包不包邮', '运费多少'],
+    reply: '【默认包邮，偏远地区除外】。',
+    safe: false,
+  },
+  {
+    name: '成色与验货',
     keywords: ['是正品吗', '正品不', '保真吗', '支持验货吗'],
-    reply: '保证正品保真，实物拍摄，支持官方或第三方验货，请放心下单～',
-  },
-  {
-    name: '砍价与最低价应答',
-    keywords: ['少点', '便宜点', '最低多少', '能少吗', '包邮吗', '大刀'],
-    reply: '宝贝标价已经是良心底价啦，成色特别好，如果诚心要可以微调一丢丢，直接拍下优先安排发出哦～',
+    reply: '宝贝是【自用】的，实物拍摄，成色以图片和描述为准；【支持验货宝】。',
+    safe: false,
   },
 ]
 
-function applyPreset(tpl: (typeof presetTemplates)[0]) {
+function applyPreset(tpl: PresetTemplate) {
   Object.assign(edit, {
     open: true,
     id: null,
@@ -171,7 +196,8 @@ function applyPreset(tpl: (typeof presetTemplates)[0]) {
   })
 }
 
-async function quickEnableTemplate(tpl: (typeof presetTemplates)[0]) {
+async function quickEnableTemplate(tpl: PresetTemplate) {
+  if (!tpl.safe) return applyPreset(tpl)
   enablingPreset[tpl.name] = true
   try {
     await createRule({
@@ -272,53 +298,46 @@ async function quickEnableTemplate(tpl: (typeof presetTemplates)[0]) {
       <!-- 空规则冷启动推荐面板 -->
       <div v-if="!loading && !rules.length" class="empty-rules-hero">
         <div class="hero-top">
-          <div class="hero-pill">⚡ 快速冷启动 · 推荐常用模版</div>
-          <h3 class="hero-title">尚未配置关键词规则，点击即可一键启用</h3>
+          <h3 class="hero-title">还没有关键词规则，可以从常用模版开始</h3>
           <p class="hero-sub">
-            买家消息命中关键词时，系统将在设定的拟人延迟内优先秒级回复；未命中时无缝流转至 AI 大模型继续智能接待。
+            买家消息命中关键词时直接用你写好的话回复，没命中再交给 AI。自动回复等同于你本人的承诺，涉及发货、运费、正品的模版需要先改成你的实际情况。
           </p>
         </div>
 
         <div class="preset-cards-grid">
           <div v-for="tpl in presetTemplates" :key="tpl.name" class="preset-card">
             <div class="pc-head">
-              <span class="pc-icon">💬</span>
               <span class="pc-name">{{ tpl.name }}</span>
+              <el-tag v-if="!tpl.safe" size="small" type="warning">需先填写</el-tag>
             </div>
             <div class="pc-kws">
               <span class="pc-kw-label">触发关键词：</span>
               <span v-for="k in tpl.keywords" :key="k" class="pc-kw-pill">{{ k }}</span>
             </div>
             <div class="pc-reply">“{{ tpl.reply }}”</div>
+            <div v-if="tpl.note" class="pc-note">{{ tpl.note }}</div>
             <div class="pc-actions">
               <el-button
+                v-if="tpl.safe"
                 size="small"
                 type="primary"
                 :icon="Check"
                 :loading="enablingPreset[tpl.name]"
                 @click="quickEnableTemplate(tpl)"
               >
-                一键启用
+                直接启用
               </el-button>
-              <el-button size="small" link type="primary" @click="applyPreset(tpl)">自定义编辑</el-button>
+              <el-button v-else size="small" type="primary" plain @click="applyPreset(tpl)">填写后启用</el-button>
+              <el-button v-if="tpl.safe" size="small" link type="primary" @click="applyPreset(tpl)">修改后启用</el-button>
             </div>
           </div>
         </div>
 
-        <div class="rules-guide-tip">
-          <div class="guide-item">
-            <span class="guide-icon">🎯</span>
-            <span class="guide-text"><strong>关键词优先执行</strong>：命中所设词汇即刻应答，比 AI 生成更准确可控。</span>
-          </div>
-          <div class="guide-item">
-            <span class="guide-icon">🤖</span>
-            <span class="guide-text"><strong>AI 全局底座托底</strong>：复杂业务提问未命中规则时，由大模型上下文接管解答。</span>
-          </div>
-          <div class="guide-item">
-            <span class="guide-icon">🛡️</span>
-            <span class="guide-text"><strong>安全拟人控频</strong>：自动施加随机打字时延，避免闲鱼平台判定人机违规。</span>
-          </div>
-        </div>
+        <ul class="rules-guide-tip">
+          <li><strong>关键词优先</strong>：命中关键词时直接回复，内容完全由你决定。</li>
+          <li><strong>AI 兜底</strong>：没命中时，开启了 AI 回复的账号由 AI 结合商品知识库作答。</li>
+          <li><strong>随机延迟</strong>：回复前按账号设置随机等待几秒，避免秒回显得像机器。</li>
+        </ul>
       </div>
 
       <!-- 有规则时的表格 -->
@@ -587,17 +606,6 @@ async function quickEnableTemplate(tpl: (typeof presetTemplates)[0]) {
   text-align: center;
   margin-bottom: 22px;
 }
-.hero-pill {
-  display: inline-block;
-  font-size: 11.5px;
-  font-weight: 600;
-  color: #059669;
-  background: #ecfdf5;
-  border: 1px solid #a7f3d0;
-  padding: 3px 12px;
-  border-radius: 999px;
-  margin-bottom: 10px;
-}
 .hero-title {
   font-size: 19px;
   font-weight: 700;
@@ -646,9 +654,6 @@ async function quickEnableTemplate(tpl: (typeof presetTemplates)[0]) {
   color: #1e293b;
   margin-bottom: 8px;
 }
-.pc-icon {
-  font-size: 16px;
-}
 .pc-name {
   font-weight: 600;
 }
@@ -670,6 +675,11 @@ async function quickEnableTemplate(tpl: (typeof presetTemplates)[0]) {
   padding: 1px 6px;
   border-radius: 4px;
 }
+.pc-note {
+  font-size: var(--xh-fs-xs);
+  line-height: 1.5;
+  color: var(--xh-warning-text);
+}
 .pc-reply {
   font-size: 12px;
   color: #475569;
@@ -688,32 +698,18 @@ async function quickEnableTemplate(tpl: (typeof presetTemplates)[0]) {
   margin-top: auto;
 }
 .rules-guide-tip {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 14px;
-  background: #f8fafc;
-  border: 1px solid #eef2f6;
-  border-radius: 8px;
-  padding: 12px 18px;
+  margin: var(--xh-space-4) 0 0;
+  padding: var(--xh-space-3) var(--xh-space-4) var(--xh-space-3) 32px;
+  border-radius: var(--xh-radius-md);
+  background: var(--xh-fill);
+  font-size: var(--xh-fs-xs);
+  line-height: 1.8;
+  color: var(--xh-text-2);
 }
 @media (max-width: 768px) {
   .rules-guide-tip {
     grid-template-columns: 1fr;
   }
-}
-.guide-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: #475569;
-}
-.guide-icon {
-  font-size: 16px;
-  flex-shrink: 0;
-}
-.guide-text strong {
-  color: #1e293b;
 }
 .kw-wrap {
   display: flex;
