@@ -7,6 +7,7 @@ from app.domains.message.router import router as message_router
 from app.domains.order.router import router as order_router
 from app.domains.system.dashboard import router as dashboard_router
 from app.domains.system.router import router as system_router
+from app.domains.system.selfcheck import router as selfcheck_router
 from app.notify.router import router as notify_router
 
 api_router = APIRouter(prefix="/api/v1")
@@ -18,3 +19,4 @@ api_router.include_router(goods_router)
 api_router.include_router(message_router)
 api_router.include_router(order_router)
 api_router.include_router(dashboard_router)
+api_router.include_router(selfcheck_router)
