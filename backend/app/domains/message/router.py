@@ -4,17 +4,20 @@ from typing import Any
 import jwt
 from fastapi import APIRouter, HTTPException, Query, Response, WebSocket, WebSocketDisconnect, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 
 from app.core.db import session_factory
 from app.core.deps import CurrentUser, SessionDep
 from app.core.pagination import set_total
 from app.core.realtime import hub
 from app.core.security import decode_access_token
+from app.domains.account.models import XyAccount
 from app.domains.account.service import accessible_account_ids, get_account_for
+from app.domains.goods.models import MyItem
 from app.domains.message import service
 from app.domains.message.evidence import build_evidence
 from app.domains.message.models import ChatMessage, Conversation, MessageSource, ReplyRule, ReplySuggestion
+from app.domains.order.models import CardBinding, CardItem, CardPool, DeliveryRecord, ORDER_STATE_LABELS, Order, OrderState
 from app.domains.system.models import User
 from app.goofish.errors import RiskBlockedError
 from app.workers.im_gateway import im_status_snapshot
@@ -38,6 +41,100 @@ class ConversationOut(BaseModel):
     takeover_until: datetime | None
     bargain_rounds: int
     in_takeover: bool = False
+
+
+class ItemBrief(BaseModel):
+    id: int | None = None
+    account_id: int
+    item_id: str
+    title: str
+    price: float | None = None
+    floor_price: float | None = None
+    image_url: str = ""
+    status: str = ""
+    desc: str = ""
+    knowledge: str = ""
+    is_virtual: bool = False
+    want_cnt: int | None = None
+    browse_cnt: int | None = None
+    max_rounds: int = 3
+    binding_info: dict[str, Any] | None = None
+
+
+class OrderBrief(BaseModel):
+    id: int
+    order_id: str
+    item_id: str | None = None
+    item_title: str
+    amount: float | None = None
+    status: str
+    status_label: str
+    paid_at: datetime | None = None
+    delivered_at: datetime | None = None
+    is_bargain: bool = False
+    fail_reason: str | None = None
+    delivery_preview: str | None = None
+
+
+class QuickReplyItem(BaseModel):
+    tag: str
+    text: str
+
+
+class ConversationContextOut(BaseModel):
+    conversation_id: int
+    account_id: int
+    account_name: str
+    peer_id: str | None = None
+    peer_name: str
+    bargain_rounds: int = 0
+    in_takeover: bool = False
+    item: ItemBrief | None = None
+    orders: list[OrderBrief] = []
+    quick_replies: list[QuickReplyItem] = []
+
+
+def generate_quick_replies(
+    item: MyItem | None,
+    orders: list[Order],
+    bargain_rounds: int,
+) -> list[QuickReplyItem]:
+    replies: list[QuickReplyItem] = []
+
+    # 1. 待发货 / 订单状态话术
+    has_paid_order = any(o.status in (OrderState.PAID, OrderState.DELIVERING) for o in orders)
+    if has_paid_order:
+        replies.append(QuickReplyItem(tag="确认发货", text="已收到您的订单，正在为您打包/下发发货内容，请稍候~"))
+        replies.append(QuickReplyItem(tag="核对地址", text="亲，已核对您的收货信息，无误今天就给您安排发出，感谢支持！"))
+
+    # 2. 商品及议价拉扯话术
+    if item and item.price is not None:
+        p = item.price
+        f = item.floor_price
+
+        replies.append(QuickReplyItem(tag="现货在售", text="在的亲，宝贝功能完好成色如实拍图，喜欢可以直接拍下哦~"))
+
+        if f is not None and f < p:
+            mid = round((p + f) / 2)
+            replies.append(
+                QuickReplyItem(tag="折中诚意", text=f"看您诚心要，各退一步 {mid} 元包顺丰给您，今天就能发走，您看可以的话我改价~")
+            )
+            replies.append(
+                QuickReplyItem(tag="坚守底价", text=f"朋友，{f} 元真是我这边的底线成本价了，亏本出闲置，不能再少了，爽快拍下直接发~")
+            )
+        elif f is not None:
+            replies.append(QuickReplyItem(tag="底价声明", text=f"您好，标价 {p} 元已经是最低实价，成色很好不议价啦，诚心要今天可发~"))
+        else:
+            replies.append(QuickReplyItem(tag="小刀试探", text="亲，小刀可以接受，大刀勿扰哈，诚心要的话您报个心理价，合适就给您出~"))
+
+        replies.append(
+            QuickReplyItem(tag="催促促单", text="宝贝还有多位朋友在咨询，先拍先得哦！今天 17:00 前拍下可赶上今天第一批发出~")
+        )
+    else:
+        replies.append(QuickReplyItem(tag="礼貌在", text="在的亲，有什么想了解的随时问我~"))
+        replies.append(QuickReplyItem(tag="包邮说明", text="爽快不墨迹直接拍的朋友包邮发出哦~"))
+
+    return replies
 
 
 class MessageOut(BaseModel):
@@ -126,6 +223,137 @@ async def conversation_evidence(conv_id: int, user: CurrentUser, session: Sessio
     conv = await _own_conv(session, user, conv_id)
     markdown, filename = await build_evidence(session, conv)
     return {"markdown": markdown, "filename": filename}
+
+
+@router.get("/conversations/{conv_id}/context", response_model=ConversationContextOut)
+async def conversation_context(conv_id: int, user: CurrentUser, session: SessionDep) -> ConversationContextOut:
+    """会话上下文侧边栏数据：关联商品（售价/底价/库存）、买家订单记录、智能促单话术。"""
+    conv = await _own_conv(session, user, conv_id)
+
+    account = await session.get(XyAccount, conv.account_id)
+    account_name = (account.nickname or account.remark or account.unb) if account else f"账号 #{conv.account_id}"
+
+    # 1. 查找此买家 / 会话相关的订单
+    orders_stmt = (
+        select(Order)
+        .where(
+            Order.account_id == conv.account_id,
+            or_(Order.cid == conv.cid, Order.buyer_id == conv.peer_id)
+            if conv.peer_id
+            else Order.cid == conv.cid,
+        )
+        .order_by(Order.created_at.desc())
+    )
+    orders = list((await session.execute(orders_stmt)).scalars())
+
+    order_briefs: list[OrderBrief] = []
+    for o in orders[:5]:
+        deliv = (
+            await session.execute(
+                select(DeliveryRecord)
+                .where(DeliveryRecord.order_pk == o.id)
+                .order_by(DeliveryRecord.id.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        order_briefs.append(
+            OrderBrief(
+                id=o.id,
+                order_id=o.order_id,
+                item_id=o.item_id,
+                item_title=o.item_title,
+                amount=o.amount,
+                status=o.status,
+                status_label=ORDER_STATE_LABELS.get(o.status, o.status),
+                paid_at=o.paid_at,
+                delivered_at=o.delivered_at,
+                is_bargain=o.is_bargain,
+                fail_reason=o.fail_reason,
+                delivery_preview=deliv.preview if deliv else None,
+            )
+        )
+
+    # 2. 查找关联商品
+    item_id = conv.item_id or next((o.item_id for o in orders if o.item_id), None)
+    item_brief: ItemBrief | None = None
+    my_item: MyItem | None = None
+
+    if item_id:
+        my_item = (
+            await session.execute(
+                select(MyItem).where(MyItem.account_id == conv.account_id, MyItem.item_id == item_id)
+            )
+        ).scalar_one_or_none()
+
+        if my_item:
+            binding = (
+                await session.execute(
+                    select(CardBinding).where(
+                        CardBinding.item_id == item_id,
+                        or_(CardBinding.account_id == conv.account_id, CardBinding.account_id.is_(None)),
+                    ).limit(1)
+                )
+            ).scalar_one_or_none()
+            binding_info = None
+            if binding:
+                pool = await session.get(CardPool, binding.pool_id)
+                if pool:
+                    stock_count = 0
+                    if pool.kind == "pool":
+                        stock_count = (
+                            await session.scalar(
+                                select(func.count()).where(CardItem.pool_id == pool.id, CardItem.status == "available")
+                            )
+                            or 0
+                        )
+                    binding_info = {
+                        "pool_id": pool.id,
+                        "pool_name": pool.name,
+                        "kind": pool.kind,
+                        "available_stock": stock_count,
+                        "low_stock_threshold": pool.low_stock_threshold,
+                        "delay_seconds": binding.delay_seconds,
+                    }
+
+            item_brief = ItemBrief(
+                id=my_item.id,
+                account_id=my_item.account_id,
+                item_id=my_item.item_id,
+                title=my_item.title,
+                price=my_item.price,
+                floor_price=my_item.floor_price,
+                image_url=my_item.image_url,
+                status=my_item.status,
+                desc=my_item.desc,
+                knowledge=my_item.knowledge,
+                is_virtual=my_item.is_virtual,
+                want_cnt=my_item.want_cnt,
+                browse_cnt=my_item.browse_cnt,
+                max_rounds=my_item.max_rounds,
+                binding_info=binding_info,
+            )
+        else:
+            order_title = next((o.item_title for o in orders if o.item_id == item_id and o.item_title), "")
+            item_brief = ItemBrief(
+                account_id=conv.account_id,
+                item_id=item_id,
+                title=order_title or f"商品 #{item_id}",
+            )
+
+    quick_replies = generate_quick_replies(my_item, orders, conv.bargain_rounds)
+
+    return ConversationContextOut(
+        conversation_id=conv.id,
+        account_id=conv.account_id,
+        account_name=account_name,
+        peer_id=conv.peer_id,
+        peer_name=conv.peer_name or "买家",
+        bargain_rounds=conv.bargain_rounds,
+        in_takeover=service.in_takeover(conv),
+        item=item_brief,
+        orders=order_briefs,
+        quick_replies=quick_replies,
+    )
 
 
 @router.get("/conversations/{conv_id}/messages", response_model=list[MessageOut])

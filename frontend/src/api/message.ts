@@ -104,3 +104,66 @@ export const getImStatus = () => http.get<ImStatus>('/messages/im-status').then(
 /** 售后 / 纠纷举证材料（Markdown）：订单、发货记录与完整聊天记录 */
 export const conversationEvidence = (id: number) =>
   http.get<{ markdown: string; filename: string }>(`/messages/conversations/${id}/evidence`).then((r) => r.data)
+
+export interface ItemBrief {
+  id?: number | null
+  account_id: number
+  item_id: string
+  title: string
+  price?: number | null
+  floor_price?: number | null
+  image_url: string
+  status: string
+  desc: string
+  knowledge: string
+  is_virtual: boolean
+  want_cnt?: number | null
+  browse_cnt?: number | null
+  max_rounds: number
+  binding_info?: {
+    pool_id: number
+    pool_name: string
+    kind: string
+    available_stock: number
+    low_stock_threshold: number
+    delay_seconds: number
+  } | null
+}
+
+export interface OrderBrief {
+  id: number
+  order_id: string
+  item_id?: string | null
+  item_title: string
+  amount?: number | null
+  status: string
+  status_label: string
+  paid_at?: string | null
+  delivered_at?: string | null
+  is_bargain: boolean
+  fail_reason?: string | null
+  delivery_preview?: string | null
+}
+
+export interface QuickReplyItem {
+  tag: string
+  text: string
+}
+
+export interface ConversationContext {
+  conversation_id: number
+  account_id: number
+  account_name: string
+  peer_id?: string | null
+  peer_name: string
+  bargain_rounds: number
+  in_takeover: boolean
+  item: ItemBrief | null
+  orders: OrderBrief[]
+  quick_replies: QuickReplyItem[]
+}
+
+/** 获取会话上下文：关联商品信息、底价与库存、买家订单记录、智能快捷话术 */
+export const getConversationContext = (convId: number) =>
+  http.get<ConversationContext>(`/messages/conversations/${convId}/context`).then((r) => r.data)
+

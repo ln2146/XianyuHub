@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft, Cpu, Document, Promotion, Refresh, Search, UserFilled } from '@element-plus/icons-vue'
+import { ArrowLeft, Cpu, Document, Goods, Promotion, Refresh, Search, UserFilled } from '@element-plus/icons-vue'
 import {
   conversationEvidence,
   handleSuggestion,
@@ -18,6 +18,7 @@ import {
   type Suggestion,
 } from '@/api/message'
 import BuyerRiskPanel from '@/components/BuyerRiskPanel.vue'
+import ConversationContextSidebar from '@/components/ConversationContextSidebar.vue'
 import JsonBlock from '@/components/JsonBlock.vue'
 import { useAccountsStore } from '@/stores/accounts'
 import { useRealtimeStore, type RealtimeEvent } from '@/stores/realtime'
@@ -37,6 +38,25 @@ const CONV_PAGE = 50
 const filter = reactive({ account_id: undefined as number | undefined, q: '' })
 const currentId = ref<number | null>(null)
 const current = computed(() => convs.value.find((c) => c.id === currentId.value) || null)
+
+// 商品与订单上下文侧边栏控制
+const showContextSidebar = ref(!isMobile.value)
+const showMobileSidebar = ref(false)
+
+function toggleContextSidebar() {
+  if (isMobile.value) {
+    showMobileSidebar.value = !showMobileSidebar.value
+  } else {
+    showContextSidebar.value = !showContextSidebar.value
+  }
+}
+
+function useSidebarReply(text: string) {
+  draft.value = text
+  if (isMobile.value) {
+    showMobileSidebar.value = false
+  }
+}
 
 const convParams = () => ({ account_id: filter.account_id, q: filter.q.trim() || undefined })
 
@@ -358,6 +378,14 @@ const showThread = computed(() => !isMobile.value || !!currentId.value)
             </div>
           </div>
           <div class="th-right">
+            <el-button
+              size="small"
+              :type="showContextSidebar ? 'primary' : 'default'"
+              :icon="Goods"
+              @click="toggleContextSidebar"
+            >
+              {{ showContextSidebar && !isMobile ? '收起商品' : '商品与订单' }}
+            </el-button>
             <el-button v-if="current.in_takeover" size="small" @click="applyTakeover(0)">恢复自动回复</el-button>
             <el-popover v-else v-model:visible="takeoverOpen" trigger="click" :width="240">
               <template #reference>
@@ -427,6 +455,32 @@ const showThread = computed(() => !isMobile.value || !!currentId.value)
       </template>
       <el-empty v-else description="选择左侧会话查看消息" class="placeholder" />
     </section>
+
+    <!-- 商品与订单上下文侧边栏 (桌面端内嵌) -->
+    <ConversationContextSidebar
+      v-if="current && showContextSidebar && !isMobile"
+      :conv-id="current.id"
+      :peer-name="current.peer_name"
+      @use-reply="useSidebarReply"
+      @close="showContextSidebar = false"
+    />
+
+    <!-- 移动端侧边抽屉 -->
+    <el-drawer
+      v-if="isMobile"
+      v-model="showMobileSidebar"
+      title="商品与订单看板"
+      size="92%"
+      destroy-on-close
+    >
+      <ConversationContextSidebar
+        v-if="current"
+        :conv-id="current.id"
+        :peer-name="current.peer_name"
+        @use-reply="useSidebarReply"
+        @close="showMobileSidebar = false"
+      />
+    </el-drawer>
 
     <!-- 试运行 -->
     <el-dialog v-model="trial.open" title="试运行：系统会如何回复？" width="600px">

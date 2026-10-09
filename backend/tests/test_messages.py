@@ -241,3 +241,21 @@ async def test_manual_send_and_dry_run(admin_client, im):
     assert plan["bargain"]["offer"] == 920 and plan["action"] == "send"
     status_ = (await admin_client.get("/api/v1/messages/im-status")).json()
     assert status_["accounts"][str(account_id)]["connected"]
+
+
+async def test_conversation_context(admin_client, im):
+    account_id, fake = im
+    await receive(account_id, chat("在吗？想问下底价多少"))
+    conv_id = (await admin_client.get("/api/v1/messages/conversations")).json()[0]["id"]
+    ctx = (await admin_client.get(f"/api/v1/messages/conversations/{conv_id}/context")).json()
+    assert ctx["conversation_id"] == conv_id
+    assert ctx["account_id"] == account_id
+    assert ctx["item"] is not None
+    assert ctx["item"]["item_id"] == "900"
+    assert ctx["item"]["title"] == "Switch 日版"
+    assert ctx["item"]["price"] == 1000
+    assert ctx["item"]["floor_price"] == 800
+    assert len(ctx["quick_replies"]) > 0
+    tags = [q["tag"] for q in ctx["quick_replies"]]
+    assert "折中诚意" in tags or "坚守底价" in tags
+
