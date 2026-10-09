@@ -289,7 +289,7 @@ async def test_connection(config: LlmConfig) -> tuple[bool, str, str]:
             effort="low",
         )
     except Exception as e:  # noqa: BLE001
-        return False, str(e)[:300], model
+        return False, (str(e) or type(e).__name__)[:300], model
     finally:
         await gateway.aclose()
     return True, f"调用成功：{text[:60] or '（空响应）'}", model

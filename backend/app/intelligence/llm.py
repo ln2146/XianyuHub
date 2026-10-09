@@ -287,24 +287,35 @@ class ChatCompletionsProvider:
         body: dict[str, Any] = {"model": model, "messages": api_messages, "max_tokens": max_tokens, "temperature": 0.2}
         if schema is not None and self._json_mode:
             body["response_format"] = {"type": "json_object"}
-        resp = await self.http.post(f"{self.base_url}/chat/completions", json=body)
+        resp = await self._post(body)
         if resp.status_code == 400 and "response_format" in body:
             # 部分网关不支持 json_object，降级为纯提示词约束
             self._json_mode = False
             body.pop("response_format")
-            resp = await self.http.post(f"{self.base_url}/chat/completions", json=body)
+            resp = await self._post(body)
         if resp.status_code in (401, 403):
             raise LLMUnavailable(f"模型接口鉴权失败：HTTP {resp.status_code}")
         if resp.status_code >= 400:
             raise LLMError(f"模型接口错误 HTTP {resp.status_code}：{resp.text[:200]}")
-        data = resp.json()
+        try:
+            data = resp.json()
+            text = data["choices"][0]["message"].get("content") or ""
+        except (ValueError, KeyError, IndexError, TypeError, AttributeError) as e:
+            raise LLMError(f"模型接口返回格式异常：{resp.text[:200]}") from e
         usage = data.get("usage") or {}
         return LLMResult(
-            text=data["choices"][0]["message"].get("content") or "",
+            text=text,
             model=data.get("model", model),
             input_tokens=usage.get("prompt_tokens", 0),
             output_tokens=usage.get("completion_tokens", 0),
         )
+
+    async def _post(self, body: dict[str, Any]) -> httpx.Response:
+        """网络层错误（超时、连接断开等）统一转成 LLMError，调用方据此降级，而不是整条流程失败。"""
+        try:
+            return await self.http.post(f"{self.base_url}/chat/completions", json=body)
+        except httpx.HTTPError as e:
+            raise LLMError(f"模型接口网络错误：{type(e).__name__} {e}".strip()) from e
 
 
 # ---------------------------------------------------------------------------- gateway

@@ -260,3 +260,17 @@ async def test_openai_compatible_provider_json_mode_fallback():
     out = await gw.complete_json(Tier.VISION, "sys", "看图", Out, images=[ImageInput(url="https://img/1.jpg")])
     assert out.score == 2 and len(calls) == 2
     assert calls[1]["messages"][1]["content"][1]["image_url"]["url"] == "https://img/1.jpg"
+
+
+@respx.mock
+async def test_openai_compatible_network_errors_become_llm_errors():
+    from app.intelligence.llm import LLMError, Message
+
+    respx.post("https://flaky.example.com/v1/chat/completions").mock(side_effect=httpx.ReadTimeout(""))
+    gw = LLMGateway(provider=ChatCompletionsProvider("k", "https://flaky.example.com/v1", 5))
+    with pytest.raises(LLMError, match="ReadTimeout"):
+        await gw.complete_text(Tier.FAST, "s", [Message("user", "hi")])
+    respx.post("https://bad.example.com/v1/chat/completions").mock(return_value=httpx.Response(200, text="<html>"))
+    gw = LLMGateway(provider=ChatCompletionsProvider("k", "https://bad.example.com/v1", 5))
+    with pytest.raises(LLMError, match="格式异常"):
+        await gw.complete_text(Tier.FAST, "s", [Message("user", "hi")])
