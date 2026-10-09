@@ -109,7 +109,9 @@ async def dashboard(user: CurrentUser, session: SessionDep) -> dict[str, Any]:
         "monitor_tasks": len(task_ids),
         "risk_events": [
             {
+                "id": r.id,
                 "account_id": r.account_id,
+                "punish_url": r.punish_url,
                 "state": r.state,
                 "reason": r.reason,
                 "created_at": r.created_at,

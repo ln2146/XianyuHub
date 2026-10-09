@@ -143,3 +143,14 @@ async def test_ai_copy_with_market(admin_client):
     body = r.json()
     assert body["titles"] and body["market"]["sample"] == 6
     assert body["market"]["suggestion"]["market"] == 825
+
+
+@respx.mock
+async def test_floor_price_can_be_cleared(admin_client):
+    acc_id = await make_account(admin_client)
+    async with session_factory()() as s:
+        s.add(MyItem(account_id=acc_id, item_id="1", title="x", price=100, floor_price=80))
+        await s.commit()
+    items = (await admin_client.get("/api/v1/goods/items")).json()
+    r = await admin_client.patch(f"/api/v1/goods/items/{items[0]['id']}", json={"floor_price": None, "gifts": "贴膜"})
+    assert r.json()["floor_price"] is None and r.json()["gifts"] == "贴膜" and r.json()["max_rounds"] == 3

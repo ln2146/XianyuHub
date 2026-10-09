@@ -136,7 +136,9 @@ async def list_items(
 @router.patch("/items/{item_pk}", response_model=ItemOut)
 async def update_item(item_pk: int, body: ItemUpdate, user: CurrentUser, session: SessionDep) -> MyItem:
     item = await _own_item(session, user, item_pk)
-    for k, v in body.model_dump(exclude_none=True).items():
+    for k, v in body.model_dump(exclude_unset=True).items():
+        if v is None and k != "floor_price":  # floor_price 显式传 null 表示取消底价（关闭 AI 议价）
+            continue
         setattr(item, k, v)
     if item.floor_price is not None and item.price is not None and item.floor_price > item.price:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "底价不能高于售价")

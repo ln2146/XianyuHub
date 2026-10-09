@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.crypto import get_vault
 from app.core.db import session_factory
 from app.core.events import Topics, bus
+from app.core.realtime import hub
 from app.domains.account.models import AccountGrant, RiskEvent, XyAccount
 from app.domains.account.store import DbSessionStore
 from app.domains.system.audit import record_audit
@@ -89,6 +90,7 @@ async def on_guard_state_change(key: str, rt: Runtime, reason: str) -> None:
         await s.commit()
 
     await bus.publish(Topics.ACCOUNT_STATUS_CHANGED, {"account_id": account_id, "state": rt.state, "reason": reason})
+    await hub.publish("account", {"account_id": account_id, "state": rt.state, "reason": reason}, account_id=account_id)
     if rt.state == AccountState.CIRCUIT_OPEN:
         await bus.publish(Topics.ACCOUNT_RISK_DETECTED, {"account_id": account_id, "reason": reason})
         content = f"原因：{reason}\n已自动暂停该账号的写操作。请打开验证链接完成验证，然后在管理台点击「已处理」。"

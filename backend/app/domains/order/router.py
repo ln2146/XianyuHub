@@ -341,6 +341,20 @@ async def create_binding(body: BindingIn, user: CurrentUser, session: SessionDep
     return b
 
 
+@router.put("/cards/bindings/{binding_id}", response_model=BindingOut)
+async def update_binding(binding_id: int, body: BindingIn, user: CurrentUser, session: SessionDep) -> CardBinding:
+    b = await session.get(CardBinding, binding_id)
+    if b is None or b.owner_id != user.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "绑定不存在")
+    await _own_pool(session, user, body.pool_id)
+    if body.account_id is not None:
+        await get_account_for(session, user, body.account_id)
+    for k, v in body.model_dump().items():
+        setattr(b, k, v)
+    await session.commit()
+    return b
+
+
 @router.delete("/cards/bindings/{binding_id}", status_code=204)
 async def delete_binding(binding_id: int, user: CurrentUser, session: SessionDep) -> None:
     b = await session.get(CardBinding, binding_id)

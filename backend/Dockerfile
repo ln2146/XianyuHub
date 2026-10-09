@@ -7,7 +7,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     UV_LINK_MODE=copy \
     TZ=Asia/Shanghai
 
-COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /usr/local/bin/uv
+# 用 pip 安装 uv（不依赖 ghcr.io，国内网络更稳定；可通过 PIP_INDEX_URL 指定镜像源）
+ARG PIP_INDEX_URL=https://pypi.org/simple
+RUN pip install --no-cache-dir --index-url "$PIP_INDEX_URL" "uv>=0.11,<0.12"
 WORKDIR /app
 
 # 先装依赖，充分利用构建缓存

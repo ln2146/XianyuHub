@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.crypto import get_vault
 from app.core.db import session_factory
 from app.core.events import Topics, bus
+from app.core.realtime import hub
 from app.domains.account.models import XyAccount
 from app.domains.message import service as message_service
 from app.domains.message.models import MessageSource
@@ -42,6 +43,7 @@ from app.runtime import get_runtime
 RETRY_DELAYS = [60, 120, 300, 600]  # 秒
 DEFAULT_TEMPLATE = "您好，订单已发货，内容如下：\n{content}\n如有问题请随时联系～"
 _order_locks: dict[int, asyncio.Lock] = {}
+_push_tasks: set[asyncio.Task] = set()
 
 
 class DeliveryError(Exception):
@@ -69,7 +71,15 @@ async def transition(s: AsyncSession, order: Order, to: str, *, reason: str | No
     order.status = to
     if reason is not None:
         order.fail_reason = reason
+    _spawn_push({"id": order.id, "order_id": order.order_id, "status": to}, order.account_id)
     return True
+
+
+def _spawn_push(data: dict[str, Any], account_id: int) -> None:
+    """订单状态变化推送到前端（不阻塞事务）。"""
+    task = asyncio.get_running_loop().create_task(hub.publish("order", data, account_id=account_id))
+    _push_tasks.add(task)
+    task.add_done_callback(_push_tasks.discard)
 
 
 def _apply_remote(order: Order, remote: RemoteOrder) -> None:
