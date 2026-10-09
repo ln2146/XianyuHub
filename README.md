@@ -4,9 +4,9 @@
 
 **闲鱼买卖双端智能助手 —— 买家淘好货，卖家省心卖**
 
-AI 选品雷达 · 统一收件箱 · 带底价护栏的 AI 客服 · 虚拟商品自动发货 · 风控内建
+AI 选品雷达 · 统一收件箱 · 带底价护栏的 AI 客服 · 虚拟商品自动发货 · 风控内建 · MCP
 
-![status](https://img.shields.io/badge/status-规划中-orange)
+![status](https://img.shields.io/badge/status-alpha-orange)
 ![python](https://img.shields.io/badge/python-3.12-blue)
 ![fastapi](https://img.shields.io/badge/FastAPI-async-009688)
 ![vue](https://img.shields.io/badge/Vue-3-42b883)
@@ -15,8 +15,8 @@ AI 选品雷达 · 统一收件箱 · 带底价护栏的 AI 客服 · 虚拟商�
 </div>
 
 > [!WARNING]
-> 本项目处于**设计与开发早期**，下文的部署命令、配置项和接口描述的是**目标形态**，会随开发进度调整。
-> 设计文档见上级目录：[调研报告](../01_开源项目调研报告.md) · [功能规划](../02_产品功能规划.md) · [架构设计](../03_系统架构设计.md) · [流程图](../04_核心业务流程图.md) · [风险与路线](../05_风险合规与实施路线.md)
+> 项目处于 **alpha** 阶段：功能已实现并有自动化测试覆盖，但闲鱼接口的字段与参数来自对网页版的观察，
+> **尚未在真实账号上做长期验证**。首次使用请先用小号、默认的保守配置和“建议模式”观察一段时间。
 
 ---
 
@@ -25,10 +25,10 @@ AI 选品雷达 · 统一收件箱 · 带底价护栏的 AI 客服 · 虚拟商�
 - [它能做什么](#它能做什么)
 - [设计亮点](#设计亮点)
 - [系统架构](#系统架构)
-- [技术栈](#技术栈)
 - [快速开始](#快速开始)
 - [配置说明](#配置说明)
 - [使用指南](#使用指南)
+- [MCP 与浏览器扩展](#mcp-与浏览器扩展)
 - [目录结构](#目录结构)
 - [开发指南](#开发指南)
 - [路线图](#路线图)
@@ -44,48 +44,51 @@ AI 选品雷达 · 统一收件箱 · 带底价护栏的 AI 客服 · 虚拟商�
 
 | 功能 | 说明 |
 |---|---|
-| **监控任务** | 支持多个关键词，可按价格区间、省市、发布天数、个人闲置、包邮筛选，用 cron 定时运行 |
-| **一句话建任务** | 输入“想要 M1 Air，电池 90 以上，3500 以内，别要贩子”，AI 自动生成筛选条件和判定标准 |
-| **多模态 AI 判定** | AI 结合图片和文字判断成色、型号是否匹配、有没有翻新或拆修，给出 `推荐 / 有条件推荐 / 不推荐`，附理由和风险标签 |
-| **卖家画像** | 综合卖家在售和已售商品、评价、信用、账龄，识别“个人玩家”还是“贩子” |
-| **价格情报** | 计算同款市场价分位数和性价比评分（0–100），记录历史价格，降价时提醒 |
-| **实时推送** | 只推送值得看的商品，附主图、价格、推荐理由和手机端链接 |
-| **买家助手** | 针对“需要确认”的点（如电池、维修情况）生成咨询话术，并给出议价建议（不会自动发送） |
+| **监控任务** | 多关键词；价格区间、省市、发布天数、个人闲置、包邮直接走接口参数筛选；cron 定时（间隔不少于 5 分钟） |
+| **一句话建任务** | “想要 M1 Air，电池 90 以上，3500 以内，别要贩子” → AI 生成关键词、排除词和判定标准，确认后保存 |
+| **两段式 AI 判定** | 先用规则和低成本文本粗筛淘汰明显不符的商品，再对候选商品补全详情（描述、全部图片、芝麻信用）做多模态判定 |
+| **判定结果** | `推荐 / 有条件推荐 / 不推荐`，附理由、风险标签、需向卖家确认的点，以及可以直接发送的提问话术 |
+| **卖家画像**（可选） | 卖家在售/已售商品、评价、好评率，辅助识别“个人玩家”还是“贩子”，缓存 24 小时 |
+| **价格情报** | 剔除异常值后的市场价分位数、性价比评分（0–100）、价格快照与降价提醒 |
+| **推送与看板** | 只推送值得看的商品；看板支持标记收藏 / 已看 / 不感兴趣 / 已买，导出 CSV |
+| **失败保护** | 触发风控或连续失败 3 次自动暂停任务并通知，避免越跑越糟 |
 
 ### 🏪 卖家端：店铺中枢
 
 | 功能 | 说明 |
 |---|---|
-| **商品中心** | 同步和查询多账号下的商品；AI 根据图片生成标题和描述；参考市场价给出三档定价建议；发布、编辑、上下架、擦亮 |
-| **统一收件箱** | 多个账号的会话集中在一处，实时推送，网页端可直接回复 |
-| **自动回复** | 关键词规则分商品级、账号级、全局三层，按优先级匹配；AI 客服会先识别意图，再基于商品知识库回答 |
-| **议价护栏** | 底价、每轮让价幅度和最大轮次由**代码计算**，AI 只负责措辞；回复里的金额低于底价时会被拦截 |
-| **人工接管** | 卖家亲自回复后，该会话的 AI 自动暂停；接管状态持久化保存 |
-| **自动发货** | 识别买家付款后，按规格分配卡券（固定文本 / 卡密池 / 图片 / API 取货），发送后自动确认发货 |
-| **发货前风控** | 检查买家信用阈值、同一买家重复下单、跨账号重复下单、黑名单，防止被薅 |
-| **售后运营** | 失败补发、超时告警、退款冻结、自动评价 |
+| **商品中心** | 同步各账号商品；为每个商品设置底价、让价阶梯、最大议价轮次、赠品和客服知识库；擦亮、下架、每日自动擦亮 |
+| **AI 写文案 + 智能定价** | 上传图片 → AI 生成标题、描述、成色判断 → 搜索同款给出“快速出手 / 市场价 / 高价试水”三档建议 |
+| **草稿 → 确认 → 发布** | 发布前必须人工确认；支持定时发布；发布受账号级限流（默认每 5 分钟 1 个） |
+| **统一收件箱** | 多账号会话聚合、实时推送（WebSocket）、网页端直接回复 |
+| **自动回复流水线** | 注入防御 → 关键词规则（商品级 > 账号级 > 全局）→ 意图识别 → 议价引擎 → AI 措辞 → 输出护栏 → 模板兜底 / 转人工 |
+| **议价护栏** | 报价完全由代码计算，**底价不进入提示词**；回复中任何低于底价的金额、站外联系方式、“保证正品”类承诺都会被拦截 |
+| **人工接管** | 卖家在 App / 网页亲自回复后该会话自动暂停 AI（持久化）；售后纠纷自动转人工并通知 |
+| **三种模式** | 关闭 / 建议模式（AI 写候选，人工一键发送）/ 全自动；支持工作时段、合并连发消息、拟人延迟 |
+| **自动发货** | 识别付款消息后**用订单接口二次校验**，按商品和规格分配卡券（固定文本 / 卡密库存 / 外部 API），发送后确认发货 |
+| **发货风控** | 买家黑名单、同一买家 24 小时跨账号限购、退款冻结；失败按 1/2/5/10 分钟重试，重试不会重复发卡，超过次数转人工 |
+| **库存与运营** | 卡密加密存储、导入去重、原子出库、缺货告警；可选自动评价 |
 
 ### 🧱 平台底座
 
-扫码登录 · 会话自动续期 · 账号健康度 · 一账号一固定 IP · 令牌桶限流 · 风控熔断 · 多渠道通知（企业微信 / 飞书 / 钉钉 / Telegram / Bark / ntfy / Webhook）· 角色权限 · 操作审计 · 开放 API / MCP Server
+扫码登录 / Cookie 导入 · 登录态探活与续期 · 账号健康度 · 每账号固定代理 · 令牌桶限流 · 风控熔断与指数退避冷却 ·
+8 种通知渠道（企业微信 / 飞书 / 钉钉 / Telegram / Bark / ntfy / Webhook / 邮件）· 角色权限与账号授权 · 操作审计 ·
+数据看板 · 只读 MCP Server · 浏览器扩展
 
 ---
 
 ## 设计亮点
 
-1. **一个适配层管住所有闲鱼交互**
-   业务代码只调用 `search_items`、`send_message`、`consign_virtual` 这类能力接口，底层有三条通道，可以自动降级：
-   - **协议通道**：直连 mtop 接口和 IM WebSocket，速度快
-   - **浏览器通道**：用 Playwright 拦截页面请求的响应，更稳
-   - **官方通道**：对接闲管家开放平台，合规
+1. **一个适配层管住所有闲鱼交互**（`backend/app/goofish/`）
+   业务代码只调用 `search_items`、`get_order_detail`、`consign_virtual` 这类能力方法。底层默认走协议通道（mtop 签名 + IM 长连接），
+   匿名搜索遇到风控时可降级到 Playwright 浏览器通道。接口变化时只需要改解析器和样本。
 2. **风控是一等公民**
-   账号互斥锁、按动作区分的令牌桶、随机抖动、熔断和指数退避冷却都在调用链上统一处理。识别到 `FAIL_SYS_USER_VALIDATE` / `RGV587` / `punish` 这类风控信号时**立即停止并通知人工**，不尝试自动破解。
+   每次调用都经过 `RiskGuard`：账号状态检查 → 按动作的令牌桶（单机内存 / 多实例 Redis）→ 随机抖动 → 登录、发布类操作账号互斥。
+   识别到 `FAIL_SYS_USER_VALIDATE`、`RGV587`、`punish` 等信号**立即熔断并通知人工**，不做任何自动破解。
 3. **AI 有护栏**
-   AI 负责理解和表达，规则负责决定价格、发货和是否可以发送。所有 AI 输出都经过 JSON Schema 校验，并检查金额、禁用词和站外联系方式。
-4. **买卖数据打通**
-   选品雷达积累的市场价数据，同时供卖家定价和竞品监控使用。
-5. **安全基线**
-   所有接口强制鉴权；Cookie、密码和卡密用 AES-GCM 加密存储；默认只监听内网；凭证不会发给任何第三方服务。
+   AI 只负责理解和措辞；价格、发货、是否发送由规则决定。议价引擎有 1000 组随机用例的模糊测试，保证报价永不低于底价。
+4. **买卖数据打通**：选品雷达积累的市场价同时用于卖家定价和竞品比价。
+5. **安全基线**：所有接口强制鉴权；Cookie、代理、卡密、通知渠道配置用 AES-256-GCM 加密存储；默认只监听本机；凭证不发给任何第三方。
 
 ---
 
@@ -93,119 +96,98 @@ AI 选品雷达 · 统一收件箱 · 带底价护栏的 AI 客服 · 虚拟商�
 
 ```mermaid
 flowchart TB
-  UI["Web 管理台 / 移动端 PWA / 推送通道 / MCP"] --> APP["应用服务 · FastAPI<br/>买家域 · 商品域 · 消息域 · 订单域 · 账号域 · 系统域"]
-  APP <--> AI["智能层<br/>LLM 网关 · Agent 编排 · 规则引擎 · 价格引擎 · 知识库"]
-  APP --> WK["执行层<br/>调度器 · 采集 Worker · IM 网关 · 业务 Job"]
-  WK --> GW["闲鱼适配层<br/>风控守卫 → 协议通道 / 浏览器通道 / 官方通道"]
-  APP --> GW
+  UI["Web 管理台（Vue 3）/ 浏览器扩展 / MCP"] --> API["FastAPI<br/>账号 · 选品 · 商品 · 消息 · 订单 · 通知 · 看板"]
+  API <--> AI["智能层<br/>LLM 网关 · 意图 · 议价引擎 · 护栏 · 价格引擎"]
+  API --> WK["后台任务<br/>APScheduler · IM 网关（每账号一条长连接）"]
+  WK --> GW["闲鱼适配层<br/>RiskGuard → 协议通道 / 浏览器通道"]
+  API --> GW
   GW --> XY["闲鱼"]
-  APP & WK --> DB[("PostgreSQL + pgvector · Redis · 对象存储")]
+  API & WK --> DB[("PostgreSQL / SQLite · Redis")]
 ```
 
-| 服务 | 职责 |
+| 组件 | 说明 |
 |---|---|
-| `api` | REST 和 WebSocket 接口、业务编排、鉴权 |
-| `im-gateway` | 每个闲鱼账号维持一条 IM 长连接，负责收发消息、心跳和 token 刷新 |
-| `crawler` | 搜索、详情、卖家画像采集（内置 Chromium） |
-| `worker` | 定时任务和异步任务：发货、同步、擦亮、通知 |
-| `frontend` | Vue 3 管理台和 PWA |
-| `postgres` / `redis` | 业务数据与向量；队列、锁、限流、事件流 |
-
-服务之间通过 Redis Streams 传递领域事件（`chat.message.received`、`order.paid`、`market.item.found`、`account.risk.detected` 等）。完整设计见 [架构设计](../03_系统架构设计.md)。
-
----
-
-## 技术栈
+| `backend` | FastAPI 应用。单机模式下同一进程内运行调度器和 IM 网关（`RUN_WORKERS_IN_API=true`） |
+| `web` | Caddy：托管前端静态资源，反向代理 `/api` 与 WebSocket，配置域名后自动 HTTPS |
+| `postgres` / `redis` | 业务数据；限流令牌桶（Lua 原子脚本） |
 
 | 层 | 选型 |
 |---|---|
-| 后端 | Python 3.12 · FastAPI · Pydantic v2 · SQLAlchemy 2.0 (async) · Alembic |
-| 异步任务 | APScheduler · Redis Streams / arq |
-| 闲鱼对接 | httpx（mtop）· websockets（LWP）· Playwright / patchright |
-| 智能 | 多模型 LLM 网关（Claude / Qwen / DeepSeek / 任意 OpenAI 兼容接口 / 本地模型）· pgvector |
-| 存储 | PostgreSQL 16（单机轻量模式可用 SQLite）· Redis 7 · MinIO（可选） |
-| 前端 | Vue 3 · Vite · TypeScript · Tailwind · shadcn-vue · ECharts · PWA |
-| 部署 | Docker Compose · Caddy（HTTPS） |
-| 可观测 | Loguru 结构化日志 · Prometheus 指标 · Sentry（可选） |
+| 后端 | Python 3.12 · FastAPI · Pydantic v2 · SQLAlchemy 2.0 async · Alembic · APScheduler · httpx · websockets · msgpack |
+| 大模型 | Anthropic 官方 SDK（默认 `claude-opus-5-5`，结构化输出 + 拒答回退）或任意 OpenAI 兼容接口（Qwen / DeepSeek / vLLM） |
+| 前端 | Vue 3 · Vite · TypeScript · Element Plus · Pinia · ECharts |
+| 部署 | Docker Compose · Caddy · PostgreSQL 16 · Redis 7 |
 
 ---
 
 ## 快速开始
 
-> 以下是目标部署方式，功能完成后可用。
+### 方式一：Docker Compose（推荐）
 
-### 环境要求
-
-- Docker 24+ 与 Docker Compose v2
-- 2 核 4GB 内存（启用浏览器通道建议 4 核 8GB）
-- **推荐部署在家庭网络、NAS，或使用住宅代理**（机房 IP 更容易触发风控）
-- 一个大模型 API Key（也可以只用本地模型）
-
-### Docker 一键部署
+环境要求：Docker 24+、2 核 4GB 内存。**建议部署在家庭网络 / NAS 或使用住宅代理**，机房 IP 更容易触发风控。
 
 ```bash
-git clone <your-repo-url> XianyuHub
+git clone https://github.com/ln2146/XianyuHub.git
 cd XianyuHub/deploy
-
 cp .env.example .env
-# 必填：APP_SECRET_KEY、CREDENTIAL_MASTER_KEY、ADMIN_PASSWORD、LLM 相关配置
+# 必填：APP_SECRET_KEY、CREDENTIAL_MASTER_KEY、ADMIN_PASSWORD、POSTGRES_PASSWORD（生成命令见 .env 注释）
+# 可选：LLM_API_KEY（不填则 AI 功能自动降级为仅规则）
 vim .env
-
-docker compose up -d
+docker compose up -d --build
 ```
 
-浏览器访问 `http://<服务器IP>:8080`，用 `.env` 中设置的管理员账号登录。
+浏览器访问 `http://127.0.0.1:8080`，用 `.env` 中的管理员账号登录。
 
-### 首次使用三步走
+> 默认只监听本机。局域网访问把 `WEB_BIND` 改为 `0.0.0.0`；公网访问请填写 `SITE_ADDRESS=你的域名`，Caddy 会自动申请 HTTPS 证书。
+> 国内网络拉取 Docker Hub 镜像不稳定时，可以配置镜像加速或重试。
 
-1. **添加闲鱼账号**：进入「账号中心」→「扫码添加」，用闲鱼 App 扫码确认（也可以通过浏览器扩展导入登录态）
-2. **配置通知渠道**：进入「通知中心」，添加企业微信、飞书、Telegram 等渠道并发一条测试消息
-3. **按需开启功能**：
-   - 买家：在「选品雷达」中新建监控任务
-   - 卖家：在「消息中心」开启自动回复（建议先用**建议模式**），在「商品中心」为商品设置底价和知识库，在「发货中心」导入卡密并绑定商品
+### 方式二：本地开发运行
+
+```bash
+# 后端（http://127.0.0.1:8000，接口文档 /docs）
+cd backend
+uv sync --all-extras
+cp .env.example .env          # 设置 ADMIN_PASSWORD 等
+uv run python -m app
+
+# 前端（http://localhost:5173，已代理 /api 到 8000）
+cd frontend
+pnpm install
+pnpm dev
+```
+
+本地默认使用 SQLite（`backend/data/`），不需要 PostgreSQL 和 Redis。
+
+### 首次使用
+
+1. **添加闲鱼账号**：「账号中心」→「扫码登录」，用闲鱼 App 扫码；需要身份验证时按提示在浏览器完成。也可以用浏览器扩展导出登录态后「导入 Cookie」。
+2. **配置通知渠道**：「通知设置」添加企业微信 / 飞书 / Telegram 等，点「测试」确认能收到。
+3. **按需开启功能**（所有自动化默认关闭）：
+   - 买家：「选品雷达」新建任务，或用「一句话生成」
+   - 卖家：「商品中心」同步商品并设置底价与知识库 →「账号中心」打开自动回复（建议先用**建议模式**）→「订单发货」配置卡券和绑定后再打开自动发货
 
 ---
 
 ## 配置说明
 
-`.env` 主要配置项：
+完整配置见 [`deploy/.env.example`](deploy/.env.example)（Docker）和 [`backend/.env.example`](backend/.env.example)（本地）。常用项：
 
-```ini
-# ---------- 基础 ----------
-APP_ENV=production
-APP_PORT=8080
-APP_SECRET_KEY=change-me                 # JWT 签名密钥，必须修改
-CREDENTIAL_MASTER_KEY=                   # 32 字节 base64，用于加密 Cookie/卡密，丢失后无法解密
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=                          # 首次启动必填，不提供默认密码
-BIND_HOST=127.0.0.1                      # 默认只监听本机；对外访问请通过 Caddy 反代 + HTTPS
+| 配置 | 默认 | 说明 |
+|---|---|---|
+| `APP_SECRET_KEY` | — | JWT 签名密钥，生产环境必须设置且不少于 32 位 |
+| `CREDENTIAL_MASTER_KEY` | — | 32 字节 base64，加密 Cookie / 卡密，**丢失后无法解密，请备份** |
+| `ADMIN_PASSWORD` | — | 首次启动创建管理员；生产环境不提供默认密码 |
+| `DATABASE_URL` | SQLite | 生产建议 PostgreSQL |
+| `REDIS_URL` | 空 | 为空时使用进程内限流 |
+| `LLM_DEFAULT_PROVIDER` | `anthropic` | 或 `openai_compatible`（需同时设置 `LLM_BASE_URL`） |
+| `LLM_MODEL_VISION / CHAT / FAST` | `claude-opus-5-5` | 分别用于多模态判定与文案、客服回复、意图分类与粗筛 |
+| `LLM_DAILY_TOKEN_BUDGET` | `0` | 每日 token 上限，超出后自动降级为仅规则 |
+| `GUARD_RATE_MULTIPLIER` | `1.0` | 全局限流倍率，小于 1 更保守 |
+| `GUARD_SEARCH_PER_MIN` / `GUARD_MESSAGE_PER_MIN` / `GUARD_PUBLISH_PER_5MIN` | 6 / 20 / 1 | 每账号的搜索、发消息、发布速率 |
+| `GUARD_COOLDOWN_BASE_SECONDS` | `1800` | 风控熔断后的基础冷却时长（按次数指数增长，最长 6 小时） |
+| `BROWSER_ENABLED` | `false` | 启用 Playwright 浏览器通道（Docker 构建时设置 `WITH_BROWSER=true`） |
 
-# ---------- 存储 ----------
-DATABASE_URL=postgresql+asyncpg://xianyu:xianyu@postgres:5432/xianyuhub
-REDIS_URL=redis://redis:6379/0
-
-# ---------- 大模型 ----------
-LLM_DEFAULT_PROVIDER=anthropic           # anthropic / openai_compatible / dashscope / ollama
-LLM_API_KEY=
-LLM_BASE_URL=
-LLM_MODEL_VISION=claude-sonnet-5-5       # 多模态判定、商品文案
-LLM_MODEL_CHAT=                          # 客服回复
-LLM_MODEL_FAST=                          # 意图分类、粗筛（建议用低成本模型）
-LLM_MONTHLY_BUDGET=200                   # 月度预算上限（元），超出后降级为仅规则
-
-# ---------- 风控（保守默认值，按需调整） ----------
-GUARD_SEARCH_PER_MIN=6
-GUARD_MESSAGE_PER_MIN=20
-GUARD_PUBLISH_PER_5MIN=1
-GUARD_COOLDOWN_BASE_SECONDS=1800         # 熔断后基础冷却时长，指数退避
-GUARD_JITTER_MS=500-3000
-
-# ---------- 浏览器通道 ----------
-BROWSER_ENABLED=true
-BROWSER_HEADLESS=true
-```
-
-更细的配置（议价策略、回复规则、发货模板、通知模板等）都可以在管理台中在线修改，修改后即时生效。
+账号级开关（自动回复、AI 模式、接管时长、工作时段、发货模式、自动评价、自动擦亮等）在管理台「账号中心 → 设置」中修改，即时生效。
 
 ---
 
@@ -214,65 +196,94 @@ BROWSER_HEADLESS=true
 <details>
 <summary><b>选品雷达：写好判定标准</b></summary>
 
-判定标准（criteria）分三层组合：
+判定标准写在任务的 `criteria` 中，建议包含三部分：
 
+```markdown
+## 必须满足（一票否决）
+- M1 芯片的 MacBook Air；电池健康 ≥ 85%；无拆修
+## 加分项
+- 个人自用、有原盒发票、同城可面交
+## 危险信号
+- 价格远低于市场、只收全款不走验货、引导加微信
 ```
-基础模板（输出格式、通用风险）
-  + 品类标准（如“二手 MacBook”：型号、电池、维修史、是否监管机）
-  + 个人偏好（如“只要个人卖家、同城优先、不接受磕碰”）
-```
 
-建议做法：
-
-- **一票否决项**写清楚（例如“非 M1 芯片直接不推荐”）
-- **信息缺失**时选“有条件推荐”而不是直接拒绝，系统会生成需要向卖家确认的问题
-- 对推送结果点「不感兴趣」并选原因，系统会把它沉淀到个人偏好中
+- 关键信息缺失时 AI 会给出“有条件推荐”，并生成可直接发给卖家的提问话术
+- `rules` 用于不花 token 的硬条件过滤：`include_all`（标题必须包含）、`exclude`（排除词）、地区、最低芝麻信用等
+- 只想按规则筛选不调用 AI：把判定方式设为 `rule`
 
 </details>
 
 <details>
 <summary><b>AI 客服：议价策略怎么配</b></summary>
 
-每个商品可以配置：
+在「商品中心」为商品设置：
 
 | 字段 | 示例 | 说明 |
 |---|---|---|
-| 标价 | 1000 | 当前挂牌价 |
-| 底价 | 850 | **任何情况下都不会低于这个价格** |
+| 底价 | 850 | **任何情况下都不会低于这个价格**，也不会出现在提示词里 |
 | 最大轮次 | 3 | 超过后报最终价，不再让 |
-| 让价阶梯 | 40% / 30% / 20% / 10% | 每轮让出 (标价 − 底价) 的比例 |
-| 可送赠品 | 手机壳、贴膜 | 用赠品代替降价 |
+| 让价阶梯 | 0.4 / 0.3 / 0.2 / 0.1 | 每轮让出 (标价 − 底价) 的比例 |
+| 赠品 | 手机壳 | 用赠品代替降价 |
+| 知识库 | 参数、瑕疵、使用说明 | AI 只依据这里和商品描述回答，不知道的会转人工 |
 
-商品热度高（想要人数多）时会自动收紧让价幅度。AI 只拿到“本轮可报价”这个结果，然后组织语言。
+想要人数多的热门商品会自动减半让价。没有设置底价的商品，AI 不会给出任何低于标价的价格。
+在收件箱里可以用「试运行」查看某条买家消息会得到什么回复，不会真正发送。
 
 </details>
 
 <details>
-<summary><b>自动发货：卡券类型</b></summary>
+<summary><b>自动发货：卡券类型与模板</b></summary>
 
 | 类型 | 适用场景 | 说明 |
 |---|---|---|
-| 固定文本 | 教程链接、网盘资源 | 每单发送相同内容 |
-| 卡密池 | 激活码、兑换码 | 一卡一用，原子出库，库存不足时预警 |
-| 图片 | 二维码、凭证图 | 最多 3 张 |
-| API 取货 | 对接自有系统或第三方货源 | 支持 `{order_id}`、`{buyer_id}`、`{spec}` 等变量，失败自动重试 |
+| 固定文本 | 教程、网盘链接 | 每单发送相同内容 |
+| 卡密库存 | 激活码、兑换码 | 每行一张，导入自动去重，一卡一用，库存低于阈值告警 |
+| 外部 API | 对接自有系统 / 货源 | 配置 `url`、`method`、`headers`、`body`（支持变量）、`result_path` |
 
-发货模板支持变量：`{buyer_name}`、`{order_id}`、`{item_title}`、`{content}`。
+发货模板变量：`{content}` `{order_id}` `{buyer_name}` `{item_title}` `{spec}` `{quantity}`。
+发货模式：先确认再发送 / 先发送再确认（默认）/ 只发送不确认。
 
 </details>
 
 <details>
 <summary><b>遇到风控怎么办</b></summary>
 
-当账号状态变为 `CIRCUIT_OPEN` 时，系统已经自动暂停该账号的写操作，并发送了通知：
+账号状态变为「熔断」时，系统已自动暂停该账号的所有写操作并发出通知：
 
-1. 打开通知里的验证链接，或在管理台点「去验证」打开远程浏览器
-2. 手动完成滑块或身份验证
-3. 等待冷却结束，系统探活成功后会自动恢复
-
-**不要**频繁重启服务，也不要短时间内反复重试，这会延长风控时间。
+1. 打开通知或「账号中心」里的验证链接，在浏览器中完成滑块 / 身份验证
+2. 回到管理台点击「已处理」，账号进入冷却期，冷却结束后自动恢复
+3. **不要**频繁重启服务或反复重试，这会延长风控时间
 
 </details>
+
+---
+
+## MCP 与浏览器扩展
+
+### MCP Server（只读）
+
+让 Claude 等 AI 助手查询行情、选品结果、收件箱、订单，试运行客服回复，或把一句话需求转成监控任务草稿。
+发送消息、发布、发货等写操作不开放，必须在管理台确认。
+
+1. 管理台调用 `POST /api/v1/auth/api-token` 生成令牌（与当前用户同权限）
+2. 在 MCP 客户端中配置：
+
+```json
+{
+  "mcpServers": {
+    "xianyuhub": {
+      "command": "uv",
+      "args": ["--directory", "/path/to/XianyuHub/backend", "run", "--extra", "mcp", "python", "-m", "app.mcp_server"],
+      "env": { "XYH_BASE_URL": "http://127.0.0.1:8000", "XYH_TOKEN": "<令牌>" }
+    }
+  }
+}
+```
+
+### 浏览器扩展
+
+`extension/` 目录是一个 Chrome MV3 扩展：在 Chrome「扩展程序 → 开发者模式 → 加载已解压的扩展程序」中选择该目录。
+登录 goofish.com 后点击扩展，可以复制登录态 JSON，或直接发送到你自己的鱼塘管家（需要 API 令牌）。
 
 ---
 
@@ -282,25 +293,24 @@ BROWSER_HEADLESS=true
 XianyuHub/
 ├── backend/
 │   ├── app/
-│   │   ├── api/                 # 路由（v1），全部挂鉴权依赖
-│   │   ├── core/                # 配置、安全、加密、日志、事件总线
-│   │   ├── domains/             # account / buyer / goods / message / order / system
-│   │   ├── intelligence/        # llm_gateway / agents / guardrails / rules / pricing
-│   │   └── goofish/             # ★ 闲鱼适配层（唯一出入口）
-│   │       ├── capabilities.py  #   能力接口定义
-│   │       ├── guard/           #   令牌桶、熔断、账号锁、冷却
-│   │       ├── protocol/        #   mtop 签名与客户端、LWP、MessagePack、扫码登录
-│   │       ├── browser/         #   浏览器上下文池、XHR 拦截
-│   │       ├── official/        #   闲管家开放平台
-│   │       └── parsers/         #   响应 → 统一 DTO
-│   ├── workers/                 # im_gateway / crawler / jobs / scheduler
-│   ├── prompts/                 # 判定标准、客服、文案 Prompt 模板
-│   ├── migrations/              # Alembic
-│   └── tests/                   # 含录制的响应样本，用于协议解析回归测试
-├── frontend/                    # Vue 3 管理台 + PWA
-├── extension/                   # 浏览器扩展：导出登录态
-├── deploy/                      # docker-compose.yml、.env.example、Caddyfile
-└── docs/
+│   │   ├── goofish/            # ★ 闲鱼适配层（唯一出入口）
+│   │   │   ├── protocol/       #   mtop 签名与客户端、IM（LWP）长连接、扫码登录、编解码
+│   │   │   ├── parsers/        #   搜索 / 详情 / 卖家 / 订单 / IM 消息解析
+│   │   │   ├── guard/          #   令牌桶、风控守卫、动作策略
+│   │   │   ├── gateway.py      #   能力门面 + 浏览器通道
+│   │   │   └── publish.py      #   发布请求体
+│   │   ├── intelligence/       # LLM 网关、议价引擎、护栏、价格引擎、意图、规则
+│   │   ├── domains/            # account / buyer / goods / message / order / system
+│   │   ├── notify/             # 通知渠道
+│   │   ├── workers/            # 调度器、IM 网关
+│   │   ├── mcp_server.py       # MCP Server
+│   │   └── main.py
+│   ├── migrations/             # Alembic
+│   └── tests/                  # 80+ 个测试（含协议样本、模拟 IM 服务端、议价模糊测试）
+├── frontend/                   # Vue 3 管理台
+├── extension/                  # 浏览器扩展
+├── deploy/                     # docker-compose、Caddyfile、.env.example
+└── .github/workflows/ci.yml
 ```
 
 ---
@@ -308,59 +318,46 @@ XianyuHub/
 ## 开发指南
 
 ```bash
-# 后端
 cd backend
-uv sync                                  # 或 pip install -e ".[dev]"
-playwright install chromium
-cp .env.example .env
-alembic upgrade head
-uvicorn app.main:app --reload --port 8000
-
-# 各 Worker（分别开终端）
-python -m workers.im_gateway
-python -m workers.crawler
-python -m workers.jobs
-
-# 前端
-cd frontend
-pnpm install
-pnpm dev                                 # http://localhost:5173
-
-# 测试与检查
-pytest
-ruff check . && mypy app
+uv sync --all-extras
+uv run pytest -q                      # 运行测试
+uv run ruff check app tests && uv run ruff format app tests
+uv run alembic revision --autogenerate -m "说明"   # 修改模型后生成迁移
 ```
 
 **开发约定**
 
-- 与闲鱼交互的代码**只能**放在 `app/goofish/` 下，业务层禁止直接发 HTTP 或 WebSocket 请求
-- 新增闲鱼接口时，需要同时提交：能力定义、解析器、脱敏后的响应样本、对应的解析测试
-- 所有写操作必须声明限流键，并写入审计日志
-- AI 输出必须定义 Pydantic 模型并做校验，涉及价格或发货的决策必须由规则层给出
-- 提交前请确认没有提交任何真实 Cookie、Token、手机号或卡密
+- 与闲鱼交互的代码只能放在 `app/goofish/` 下，业务层禁止直接发 HTTP / WebSocket 请求
+- 新增闲鱼接口时，同时提交：网关方法、解析器、脱敏后的响应样本（`tests/fixtures/`）和解析测试
+- 写操作必须选择对应的 `Action`（决定限流与互斥），并写入审计日志
+- AI 输出必须定义 Pydantic 模型；涉及价格或发货的决策必须由规则层给出
+- 提交前确认没有包含任何真实 Cookie、Token、手机号或卡密
 
 ---
 
 ## 路线图
 
-- [ ] **阶段 0 · 技术验证**：mtop 签名与搜索、扫码登录、IM 收发、风控阈值摸底
-- [ ] **MVP-1 · 买家雷达**：监控任务、双通道采集、规则 + AI 判定、价格情报、看板与推送
-- [ ] **MVP-2 · 卖家客服**：统一收件箱、关键词回复、AI 客服、议价护栏、人工接管
-- [ ] **MVP-3 · 自动发货**：订单同步、卡密库存、自动发货与确认、发货前风控
-- [ ] **V1.0**：多账号与健康度、代理绑定、权限、AI 发布与智能定价、数据看板
-- [ ] **V2.0**：开放 API、MCP Server、贩子识别、降价追踪、闲管家官方通道
-
-详见 [风险合规与实施路线](../05_风险合规与实施路线.md)。
+- [x] 闲鱼适配层：mtop 协议、IM 长连接、扫码登录、风控守卫、浏览器降级通道
+- [x] 账号中心、通知中心、权限、审计
+- [x] 选品雷达：监控任务、两段式 AI 判定、价格情报、降价提醒
+- [x] 商品中心：同步、议价设置、AI 文案、智能定价、草稿发布、擦亮
+- [x] 消息中心：统一收件箱、关键词回复、带护栏的 AI 客服、人工接管、建议模式
+- [x] 订单发货：卡券库存、自动发货、发货风控、重试与告警
+- [x] 数据看板、Docker 部署、MCP Server、浏览器扩展
+- [ ] 在真实账号上长期验证接口字段与风控阈值（阶段 0 技术验证清单）
+- [ ] 多实例部署：Redis Streams 事件总线，API 与 Worker 进程分离
+- [ ] 商品知识库向量检索（pgvector）
+- [ ] 闲管家开放平台官方通道
 
 ---
 
 ## 安全与合规
 
-- 本项目定位为**个人或小团队管理自己账号的私有化效率工具**，不提供公共 SaaS 抓取服务
-- 所有自动写操作（自动回复、发货、发布、评价）**默认关闭**，需要手动开启；建议先用“建议模式”观察一段时间
+- 定位为**个人或小团队管理自己账号的私有化效率工具**，不提供公共 SaaS 抓取服务
+- 所有自动写操作默认关闭；建议先用“建议模式”观察
 - 不内置任何验证码自动破解能力；遇到风控时由人工处理
 - 卖家画像等数据只做短期缓存，供本人决策参考，**禁止导出、转售或公开**
-- 请勿在回复中引导站外交易，系统会默认拦截此类内容
+- 回复中引导站外交易的内容会被默认拦截
 - 发现安全问题请通过私密渠道报告，不要公开提交 Issue
 
 ---
