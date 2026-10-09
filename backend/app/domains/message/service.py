@@ -23,6 +23,7 @@ from app.intelligence.bargain import BargainAction, BargainState, decide
 from app.intelligence.guardrails import detect_injection
 from app.intelligence.intent import Intent, classify_intent
 from app.intelligence.llm import get_llm
+from app.intelligence.retrieval import select_knowledge
 from app.notify.senders import Notification
 from app.notify.service import NotifyEvents, notify
 from app.workers.im_gateway import get_im_manager
@@ -375,7 +376,7 @@ async def plan_reply(conv_id: int, *, dry_run_text: str | None = None) -> dict[s
         item_title=item.title if item else "",
         item_price=item.price if item else None,
         item_desc=item.desc if item else "",
-        knowledge=item.knowledge if item else "",
+        knowledge=select_knowledge(item.knowledge, text) if item else "",
         history=history,
         # 没有配置议价策略时，任何低于标价的报价都会被护栏拦截
         floor_price=(policy.floor_price if policy else (item.price if item else None)),
