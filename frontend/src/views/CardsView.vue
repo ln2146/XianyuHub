@@ -37,6 +37,12 @@ const isMobile = useMobile()
 const route = useRoute()
 const router = useRouter()
 const tab = ref('pools')
+const showGuide = ref(localStorage.getItem('xh_delivery_guide') !== 'collapsed')
+
+function toggleGuide() {
+  showGuide.value = !showGuide.value
+  localStorage.setItem('xh_delivery_guide', showGuide.value ? 'expanded' : 'collapsed')
+}
 
 const kindMap: Record<PoolKind, { label: string; type: 'primary' | 'success' | 'warning'; tip: string }> = {
   text: { label: '固定内容', type: 'primary', tip: '每个买家收到的都一样，适合网盘链接、教程、资料等' },
@@ -488,14 +494,40 @@ const accountModal = reactive({
     </div>
 
     <!-- 自动发货极简 3 步向导卡片 -->
-    <div class="delivery-steps-card">
+    <div class="delivery-steps-card" :class="{ 'is-collapsed': !showGuide }">
       <div class="steps-card-header">
         <div class="steps-title">
           <el-icon class="spark-icon"><Lightning /></el-icon>
           <span>自动发货 · 快速上手向导</span>
         </div>
+        <el-button link size="small" class="guide-toggle-btn" @click="toggleGuide">
+          {{ showGuide ? '收起向导' : '展开向导' }}
+        </el-button>
       </div>
-      <div class="delivery-steps-grid">
+
+      <!-- 折叠态紧凑流程条 -->
+      <div v-if="!showGuide" class="compact-guide-bar">
+        <span class="muted smaller mr-xs">上手流程：</span>
+        <div class="compact-guide-flow">
+          <span class="compact-step" :class="{ ok: pools.length > 0 }" @click="tab = 'pools'">
+            01 配置内容 ({{ pools.length }})
+          </span>
+          <span class="compact-sep">→</span>
+          <span class="compact-step" :class="{ ok: bindings.length > 0 }" @click="tab = 'bindings'">
+            02 绑定商品 ({{ bindings.length }})
+          </span>
+          <span class="compact-sep">→</span>
+          <span
+            class="compact-step"
+            :class="{ ok: accountDeliveryStats.allEnabled, warn: accountDeliveryStats.enabled < accountDeliveryStats.total }"
+            @click="accountModal.open = true"
+          >
+            03 开启发货 ({{ accountDeliveryStats.enabled }}/{{ accountDeliveryStats.total }})
+          </span>
+        </div>
+      </div>
+
+      <div v-else class="delivery-steps-grid">
         <div class="delivery-step-item" :class="{ current: tab === 'pools' }" @click="tab = 'pools'">
           <div class="step-num-badge">01</div>
           <div class="step-content">
@@ -580,7 +612,7 @@ const accountModal = reactive({
     <el-card shadow="never" class="content-card">
       <el-tabs v-model="tab" class="delivery-tabs">
         <!-- 发货内容 -->
-        <el-tab-pane label="① 发货内容" name="pools">
+        <el-tab-pane label="发货内容库" name="pools">
           <div class="tab-bar">
             <el-button type="primary" :icon="Plus" @click="openPoolCreate">新建发货内容</el-button>
             <span class="muted small">支持固定网盘文本、卡密库存（一单一张）、自有系统 API 接口三种发货方式</span>
@@ -664,7 +696,7 @@ const accountModal = reactive({
         </el-tab-pane>
 
         <!-- 商品关联 -->
-        <el-tab-pane label="② 商品关联" name="bindings">
+        <el-tab-pane label="商品关联规则" name="bindings">
           <div class="tab-bar">
             <el-button type="primary" :icon="Plus" @click="openBindingCreate">关联闲鱼商品</el-button>
             <span class="muted small">只有关联了发货内容的商品，买家付款后系统才会触发自动发货</span>
@@ -731,7 +763,7 @@ const accountModal = reactive({
         </el-tab-pane>
 
         <!-- 黑名单 -->
-        <el-tab-pane label="③ 买家黑名单" name="blacklist">
+        <el-tab-pane label="买家黑名单" name="blacklist">
           <div class="muted small mb">黑名单中的买家下单后系统不会自动发货，订单自动转为人工处理。</div>
           <div class="toolbar mb">
             <el-input v-model="blForm.buyer_id" placeholder="买家 ID" class="w200" />
@@ -968,6 +1000,57 @@ const accountModal = reactive({
   border-radius: var(--xh-radius-lg);
   padding: var(--xh-space-4) var(--xh-space-5);
   box-shadow: var(--xh-shadow-1);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.delivery-steps-card.is-collapsed {
+  padding: 12px 18px;
+}
+.delivery-steps-card.is-collapsed .steps-card-header {
+  margin-bottom: 6px;
+}
+.compact-guide-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+.compact-guide-flow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.compact-step {
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--xh-fill);
+  color: var(--xh-text-2);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-size: 12px;
+}
+.compact-step:hover {
+  background: var(--xh-primary-soft);
+  color: var(--xh-primary);
+}
+.compact-step.ok {
+  color: var(--xh-primary);
+  font-weight: 600;
+}
+.compact-step.warn {
+  color: var(--xh-warning);
+}
+.compact-sep {
+  color: var(--xh-disabled);
+  font-size: 11px;
+}
+.guide-toggle-btn {
+  font-size: 12px;
+  color: var(--xh-muted);
+}
+.guide-toggle-btn:hover {
+  color: var(--xh-primary);
 }
 .steps-card-header {
   display: flex;
