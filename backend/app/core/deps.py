@@ -9,7 +9,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
-from app.core.security import decode_access_token
+from app.core.security import user_id_from_token
 from app.domains.system.models import Role, User
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
@@ -23,10 +23,10 @@ async def get_current_user(
     if cred is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "未登录", headers={"WWW-Authenticate": "Bearer"})
     try:
-        payload = decode_access_token(cred.credentials)
+        user_id = user_id_from_token(cred.credentials)
     except jwt.PyJWTError as e:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "登录已失效") from e
-    user = await session.get(User, int(payload["sub"]))
+    user = await session.get(User, user_id)
     if user is None or not user.is_active:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "用户不存在或已停用")
     return user

@@ -14,6 +14,7 @@ from sqlalchemy import func, select
 from app.core.config import get_settings
 from app.core.db import session_factory
 from app.core.events import Topics, bus
+from app.core.uploads import sniff_image
 from app.domains.account.models import XyAccount
 from app.domains.goods.models import DraftStatus, ItemStatus, MyItem, PublishDraftRecord
 from app.domains.system.audit import record_audit
@@ -36,12 +37,13 @@ def uploads_dir() -> Path:
     return d
 
 
-def save_upload(content: bytes, content_type: str) -> str:
-    ext = ALLOWED_IMAGE_TYPES.get(content_type)
-    if ext is None:
-        raise ValueError("只支持 JPG / PNG / WEBP 图片")
+def save_upload(content: bytes, content_type: str = "") -> str:
+    """content_type 仅作参考：真实格式按文件头判断，伪装成图片的 HTML / SVG 等一律拒绝。"""
     if len(content) > MAX_IMAGE_BYTES:
         raise ValueError("图片不能超过 10MB")
+    ext = ALLOWED_IMAGE_TYPES.get(sniff_image(content) or "")
+    if ext is None:
+        raise ValueError("只支持 JPG / PNG / WEBP 图片")
     image_id = uuid.uuid4().hex + ext
     (uploads_dir() / image_id).write_bytes(content)
     return image_id
@@ -377,14 +379,17 @@ async def polish_item(item: MyItem, user_id: int | None = None) -> None:
     )
 
 
-async def polish_all(account_id: int | None = None) -> int:
-    """每日擦亮：只处理开启了 auto_polish 的账号（若指定 account_id 则对该账号在售商品执行），商品之间随机间隔。"""
+async def polish_all(account_id: int | None = None, only_accounts: list[int] | None = None) -> int:
+    """每日擦亮：只处理开启了 auto_polish 的账号（若指定 account_id 则对该账号在售商品执行），商品之间随机间隔。
+    only_accounts：手动触发时限定为发起人有权限的账号。"""
     async with session_factory()() as s:
         stmt = select(XyAccount)
         if account_id:
             stmt = stmt.where(XyAccount.id == account_id)
         else:
             stmt = stmt.where(XyAccount.status == "active")
+        if only_accounts is not None:
+            stmt = stmt.where(XyAccount.id.in_(only_accounts))
         accounts = [a for a in (await s.execute(stmt)).scalars() if account_id or a.get_settings().auto_polish]
         items = []
         for acc in accounts:

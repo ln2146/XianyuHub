@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select
 
 from app.core.deps import CurrentUser, SessionDep
+from app.core.uploads import read_limited, sniff_image
 from app.domains.account.channel import with_fallback
 from app.domains.account.service import accessible_account_ids, get_account_for
 from app.domains.goods import service
@@ -21,6 +22,7 @@ from app.intelligence.llm import LLMError, LLMUnavailable, get_llm
 from app.runtime import get_runtime
 
 router = APIRouter(prefix="/goods", tags=["goods"])
+_background: set[asyncio.Task] = set()
 
 
 def goofish_http_error(e: Exception) -> HTTPException:
@@ -221,9 +223,14 @@ async def offline(item_pk: int, user: CurrentUser, session: SessionDep) -> dict[
 
 
 @router.post("/polish-all")
-async def trigger_polish_all(_: CurrentUser, account_id: int | None = None) -> dict[str, str]:
-    """手动立即触发自动擦亮任务（后台按安全间隔陆续执行）。"""
-    asyncio.create_task(service.polish_all(account_id=account_id))
+async def trigger_polish_all(user: CurrentUser, session: SessionDep, account_id: int | None = None) -> dict[str, str]:
+    """手动立即触发自动擦亮任务（后台按安全间隔陆续执行）。只能擦亮自己有权限的账号。"""
+    if account_id is not None:
+        await get_account_for(session, user, account_id)
+    allowed = await accessible_account_ids(session, user)  # 管理员为 None：不限
+    task = asyncio.create_task(service.polish_all(account_id=account_id, only_accounts=allowed))
+    _background.add(task)
+    task.add_done_callback(_background.discard)
     return {"message": "已在后台启动擦亮任务，在售商品将按安全间隔陆续擦亮"}
 
 
@@ -282,8 +289,8 @@ def _location(raw: dict[str, Any]) -> dict[str, Any] | None:
 # ---------------------------------------------------------------- 图片与 AI 文案
 @router.post("/uploads")
 async def upload(_: CurrentUser, file: UploadFile = File(...)) -> dict[str, str]:
-    content = await file.read()
     try:
+        content = await read_limited(file, service.MAX_IMAGE_BYTES, "图片不能超过 10MB")
         image_id = service.save_upload(content, file.content_type or "")
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
@@ -294,24 +301,48 @@ class ImportImageUrlIn(BaseModel):
     url: str
 
 
+# 只用于把选品雷达里的闲鱼商品图转存为草稿图片：限定阿里系图片域名，避免被用来访问内网（SSRF）
+IMPORT_IMAGE_HOSTS = ("alicdn.com", "goofish.com", "taobao.com", "tbcdn.cn")
+
+
+def _allowed_image_url(url: str) -> bool:
+    try:
+        u = httpx.URL(url)
+    except httpx.InvalidURL:
+        return False
+    host = (u.host or "").lower()
+    return u.scheme == "https" and any(host == h or host.endswith("." + h) for h in IMPORT_IMAGE_HOSTS)
+
+
 @router.post("/import-image-url")
 async def import_image_url(body: ImportImageUrlIn, _: CurrentUser) -> dict[str, str]:
     """通过图片外链（例如选品雷达中的商品原图）转存为本地草稿图片。"""
     url = body.url.strip()
-    if not (url.startswith("http://") or url.startswith("https://") or url.startswith("//")):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "无效的图片 URL")
     if url.startswith("//"):
         url = "https:" + url
+    elif url.startswith("http://"):
+        url = "https://" + url[len("http://") :]
+    if not _allowed_image_url(url):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "只支持导入闲鱼商品图片的链接")
     try:
-        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
-            resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0", "Referer": "https://www.goofish.com/"})
-            if resp.status_code != 200:
-                raise HTTPException(status.HTTP_400_BAD_REQUEST, f"下载图片失败：HTTP {resp.status_code}")
-            content_type = resp.headers.get("content-type", "image/jpeg")
-            image_id = service.save_upload(resp.content, content_type)
-            return {"id": image_id, "url": f"/api/v1/goods/uploads/{image_id}"}
-    except Exception as e:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"转存图片失败：{e}") from e
+        # 不跟随重定向：防止经由允许的域名跳转到内网地址
+        async with httpx.AsyncClient(timeout=15.0, follow_redirects=False) as client:
+            async with client.stream(
+                "GET", url, headers={"User-Agent": "Mozilla/5.0", "Referer": "https://www.goofish.com/"}
+            ) as resp:
+                if resp.status_code != 200:
+                    raise HTTPException(status.HTTP_400_BAD_REQUEST, "图片下载失败，请稍后重试")
+                buf = bytearray()
+                async for chunk in resp.aiter_bytes():
+                    buf += chunk
+                    if len(buf) > service.MAX_IMAGE_BYTES:
+                        raise HTTPException(status.HTTP_400_BAD_REQUEST, "图片不能超过 10MB")
+    except httpx.HTTPError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "图片下载失败，请稍后重试") from e
+    if not sniff_image(bytes(buf)):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "链接内容不是 JPG / PNG / WEBP 图片")
+    image_id = service.save_upload(bytes(buf))
+    return {"id": image_id, "url": f"/api/v1/goods/uploads/{image_id}"}
 
 
 @router.get("/uploads/{image_id}")

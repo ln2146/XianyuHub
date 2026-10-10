@@ -21,13 +21,14 @@ from app.core.db import session_factory
 from app.core.deps import CurrentUser, SessionDep
 from app.core.pagination import set_total
 from app.core.realtime import hub
-from app.core.security import decode_access_token
+from app.core.security import user_id_from_token
+from app.core.uploads import TooLarge, read_limited
 from app.domains.account.models import XyAccount
 from app.domains.account.service import accessible_account_ids, get_account_for
 from app.domains.goods.models import MyItem
 from app.domains.message import service
 from app.domains.message.evidence import build_evidence
-from app.domains.message.knowledge import UnsupportedFile, extract_text
+from app.domains.message.knowledge import MAX_FILE_BYTES, UnsupportedFile, extract_text_async
 from app.domains.message.models import (
     ChatMessage,
     Conversation,
@@ -560,10 +561,10 @@ async def upload_doc(
     """上传给 AI 参考的资料（txt / md / csv / pdf / docx，≤ 50MB），保存提取出的文字。"""
     if account_id is not None:
         await get_account_for(session, user, account_id)
-    data = await file.read()
     try:
-        text = extract_text(file.filename or "", data)
-    except UnsupportedFile as e:
+        data = await read_limited(file, MAX_FILE_BYTES, "文件超过 50MB，请拆分后再上传")
+        text = await extract_text_async(file.filename or "", data)
+    except (UnsupportedFile, TooLarge) as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
     d = KnowledgeDoc(owner_id=user.id, account_id=account_id, name=(file.filename or "资料")[:200], content=text)
     session.add(d)
@@ -649,12 +650,12 @@ async def im_status(user: CurrentUser, session: SessionDep) -> dict[str, Any]:
 @ws_router.websocket("/api/v1/ws")
 async def realtime(ws: WebSocket, token: str = Query(...)) -> None:
     try:
-        payload = decode_access_token(token)
+        user_id = user_id_from_token(token)
     except jwt.PyJWTError:
         await ws.close(code=4401)
         return
     async with session_factory()() as s:
-        user = await s.get(User, int(payload["sub"]))
+        user = await s.get(User, user_id)
         if user is None or not user.is_active:
             await ws.close(code=4401)
             return
