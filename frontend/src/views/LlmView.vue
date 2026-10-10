@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Connection, Delete, Plus, Refresh } from '@element-plus/icons-vue'
+import { Connection, Delete, Download, InfoFilled, Plus, Refresh } from '@element-plus/icons-vue'
 import {
   activateLlmProvider,
   createLlmProvider,
@@ -96,8 +96,16 @@ const needsNewKey = computed(
     (edit.kind !== edit.orig_kind || normUrl(edit.base_url) !== normUrl(edit.orig_base_url)),
 )
 const KEY_REBIND_TIP = '修改了接口地址，请重新填写 API Key（已保存的 Key 不会发往新的地址）'
+const activePresetNote = computed(() => presets.value.find((x) => x.id === edit.preset)?.note || '')
 
-const baseUrlPlaceholder = '例如 https://api.deepseek.com/v1'
+const baseUrlPlaceholder = computed(() => {
+  if (edit.preset === 'dashscope') return '例如 https://dashscope.aliyuncs.com/compatible-mode/v1'
+  if (edit.preset === 'deepseek') return '例如 https://api.deepseek.com/v1'
+  if (edit.preset === 'zhipu') return '例如 https://open.bigmodel.cn/api/paas/v4'
+  if (edit.preset === 'moonshot') return '例如 https://api.moonshot.cn/v1'
+  if (edit.preset === 'siliconflow') return '例如 https://api.siliconflow.cn/v1'
+  return '例如 https://dashscope.aliyuncs.com/compatible-mode/v1 或 https://api.deepseek.com/v1'
+})
 
 function applyPreset(id: string) {
   const p = presets.value.find((x) => x.id === id)
@@ -438,16 +446,33 @@ async function remove(p: LlmProvider) {
       </div>
     </template>
 
-    <el-dialog v-model="edit.open" :title="edit.id ? `编辑接入 · ${edit.name}` : '添加模型接入'" :width="isMobile ? '92%' : '600px'">
-      <el-form label-width="110px" :label-position="isMobile ? 'top' : 'right'">
+    <el-dialog
+      v-model="edit.open"
+      :title="edit.id ? `编辑接入 · ${edit.name}` : '添加模型接入'"
+      :width="isMobile ? '94%' : '660px'"
+      :close-on-click-modal="false"
+      class="model-dialog"
+    >
+      <el-form label-width="118px" :label-position="isMobile ? 'top' : 'right'" class="model-form">
         <el-form-item v-if="!edit.id" label="快速预设">
-          <el-select v-model="edit.preset" class="w260" @change="applyPreset">
-            <el-option v-for="p in presets" :key="p.id" :value="p.id" :label="p.name" />
-          </el-select>
+          <div class="preset-field-wrap">
+            <el-select v-model="edit.preset" class="full-width" placeholder="选择供应商预设，快速填入配置" @change="applyPreset">
+              <el-option v-for="p in presets" :key="p.id" :value="p.id" :label="p.name">
+                <div class="preset-option-row">
+                  <span class="preset-option-name">{{ p.name }}</span>
+                  <span v-if="p.note" class="preset-option-note">{{ p.note }}</span>
+                </div>
+              </el-option>
+            </el-select>
+            <div v-if="activePresetNote" class="preset-hint">
+              <el-icon class="preset-hint-icon"><InfoFilled /></el-icon>
+              <span>{{ activePresetNote }}</span>
+            </div>
+          </div>
         </el-form-item>
 
         <el-form-item label="名称" required>
-          <el-input v-model="edit.name" maxlength="64" placeholder="例如：DeepSeek 主力" />
+          <el-input v-model="edit.name" maxlength="64" placeholder="例如：阿里、DeepSeek 主力" />
         </el-form-item>
 
         <el-form-item label="接口地址" required>
@@ -460,56 +485,135 @@ async function remove(p: LlmProvider) {
             type="password"
             show-password
             :placeholder="edit.id && edit.has_key ? `已保存 ${edit.masked}，留空表示不修改` : 'sk-...'"
-            autocomplete="off"
+            autocomplete="new-password"
           />
           <div v-if="needsNewKey" class="form-tip warn">{{ KEY_REBIND_TIP }}</div>
         </el-form-item>
 
-        <el-form-item label="模型名">
-          <div class="models">
-            <el-select
-              v-for="t in [
-                { key: 'model_vision', label: '多模态' },
-                { key: 'model_chat', label: '对话' },
-                { key: 'model_fast', label: '快速' },
-              ]"
-              :key="t.key"
-              v-model="edit[t.key as 'model_vision' | 'model_chat' | 'model_fast']"
-              filterable
-              allow-create
-              default-first-option
-              clearable
-              :placeholder="t.label"
-              class="model-input"
-            >
-              <el-option v-for="m in edit.models" :key="m" :value="m" :label="m" />
-            </el-select>
+        <el-form-item label="模型配置">
+          <div class="model-slots-container">
+            <div class="model-slots-grid">
+              <div class="model-slot-card">
+                <div class="slot-header">
+                  <span class="slot-title">对话主力</span>
+                  <span class="slot-role">客服问答</span>
+                </div>
+                <el-select
+                  v-model="edit.model_chat"
+                  filterable
+                  allow-create
+                  default-first-option
+                  clearable
+                  placeholder="如 qwen-plus"
+                  class="full-width"
+                >
+                  <el-option v-for="m in edit.models" :key="m" :value="m" :label="m" />
+                </el-select>
+              </div>
+
+              <div class="model-slot-card">
+                <div class="slot-header">
+                  <span class="slot-title">多模态</span>
+                  <span class="slot-role">看图发品</span>
+                </div>
+                <el-select
+                  v-model="edit.model_vision"
+                  filterable
+                  allow-create
+                  default-first-option
+                  clearable
+                  placeholder="如 qwen-vl-max"
+                  class="full-width"
+                >
+                  <el-option v-for="m in edit.models" :key="m" :value="m" :label="m" />
+                </el-select>
+              </div>
+
+              <div class="model-slot-card">
+                <div class="slot-header">
+                  <span class="slot-title">快速轻量</span>
+                  <span class="slot-role">意图分类</span>
+                </div>
+                <el-select
+                  v-model="edit.model_fast"
+                  filterable
+                  allow-create
+                  default-first-option
+                  clearable
+                  placeholder="如 qwen-turbo"
+                  class="full-width"
+                >
+                  <el-option v-for="m in edit.models" :key="m" :value="m" :label="m" />
+                </el-select>
+              </div>
+            </div>
+
+            <div class="model-fetch-row">
+              <el-button size="small" :icon="Download" :loading="edit.fetching" @click="pullModels">
+                从接口拉取模型列表
+              </el-button>
+              <span class="fetch-tip">
+                {{ edit.models.length ? `已获取 ${edit.models.length} 个可用模型` : '填写接口与 Key 后可在线查询可用模型' }}
+              </span>
+            </div>
           </div>
-          <div class="model-action-row">
-            <el-button size="small" :loading="edit.fetching" @click="pullModels">从接口拉取模型列表</el-button>
+        </el-form-item>
+
+        <el-row :gutter="16">
+          <el-col :xs="24" :sm="12">
+            <el-form-item label="超时时间">
+              <el-input-number
+                v-model="edit.timeout_seconds"
+                :min="5"
+                :max="600"
+                :step="5"
+                controls-position="right"
+                class="full-width"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :xs="24" :sm="12">
+            <el-form-item label="每日 Token 预算">
+              <el-input-number
+                v-model="edit.daily_token_budget"
+                :min="0"
+                :step="100000"
+                controls-position="right"
+                placeholder="留空沿用全局"
+                class="full-width"
+              />
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-form-item label="运行设置">
+          <div class="setting-switches-group">
+            <div class="setting-switch-item">
+              <el-switch v-model="edit.enabled" />
+              <div class="switch-text">
+                <span class="switch-title">启用此服务</span>
+                <span class="switch-desc">关闭后系统将不再使用该接入分发请求</span>
+              </div>
+            </div>
+            <div v-if="!edit.id" class="setting-switch-item">
+              <el-switch v-model="edit.activate" />
+              <div class="switch-text">
+                <span class="switch-title">设为当前主力</span>
+                <span class="switch-desc">保存后立即切换为当前默认大模型生效</span>
+              </div>
+            </div>
           </div>
-        </el-form-item>
-
-        <el-form-item label="超时（秒）">
-          <el-input-number v-model="edit.timeout_seconds" :min="5" :max="600" :step="5" controls-position="right" />
-        </el-form-item>
-
-        <el-form-item label="每日 Token 上限">
-          <el-input-number v-model="edit.daily_token_budget" :min="0" :step="100000" controls-position="right" placeholder="留空沿用全局" />
-        </el-form-item>
-
-        <el-form-item label="启用">
-          <el-switch v-model="edit.enabled" />
-        </el-form-item>
-
-        <el-form-item v-if="!edit.id" label="保存后启用">
-          <el-switch v-model="edit.activate" />
         </el-form-item>
       </el-form>
+
       <template #footer>
-        <el-button :loading="edit.testing" @click="probe">测试连接</el-button>
-        <el-button @click="edit.open = false">取消</el-button>
-        <el-button type="primary" :loading="edit.saving" @click="save">保存</el-button>
+        <div class="dialog-footer-content">
+          <el-button :icon="Connection" :loading="edit.testing" @click="probe">测试连接</el-button>
+          <div class="footer-right-buttons">
+            <el-button @click="edit.open = false">取消</el-button>
+            <el-button type="primary" :loading="edit.saving" @click="save">保存接入</el-button>
+          </div>
+        </div>
       </template>
     </el-dialog>
   </div>
@@ -589,19 +693,6 @@ async function remove(p: LlmProvider) {
 .prov-ops .el-button + .el-button {
   margin-left: 0;
 }
-.models {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  width: 100%;
-}
-.model-input {
-  width: 150px;
-}
-.w260 {
-  width: 260px;
-  max-width: 100%;
-}
 .ml {
   margin-left: 8px;
 }
@@ -610,5 +701,147 @@ async function remove(p: LlmProvider) {
 }
 .form-tip.warn {
   color: var(--el-color-warning);
+}
+
+/* ---------- 弹窗表单样式优化 ---------- */
+.full-width {
+  width: 100% !important;
+}
+:deep(.model-form .el-form-item__label) {
+  font-weight: 500;
+  color: var(--xh-text);
+  white-space: nowrap;
+}
+.preset-field-wrap {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.preset-option-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  gap: 16px;
+}
+.preset-option-name {
+  font-weight: 500;
+  color: var(--xh-text);
+}
+.preset-option-note {
+  font-size: 12px;
+  color: var(--xh-text-muted);
+}
+.preset-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--xh-text-muted);
+  background: #f4f8fa;
+  padding: 6px 12px;
+  border-radius: var(--xh-radius-sm);
+  line-height: 1.4;
+  border-left: 3px solid var(--xh-brand);
+}
+.preset-hint-icon {
+  color: var(--xh-brand);
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.model-slots-container {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.model-slots-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  width: 100%;
+}
+@media (max-width: 600px) {
+  .model-slots-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.model-slot-card {
+  background: #f8fafc;
+  border: 1px solid var(--xh-border);
+  border-radius: var(--xh-radius-sm);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.slot-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 12px;
+}
+.slot-title {
+  font-weight: 600;
+  color: var(--xh-text);
+}
+.slot-role {
+  font-size: 11px;
+  color: var(--xh-text-muted);
+}
+.model-fetch-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 2px;
+}
+.fetch-tip {
+  font-size: 12px;
+  color: var(--xh-text-muted);
+}
+
+.setting-switches-group {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  background: #f8fafc;
+  border: 1px solid var(--xh-border);
+  border-radius: var(--xh-radius-sm);
+  padding: 10px 14px;
+  width: 100%;
+}
+.setting-switch-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.switch-text {
+  display: flex;
+  flex-direction: column;
+}
+.switch-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--xh-text);
+  line-height: 1.2;
+}
+.switch-desc {
+  font-size: 11px;
+  color: var(--xh-text-muted);
+  line-height: 1.3;
+  margin-top: 2px;
+}
+
+.dialog-footer-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+.footer-right-buttons {
+  display: flex;
+  gap: 8px;
 }
 </style>

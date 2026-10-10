@@ -38,11 +38,11 @@ PRESETS: list[dict[str, Any]] = [
     },
     {
         "id": "dashscope",
-        "name": "通义千问（阿里云百炼）",
+        "name": "阿里",
         "kind": "openai_compatible",
         "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
         "models": {"vision": "qwen-vl-max", "chat": "qwen-plus", "fast": "qwen-turbo"},
-        "note": "国内直连，qwen-vl 系列支持图片",
+        "note": "国内直连，支持多模态与对话（百炼）",
     },
     {
         "id": "zhipu",
