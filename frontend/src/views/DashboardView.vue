@@ -95,7 +95,12 @@ onBeforeUnmount(() => {
 
 const kpis = computed(() => {
   const t = data.value?.today
-  const orders = t ? Object.values(t.orders).reduce((a, b) => a + b, 0) : 0
+  const allOrders = t ? Object.values(t.orders).reduce((a, b) => a + b, 0) : 0
+  const paidOrders = t
+    ? Object.entries(t.orders)
+        .filter(([st]) => !['pending_pay', 'closed', 'refunded'].includes(st))
+        .reduce((a, [_, b]) => a + b, 0)
+    : 0
   const radar = t ? (t.radar.recommend || 0) + (t.radar.conditional || 0) : 0
   const list = [
     {
@@ -126,9 +131,9 @@ const kpis = computed(() => {
       path: '/orders/cards',
     },
     {
-      label: '今日订单成交',
-      value: orders,
-      hint: '含待付款全量订单',
+      label: '今日成交订单',
+      value: paidOrders,
+      hint: allOrders > paidOrders ? `含待付款共 ${allOrders} 笔` : '全部已支付履约',
       icon: Box,
       color: '#f97316',
       bg: 'rgba(249, 115, 22, 0.1)',

@@ -178,7 +178,7 @@ async def test_account_relogin_clears_error(admin_client: httpx.AsyncClient):
     assert "SESSION_EXPIRED" in r.json()["last_error"]
 
     # 重新登录（导入新 Cookie，继承原代理）
-    new_cookies = COOKIES.replace("unb=2219896089989", "unb=2219896089989") + "; cookie2=updated_cookie"
+    new_cookies = COOKIES + "; cookie2=updated_cookie"
     r2 = await admin_client.post(
         "/api/v1/accounts/import",
         json={"cookies": new_cookies, "account_id": account_id, "verify": False},

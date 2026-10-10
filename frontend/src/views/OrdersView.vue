@@ -316,6 +316,25 @@ async function toManual(o: Order) {
   }
 }
 
+async function markResolved(o: Order) {
+  await ElMessageBox.confirm(
+    '确认该订单已在线下或闲鱼手机端完成发货 / 协商一致？标记后将转为「已发货」并解除待办报警。',
+    '标记已处理',
+    { type: 'success', confirmButtonText: '确定标记' },
+  )
+  busy[`m-${o.id}`] = true
+  try {
+    const r = await resolveManualOrder(o.id, 'delivered')
+    ElMessage.success(`订单已标记处理完成，当前状态：${orderStatusMap[r.status]?.label || r.status}`)
+    await load(page.value)
+    if (detail.open && detail.order?.id === o.id) await openDetail(o)
+  } catch {
+    /* 拦截器已提示 */
+  } finally {
+    busy[`m-${o.id}`] = false
+  }
+}
+
 // ---------------------------------------------------------------- 详情
 const detail = reactive({ open: false, loading: false, order: null as Order | null, deliveries: [] as DeliveryRecord[] })
 
@@ -454,6 +473,16 @@ async function openDetail(o: Order) {
                 <el-button v-if="row.status === 'risk_hold'" size="small" type="warning" plain :loading="busy[`h-${row.id}`]" @click="toManual(row as Order)">
                   转人工
                 </el-button>
+                <el-button
+                  v-if="['manual', 'deliver_failed'].includes(row.status)"
+                  size="small"
+                  type="success"
+                  plain
+                  :loading="busy[`m-${row.id}`]"
+                  @click="markResolved(row as Order)"
+                >
+                  标记已处理
+                </el-button>
               </div>
             </template>
           </el-table-column>
@@ -493,6 +522,15 @@ async function openDetail(o: Order) {
               {{ isOutOfStock(detail.order) ? '重试发货' : '手动发货' }}
             </el-button>
             <el-button v-if="detail.order.status === 'risk_hold'" type="warning" plain @click="toManual(detail.order)">转人工</el-button>
+            <el-button
+              v-if="['manual', 'deliver_failed'].includes(detail.order.status)"
+              type="success"
+              plain
+              :loading="busy[`m-${detail.order.id}`]"
+              @click="markResolved(detail.order)"
+            >
+              标记已处理
+            </el-button>
           </div>
 
           <h4>发货记录</h4>

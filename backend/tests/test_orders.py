@@ -7,7 +7,7 @@ from sqlalchemy import select
 from app.core.db import session_factory
 from app.domains.goods.models import MyItem
 from app.domains.order import service as order_service
-from app.domains.order.models import CardItem, Order
+from app.domains.order.models import CardItem, Order, OrderState
 from app.goofish.dto import SystemNotice
 from tests.test_messages import BUYER, FakeIm, chat, im, receive  # noqa: F401
 
@@ -393,3 +393,53 @@ async def test_item_still_on_sale_or_out_of_cards_is_not_relisted(admin_client, 
     await paid(account_id, "4400203")
     await _run_relist(monkeypatch)
     assert not publish.called
+
+
+@respx.mock
+async def test_manual_order_sync_completed_and_manual_resolve(admin_client, im):  # noqa: F811
+    account_id, _ = im
+    mock_trade()
+    async with session_factory()() as s:
+        order = Order(
+            account_id=account_id,
+            order_id="998877",
+            status=OrderState.MANUAL,
+            amount=99.0,
+            fail_reason="卡密不足转人工",
+        )
+        s.add(order)
+        await s.commit()
+        order_pk = order.id
+
+    # 此时 dashboard 应有 1 笔待人工处理订单
+    d = (await admin_client.get("/api/v1/dashboard")).json()
+    assert d["pending_manual_orders"] == 1
+
+    # 测试人工标记已处理接口
+    r = await admin_client.post(f"/api/v1/orders/{order_pk}/resolve-manual?action=delivered")
+    assert r.status_code == 200 and r.json()["status"] == "delivered"
+
+    # 再次检查 dashboard：待办订单已自动自愈为 0
+    d = (await admin_client.get("/api/v1/dashboard")).json()
+    assert d["pending_manual_orders"] == 0
+
+    # 测试从 deliver_failed 到远端 completed 状态迁移
+    async with session_factory()() as s:
+        failed_order = Order(
+            account_id=account_id,
+            order_id="998878",
+            status=OrderState.DELIVER_FAILED,
+            amount=50.0,
+        )
+        s.add(failed_order)
+        await s.commit()
+
+    # 模拟远端返回已完成
+    from app.goofish.parsers.trade import RemoteOrder, OrderStatus
+    async with session_factory()() as s:
+        o = (await s.execute(select(Order).where(Order.order_id == "998878"))).scalar_one()
+        remote = RemoteOrder(order_id="998878", status=OrderStatus.COMPLETED, status_text="交易成功")
+        local = order_service._REMOTE_TO_LOCAL.get(remote.status)
+        assert await order_service.transition(s, o, local)
+        await s.commit()
+        assert o.status == OrderState.COMPLETED
