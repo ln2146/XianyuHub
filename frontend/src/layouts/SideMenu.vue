@@ -90,7 +90,7 @@ const activeMenu = computed(() => {
       </template>
       <el-menu-item index="/messages/inbox">
         <el-icon class="sub-icon"><Message /></el-icon>
-        <template #title><span>收件箱</span></template>
+        <template #title><span>在线客服</span></template>
       </el-menu-item>
       <el-menu-item index="/messages/rules">
         <el-icon class="sub-icon"><Operation /></el-icon>

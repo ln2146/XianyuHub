@@ -92,7 +92,7 @@ const steps = computed<Step[]>(() => {
     {
       key: 'reply',
       title: '试运行后开启自动回复',
-      desc: '先在收件箱点「试运行」看 AI 会怎么回，满意了再在账号设置里打开',
+      desc: '先在在线客服点「试运行」看 AI 会怎么回，满意了再在账号设置里打开',
       done: accounts.some((a) => a.auto_reply),
       to: '/messages/inbox',
       action: '去试运行',

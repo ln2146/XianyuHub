@@ -27,7 +27,7 @@ const routes: RouteRecordRaw[] = [
       // 旧地址（自动搜货 / 好货看板）已合并为智能搜索
       { path: 'radar/tasks', redirect: (to) => ({ path: '/radar/smart', query: to.query }) },
       { path: 'radar/results', redirect: (to) => ({ path: '/radar/smart', query: to.query }) },
-      { path: 'messages/inbox', component: () => import('@/views/InboxView.vue'), meta: { title: '收件箱' } },
+      { path: 'messages/inbox', component: () => import('@/views/InboxView.vue'), meta: { title: '在线客服' } },
       { path: 'messages/rules', component: () => import('@/views/ReplyRulesView.vue'), meta: { title: '回复规则' } },
       { path: 'goods/items', component: () => import('@/views/GoodsItemsView.vue'), meta: { title: '商品管理' } },
       { path: 'goods/publish', component: () => import('@/views/GoodsPublishView.vue'), meta: { title: '发布商品' } },
