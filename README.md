@@ -6,9 +6,10 @@
 
 **自己部署的闲鱼助手：买家用它淘好货，卖家用它自动回复、自动发货。**
 
-[![CI](https://github.com/ln2146/XianyuHub/actions/workflows/ci.yml/badge.svg)](https://github.com/ln2146/XianyuHub/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
 ![Vue](https://img.shields.io/badge/Vue-3-42b883?logo=vue.js&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-async-009688?logo=fastapi&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
 ![Status](https://img.shields.io/badge/status-alpha-orange)
 
@@ -164,16 +165,10 @@ docker compose up -d --build
 
 发现安全问题请通过私密渠道联系，不要公开提交 Issue。
 
-## 致谢
-
-设计参考了以下开源项目的思路（独立实现，未复制其代码）：
-[ai-goofish-monitor](https://github.com/Usagi-org/ai-goofish-monitor) ·
-[XianYuApis](https://github.com/cv-cat/XianYuApis) ·
-[xianyu-auto-reply](https://github.com/zhinianboke/xianyu-auto-reply) ·
-[XianyuAutoAgent](https://github.com/shaxiu/XianyuAutoAgent) ·
-[xianyu_spider](https://github.com/superboyyy/xianyu_spider) ·
-[goofish-cli](https://github.com/fancyboi999/goofish-cli)
-
 ## 免责声明
 
 本项目仅供学习与研究使用，定位为个人或小团队管理**自己账号**的效率工具，不提供公共抓取服务。使用本项目访问闲鱼可能违反其用户协议，并可能导致账号受限或封禁，**由此产生的一切后果由使用者自行承担**。请遵守《网络安全法》《个人信息保护法》《数据安全法》等法律法规及平台规则，不得用于任何违法违规用途。卖家画像等数据仅做短期缓存供本人参考，禁止导出、转售或公开。本项目与闲鱼、阿里巴巴集团无任何关联。
+
+## 开源协议
+
+[MIT](LICENSE)
