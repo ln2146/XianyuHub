@@ -12,6 +12,7 @@ from app.domains.goods.models import MyItem
 from app.domains.message import service
 from app.domains.message.models import ChatMessage, Conversation, MessageSource, ReplySuggestion
 from app.goofish.dto import ImEvent, ImEventType, SystemNotice
+from app.goofish.errors import RiskBlockedError
 from app.intelligence.llm import LLMGateway, LLMResult, set_llm
 from app.workers.im_gateway import ImGatewayManager, set_im_manager
 from tests.test_accounts import COOKIES, mock_probe
@@ -300,13 +301,12 @@ async def test_outbound_sensitive_message_interceptor(admin_client, im):
     conv_id = (await admin_client.get("/api/v1/messages/conversations")).json()[0]["id"]
 
     # 1. 自动化消息（AI/关键词/默认）包含微信/手机号会被拦截并转人工接管
-    msg = await service.send_text(
-        conv_id,
-        "加我微信 13800138000 详谈吧",
-        source=MessageSource.AUTO_AI,
-    )
-    assert msg.source == MessageSource.SYSTEM
-    assert "风控拦截" in msg.text
+    # 没有发给买家，必须抛错：否则调用方会把它当成已发送（规则命中 +1、建议标记「已发送」）
+    with pytest.raises(RiskBlockedError, match="敏感词拦截"):
+        await service.send_text(conv_id, "加我微信 13800138000 详谈吧", source=MessageSource.AUTO_AI)
+    msgs = (await admin_client.get(f"/api/v1/messages/conversations/{conv_id}/messages")).json()
+    msgs = msgs.get("items", msgs) if isinstance(msgs, dict) else msgs
+    assert any(m["source"] == MessageSource.SYSTEM and "风控拦截" in m["text"] for m in msgs)
     assert len(fake.sent) == 0  # 没有真正发送给闲鱼
 
     # 验证该会话已进入人工接管
@@ -346,3 +346,82 @@ async def test_alert_when_im_stays_disconnected(admin_client, im):
     await asyncio.gather(*manager._watchers.values())
     assert hook.call_count == 1 and "消息连接已断开" in hook.calls[0].request.content.decode()
     fake.connected.set()
+
+
+class HoldingLLM:
+    """模型拿不准：给出过渡回复并要求人工跟进。"""
+
+    async def complete(self, **kw):
+        if "intent" in kw["schema"]["properties"]:
+            return LLMResult(text='{"intent": "product"}', model="m")
+        return LLMResult(text='{"reply":"我确认一下再回你哈","need_human":true,"reason":"知识库未覆盖"}', model="m")
+
+
+@respx.mock
+async def test_holding_reply_is_sent_and_seller_is_asked_to_follow_up(admin_client, im):
+    account_id, fake = im
+    hook = respx.post("https://hook.example.com/hold").mock(return_value=httpx.Response(200))
+    await admin_client.post(
+        "/api/v1/notify/channels",
+        json={"name": "h", "type": "webhook", "config": {"url": "https://hook.example.com/hold"}},
+    )
+    set_llm(LLMGateway(provider=HoldingLLM()))
+    await receive(account_id, chat("资料是什么格式的"))
+    # 以前：先进入接管，发送前的接管检查把这句过渡回复拦掉了，买家什么也收不到
+    assert [t for *_, t in fake.sent] == ["我确认一下再回你哈"]
+    assert hook.called and "人工" in hook.calls[-1].request.content.decode()
+    set_llm(None)
+
+
+async def test_duplicate_and_stale_messages_are_not_answered(admin_client, im):
+    from datetime import UTC, datetime, timedelta
+
+    account_id, fake = im
+    await admin_client.post("/api/v1/messages/rules", json={"keywords": ["在吗"], "reply": "在的"})
+    ev = chat("在吗")
+    ev.created_at = datetime.now(UTC)
+    await receive(account_id, ev)
+    await receive(account_id, ev.model_copy())  # 重连后服务端重推的同一帧
+    assert len(fake.sent) == 1
+    conv_id = (await admin_client.get("/api/v1/messages/conversations")).json()[0]["id"]
+    msgs = (await admin_client.get(f"/api/v1/messages/conversations/{conv_id}/messages")).json()
+    msgs = msgs.get("items", msgs) if isinstance(msgs, dict) else msgs
+    assert [m["text"] for m in msgs if m["direction"] == "in"] == ["在吗"]  # 重复帧不入库
+
+    old = chat("在吗", cid="c-old")
+    old.created_at = datetime.now(UTC) - timedelta(minutes=30)  # 补推的历史消息
+    await receive(account_id, old)
+    assert len(fake.sent) == 1
+
+
+async def test_backlog_while_auto_reply_off_is_not_answered_later(admin_client, im):
+    account_id, fake = im
+    await admin_client.post("/api/v1/messages/rules", json={"keywords": ["在吗"], "reply": "在的"})
+    await admin_client.patch(
+        f"/api/v1/accounts/{account_id}", json={"settings": {"auto_reply": False, "ai_mode": "off"}}
+    )
+    await receive(account_id, chat("在吗"))
+    assert fake.sent == []
+    await admin_client.patch(f"/api/v1/accounts/{account_id}", json={"settings": {"auto_reply": True}})
+    await receive(account_id, chat("你好"))
+    # 以前会把关闭期间的「在吗」和新消息合并，命中规则回复「在的」
+    assert all(t != "在的" for *_, t in fake.sent)
+
+
+@respx.mock
+async def test_buyer_messages_during_takeover_alert_the_seller(admin_client, im):
+    account_id, fake = im
+    hook = respx.post("https://hook.example.com/tk").mock(return_value=httpx.Response(200))
+    await admin_client.post(
+        "/api/v1/notify/channels",
+        json={"name": "h", "type": "webhook", "config": {"url": "https://hook.example.com/tk"}},
+    )
+    await receive(account_id, chat("你好"))
+    conv_id = (await admin_client.get("/api/v1/messages/conversations")).json()[0]["id"]
+    await admin_client.post(f"/api/v1/messages/conversations/{conv_id}/takeover", json={"minutes": 60})
+    hook.calls.reset()
+    sent_before = len(fake.sent)
+    await receive(account_id, chat("还在吗？怎么不回"))
+    await asyncio.sleep(0.05)
+    assert len(fake.sent) == sent_before
+    assert any("人工接管中" in c.request.content.decode() for c in hook.calls)

@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from loguru import logger
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import session_factory
@@ -31,6 +31,11 @@ from app.notify.service import drain as drain_notifications
 from app.workers.im_gateway import get_im_manager
 
 _pending: dict[tuple[int, str], asyncio.Task] = {}
+# 同一条消息（重连后服务端重推的帧）只处理一次：(账号, 会话, 发送者, 发送时间, 文本) → 收到时间
+_seen_events: dict[tuple, float] = {}
+SEEN_TTL = 600
+# 发送时间早于这么久的消息只入库、不自动回复（断线重连后补推的历史消息，回复已经没有意义）
+STALE_REPLY_SECONDS = 600
 _tasks: set[asyncio.Task] = set()
 _recent_sent: dict[tuple[int, str], list[tuple[str, float]]] = {}
 ECHO_WINDOW = 120
@@ -151,6 +156,14 @@ async def handle_event(account_id: int, ev: ImEvent) -> None:
         return
     if ev.type != ImEventType.CHAT or not ev.cid:
         return
+    if ev.created_at is not None:
+        now = time.time()
+        for k in [k for k, t in _seen_events.items() if now - t > SEEN_TTL]:
+            _seen_events.pop(k, None)
+        key = (account_id, ev.cid, ev.sender_id, ev.created_at.timestamp(), ev.text)
+        if key in _seen_events:
+            return  # 重复推送
+        _seen_events[key] = now
 
     async with session_factory()() as s:
         acc = await s.get(XyAccount, account_id)
@@ -232,6 +245,9 @@ async def handle_event(account_id: int, ev: ImEvent) -> None:
                 content=f"买家：{peer_name}\n消息：{ev.text[:200]}",
             ),
         )
+    if ev.created_at is not None and time.time() - ev.created_at.timestamp() > STALE_REPLY_SECONDS:
+        logger.info("跳过过期消息的自动回复 conversation={} sent_at={}", conv_id, ev.created_at)
+        return
     _schedule_reply(account_id, ev.cid, conv_id, settings.merge_window_seconds)
 
 
@@ -250,10 +266,31 @@ def _schedule_reply(account_id: int, cid: str, conv_id: int, window: float) -> N
         _pending.pop(key, None)
         try:
             await auto_reply(conv_id)
-        except Exception:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
             logger.exception("自动回复失败 conversation={}", conv_id)
+            # 这些买家消息已记为处理过，不提醒的话就再也没人回了
+            await _alert_unanswered(conv_id, f"自动回复没有发出去（{e or type(e).__name__}），请人工回复")
 
     _pending[key] = _spawn(_later())
+
+
+async def _alert_unanswered(conv_id: int, reason: str) -> None:
+    async with session_factory()() as s:
+        conv = await s.get(Conversation, conv_id)
+        acc = await s.get(XyAccount, conv.account_id) if conv else None
+        if conv is None or acc is None:
+            return
+        owner_id, nickname = acc.owner_id, acc.nickname or acc.unb
+        buyer, last = conv.peer_name or conv.peer_id, conv.last_message
+    notify_background(
+        owner_id,
+        Notification(
+            event=NotifyEvents.HUMAN_HANDOFF,
+            title=f"💬 需要人工回复（{nickname}）",
+            content=f"{reason}\n买家：{buyer}\n最新消息：{last}",
+        ),
+        dedupe_key=f"unanswered:{conv_id}",
+    )
 
 
 # ---------------------------------------------------------------- 自动回复
@@ -432,14 +469,28 @@ async def auto_reply(conv_id: int) -> dict[str, Any]:
         settings = acc.get_settings()
         owner_id, nickname = acc.owner_id, acc.nickname or acc.unb
     if not settings.auto_reply and settings.ai_mode != "suggest":
+        # 关闭期间的消息也记为已处理：否则重新打开后，下一条消息会把积压的旧消息一起合并回复
+        async with session_factory()() as s:
+            conv = await s.get(Conversation, conv_id)
+            latest = (
+                await s.execute(select(func.max(ChatMessage.id)).where(ChatMessage.conversation_id == conv_id))
+            ).scalar_one_or_none()
+            if conv is not None and latest:
+                conv.handled_upto_id = max(conv.handled_upto_id or 0, latest)
+                await s.commit()
         return {"action": "none", "note": "自动回复未开启"}
 
     plan = await plan_reply(conv_id)
+    if plan.get("note") == "人工接管中":
+        # 接管期间的买家消息不会自动回复：提醒正在接管的人去看（同一会话 10 分钟内只提醒一次）
+        await _alert_unanswered(conv_id, "人工接管中，买家发来了新消息")
+        return plan
     action = plan.get("action")
     if action == "send" and not settings.auto_reply:
         action = "suggest" if plan.get("source") == MessageSource.AUTO_AI else "none"
 
-    if action == "handoff" or plan.get("need_human"):
+    handing_off = action == "handoff" or bool(plan.get("need_human"))
+    if handing_off:
         await set_takeover(conv_id, settings.takeover_minutes)
         await notify(
             owner_id,
@@ -469,7 +520,8 @@ async def auto_reply(conv_id: int) -> dict[str, Any]:
         await asyncio.sleep(delay)
         async with session_factory()() as s:  # 等待期间卖家可能已接管
             conv = await s.get(Conversation, conv_id)
-            if conv is None or in_takeover(conv):
+            # 转人工时的过渡回复（如「我确认一下再回你」）要照常发出：接管是我们自己刚设的
+            if conv is None or (in_takeover(conv) and not handing_off):
                 return {"action": "none", "note": "等待期间进入人工接管"}
         await send_text(conv_id, plan["text"], source=plan["source"], meta={"intent": str(plan.get("intent", ""))})
         async with session_factory()() as s:
@@ -563,8 +615,7 @@ async def send_text(conv_id: int, text: str, *, source: str, meta: dict[str, Any
                     account_id = conv.account_id
                     conv.takeover_until = datetime.now(UTC) + timedelta(minutes=120)
                     intercept_msg = (
-                        f"🛡️ [风控拦截] 系统拦截了拟自动发送的内容（{reason}），已暂停自动回复并转交人工："
-                        f"\n「{text}」"
+                        f"🛡️ [风控拦截] 系统拦截了拟自动发送的内容（{reason}），已暂停自动回复并转交人工：\n「{text}」"
                     )
                     msg = await save_message(
                         s,
@@ -586,11 +637,13 @@ async def send_text(conv_id: int, text: str, *, source: str, meta: dict[str, Any
                         },
                         account_id=account_id,
                     )
-                    return msg
-            raise RiskBlockedError(f"敏感词拦截：{reason}", state="sensitive_blocked")
+            # 没有发给买家：调用方不能把它当成已发送（规则命中、建议「已发送」等）
+            raise RiskBlockedError(f"敏感词拦截：{reason}，已转人工", state="sensitive_blocked")
         elif source == MessageSource.WEB_MANUAL:
             if not (meta and meta.get("force")):
-                raise RiskBlockedError(f"消息触发闲鱼导流风控（{reason}），请修改话术以防封号", state="sensitive_blocked")
+                raise RiskBlockedError(
+                    f"消息触发闲鱼导流风控（{reason}），请修改话术以防封号", state="sensitive_blocked"
+                )
 
     async with session_factory()() as s:
         conv = await s.get(Conversation, conv_id)
