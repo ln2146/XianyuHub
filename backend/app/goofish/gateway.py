@@ -59,7 +59,7 @@ def account_key(account_id: int | None) -> str:
 
 # 网页版发布页的 spm：所在地接口据此返回附近地点
 PUBLISH_SPM = "a21ybx.publish.0.0"
-MULTI_INVENTORY_HINT = "这个账号暂不支持多库存（闲鱼只对部分卖家开放），请把数量改成 1"
+MULTI_INVENTORY_HINT = "闲鱼网页版对这个账号不开放库存设置，请把数量改成 1；需要多库存的商品请在闲鱼 App 发布并设置库存，系统会自动同步和发货"
 # 发布前身份认证：与网页版发布页弹出的二维码相同，手机扫码后在闲鱼 App 里打开认证页
 IDENTITY_VERIFY_URL = (
     "https://pages.goofish.com/sharexy?loadingVisible=false&showNavBar=true&bfs=idlepc.publish"

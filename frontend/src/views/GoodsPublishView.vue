@@ -686,7 +686,8 @@ onBeforeUnmount(() => window.clearInterval(timer))
                 <el-input-number v-model="form.quantity" :min="1" :max="inventoryLocked ? 1 : undefined" :disabled="inventoryLocked" />
               </div>
               <div v-if="inventoryLocked" class="form-tip">
-                这个账号暂不支持多库存（闲鱼只对部分卖家开放），数量只能是 1，卖出一件后商品会自动下架。
+                闲鱼网页版对这个账号不开放库存设置，从这里发布数量只能是 1，卖出一件后会自动下架。
+                电子资料等需要多库存的商品，请在闲鱼 App 发布并设置库存，系统会自动同步，每卖出一单都会自动发货。
               </div>
               <div v-if="publishMeta?.limited" class="form-tip warn">
                 {{ publishMeta.limit_title || '账号当前被限制发布' }}{{ publishMeta.limit_content ? `：${publishMeta.limit_content}` : '' }}
