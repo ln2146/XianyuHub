@@ -10,6 +10,7 @@ export interface LlmPreset {
   models: { vision: string; chat: string; fast: string }
   suggested_models?: string[]
   note: string
+  category?: string
 }
 
 export interface LlmMeta {

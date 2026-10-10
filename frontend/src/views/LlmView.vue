@@ -7,7 +7,6 @@ import {
   Connection,
   Delete,
   Download,
-  InfoFilled,
   Lightning,
   Picture,
   Plus,
@@ -64,12 +63,6 @@ const tokenUsed = computed(() =>
   status.value ? status.value.gateway.usage_today.input_tokens + status.value.gateway.usage_today.output_tokens : 0,
 )
 
-// 常用推荐预设
-const popularPresetIds = ['deepseek', 'dashscope', 'zhipu', 'moonshot', 'siliconflow']
-const popularPresets = computed(() =>
-  presets.value.filter((p) => popularPresetIds.includes(p.id)),
-)
-
 function isPresetConnected(presetName: string): boolean {
   return providers.value.some((p) => p.name === presetName || p.name.includes(presetName))
 }
@@ -117,7 +110,7 @@ const providerModelGroups = computed<ProviderGroup[]>(() => {
       models: rawModels.map((m) => ({
         value: `${p.id}:${m}`,
         label: m,
-        isVision: /vl|vision|4v|gemini|image/i.test(m) || m === p.model_vision,
+        isVision: /vl|vision|4v|gemini|image|gpt-4o|claude/i.test(m) || m === p.model_vision,
       })),
     }
   })
@@ -127,14 +120,24 @@ const visionGroups = computed(() => {
   return providerModelGroups.value
     .map((g) => ({
       ...g,
-      models: g.models.filter((m) => m.isVision || g.name.includes('阿里') || g.name.includes('智谱')),
+      models: g.models.filter(
+        (m) =>
+          m.isVision ||
+          g.name.includes('阿里') ||
+          g.name.includes('智谱') ||
+          g.name.includes('OpenAI') ||
+          g.name.includes('Claude') ||
+          g.name.includes('Gemini'),
+      ),
     }))
     .filter((g) => g.models.length > 0)
 })
 
 const hasConnectedVisionModel = computed(() => {
   return enabledProviders.value.some(
-    (p) => p.model_vision || getProviderModels(p).some((m) => /vl|vision|4v|image/i.test(m)),
+    (p) =>
+      p.model_vision ||
+      getProviderModels(p).some((m) => /vl|vision|4v|image|gemini|gpt-4o|claude/i.test(m)),
   )
 })
 
@@ -202,6 +205,20 @@ async function saveTiers() {
 }
 
 // ---------------------------------------------------------------- 接入模态框
+const presetCategoryFilter = ref('all')
+const categories = [
+  { key: 'all', label: '全部服务商' },
+  { key: 'cn', label: '国内主流' },
+  { key: 'global', label: '国际服务' },
+  { key: 'aggregator', label: '聚合分发' },
+  { key: 'local', label: '本地与自建' },
+]
+
+const filteredPresets = computed(() => {
+  if (presetCategoryFilter.value === 'all') return presets.value
+  return presets.value.filter((p) => p.category === presetCategoryFilter.value || p.id === 'custom')
+})
+
 const edit = reactive({
   open: false,
   saving: false,
@@ -241,12 +258,18 @@ const KEY_REBIND_TIP = '修改了接口地址，请重新填写 API Key（已保
 const activePreset = computed(() => presets.value.find((x) => x.id === edit.preset))
 
 const baseUrlPlaceholder = computed(() => {
-  if (edit.preset === 'dashscope') return '例如 https://dashscope.aliyuncs.com/compatible-mode/v1'
-  if (edit.preset === 'deepseek') return '例如 https://api.deepseek.com/v1'
-  if (edit.preset === 'zhipu') return '例如 https://open.bigmodel.cn/api/paas/v4'
-  if (edit.preset === 'moonshot') return '例如 https://api.moonshot.cn/v1'
-  if (edit.preset === 'siliconflow') return '例如 https://api.siliconflow.cn/v1'
-  return '例如 https://dashscope.aliyuncs.com/compatible-mode/v1 或 https://api.deepseek.com/v1'
+  if (edit.preset === 'dashscope') return 'https://dashscope.aliyuncs.com/compatible-mode/v1'
+  if (edit.preset === 'deepseek') return 'https://api.deepseek.com/v1'
+  if (edit.preset === 'openai') return 'https://api.openai.com/v1'
+  if (edit.preset === 'claude') return '默认 Anthropic 官方端点（留空即可）'
+  if (edit.preset === 'gemini') return 'https://generativelanguage.googleapis.com/v1beta/openai'
+  if (edit.preset === 'zhipu') return 'https://open.bigmodel.cn/api/paas/v4'
+  if (edit.preset === 'doubao') return 'https://ark.cn-beijing.volces.com/api/v3'
+  if (edit.preset === 'moonshot') return 'https://api.moonshot.cn/v1'
+  if (edit.preset === 'siliconflow') return 'https://api.siliconflow.cn/v1'
+  if (edit.preset === 'openrouter') return 'https://openrouter.ai/api/v1'
+  if (edit.preset === 'ollama') return 'http://127.0.0.1:11434/v1'
+  return '例如 https://api.deepseek.com/v1'
 })
 
 function applyPreset(id: string) {
@@ -258,14 +281,20 @@ function applyPreset(id: string) {
   edit.model_chat = p.models.chat
   edit.model_fast = p.models.fast
   if (!edit.id) {
-    edit.name = p.name === '自定义' ? '' : p.name
+    edit.name = p.name === '自定义配置' ? '' : p.name
   }
   const suggested = p.suggested_models || []
   const initial = [p.models.chat, p.models.vision, p.models.fast, ...suggested].filter(Boolean)
   edit.custom_models = Array.from(new Set(initial))
 }
 
+function selectPreset(id: string) {
+  edit.preset = id
+  applyPreset(id)
+}
+
 function openCreate(presetId = 'deepseek') {
+  presetCategoryFilter.value = 'all'
   Object.assign(edit, {
     open: true,
     id: null,
@@ -340,7 +369,7 @@ function payload() {
     kind: edit.kind,
     base_url: edit.base_url.trim(),
     api_key: edit.api_key,
-    model_vision: edit.model_vision.trim() || (edit.custom_models.find((m) => /vl|vision|4v|image/i.test(m)) || ''),
+    model_vision: edit.model_vision.trim() || (edit.custom_models.find((m) => /vl|vision|4v|image|gpt-4o|claude|gemini/i.test(m)) || ''),
     model_chat: edit.model_chat.trim() || edit.custom_models[0] || '',
     model_fast: edit.model_fast.trim() || edit.custom_models[0] || '',
     custom_models: edit.custom_models,
@@ -355,7 +384,7 @@ function validate(): boolean {
     ElMessage.warning('请填写服务商名称')
     return false
   }
-  if (!edit.base_url.trim()) {
+  if (edit.kind !== 'anthropic' && !edit.base_url.trim()) {
     ElMessage.warning('请填写接口地址')
     return false
   }
@@ -411,7 +440,7 @@ async function probe() {
 }
 
 async function pullModels() {
-  if (!edit.base_url.trim()) return ElMessage.warning('请先填写接口地址')
+  if (edit.kind !== 'anthropic' && !edit.base_url.trim()) return ElMessage.warning('请先填写接口地址')
   if (needsNewKey.value) return ElMessage.warning(KEY_REBIND_TIP)
   edit.fetching = true
   try {
@@ -487,26 +516,26 @@ async function remove(p: LlmProvider) {
     <div class="page-head">
       <div>
         <h2>模型配置</h2>
-        <span class="page-subtitle">一键接入国内外大模型服务商，自由分派客服问答、识图发品与意图识别场景</span>
+        <span class="page-subtitle">接入主流大模型服务商，自由分派客服问答、识图发品与意图识别场景</span>
       </div>
       <div class="toolbar">
         <el-button :icon="Refresh" :loading="loading" @click="load">刷新状态</el-button>
-        <el-button v-if="auth.isAdmin" type="primary" :icon="Plus" @click="openCreate('custom')">自定义接入</el-button>
+        <el-button v-if="auth.isAdmin" type="primary" :icon="Plus" @click="openCreate('deepseek')">添加新服务商</el-button>
       </div>
     </div>
 
-    <!-- 1. 业务场景模型配置 (Top Card) -->
+    <!-- 1. 业务场景模型配置 (Top Section) -->
     <el-card shadow="never" class="block config-card">
       <template #header>
         <div class="card-head">
           <div class="card-title-group">
             <el-icon class="title-icon"><Setting /></el-icon>
             <span class="section-title">业务场景模型配置</span>
-            <span class="section-hint">按场景灵活选用已配置的模型，支持跨供应商混合调度</span>
+            <span class="section-hint">按业务场景灵活挑选生效模型，支持跨服务商任意混搭</span>
           </div>
           <div class="card-head-extra">
             <el-tag :type="status?.gateway.available ? 'success' : 'danger'" size="small" effect="dark">
-              {{ status?.gateway.available ? '● 网关运行中' : '● 网关不可用' }}
+              {{ status?.gateway.available ? '● 网关运行中' : '● 网关未就绪' }}
             </el-tag>
             <el-button
               v-if="auth.isAdmin"
@@ -576,7 +605,7 @@ async function remove(p: LlmProvider) {
             <span class="select-label">选用模型：</span>
             <el-select
               v-model="tierForm.vision"
-              placeholder="选择支持视觉的模型"
+              placeholder="选择支持识图的视觉模型"
               clearable
               class="full-width"
               :disabled="!auth.isAdmin"
@@ -598,7 +627,7 @@ async function remove(p: LlmProvider) {
           </div>
           <div v-if="!hasConnectedVisionModel" class="vision-warn-tip">
             <el-icon><WarningFilled /></el-icon>
-            <span>提示：DeepSeek 暂不提供识图模型，建议接入阿里百炼（通义千问）或智谱</span>
+            <span>提示：DeepSeek 暂不提供识图模型，推荐接入阿里百炼、OpenAI 或智谱</span>
           </div>
           <div class="scenario-footer">
             <span class="cur-label">当前生效：</span>
@@ -615,7 +644,7 @@ async function remove(p: LlmProvider) {
             </div>
             <el-tag size="small" type="info" effect="plain">快速轻量 · Fast</el-tag>
           </div>
-          <p class="scenario-desc">买家消息意图毫秒级识别与规则前置粗筛，极低延迟与成本</p>
+          <p class="scenario-desc">买家消息意图毫秒级识别与规则前置粗筛，追求极低延迟与成本</p>
           <div class="scenario-select-wrap">
             <span class="select-label">选用模型：</span>
             <el-select
@@ -650,7 +679,7 @@ async function remove(p: LlmProvider) {
       <!-- 网关运行信息条 -->
       <div v-if="status" class="gateway-stats-bar">
         <div class="stat-item">
-          <span class="stat-label">配置来源：</span>
+          <span class="stat-label">生效来源：</span>
           <el-tag v-if="status.using_env" size="small" type="warning">.env 环境变量</el-tag>
           <el-tag v-else size="small" type="success">{{ status.active_source }}</el-tag>
         </div>
@@ -672,51 +701,21 @@ async function remove(p: LlmProvider) {
       </div>
     </el-card>
 
-    <!-- 2. 一键快速接入推荐 (Quick Connect Cards) -->
-    <div v-if="auth.isAdmin" class="quick-connect-section">
-      <div class="section-header-row">
-        <div class="title-with-badge">
-          <span class="quick-badge">快捷接入</span>
-          <h3 class="quick-title">一键接入主流大模型</h3>
-        </div>
-        <span class="quick-sub">点击即可直接载入预设，仅需粘贴 API Key 即可快速连通</span>
-      </div>
-
-      <div class="quick-grid">
-        <div
-          v-for="p in popularPresets"
-          :key="p.id"
-          class="quick-card"
-          :class="{ connected: isPresetConnected(p.name) }"
-          @click="openCreate(p.id)"
-        >
-          <div class="quick-card-top">
-            <span class="quick-card-name">{{ p.name }}</span>
-            <el-tag v-if="isPresetConnected(p.name)" size="small" type="success" effect="light">已接入</el-tag>
-            <el-button v-else size="small" type="primary" plain :icon="Plus">一键接入</el-button>
-          </div>
-          <p class="quick-card-note">{{ p.note }}</p>
-          <div class="quick-card-models">
-            <span v-for="m in (p.suggested_models || []).slice(0, 3)" :key="m" class="model-chip">
-              {{ m }}
-            </span>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- 3. 已接入服务商管理 (Connected Providers List) -->
+    <!-- 2. 已接入服务商管理 (Connected Providers List) -->
     <div v-if="auth.isAdmin" class="providers-section">
       <div class="section-header-row">
-        <h3>已接入服务商 ({{ providers.length }})</h3>
-        <el-button type="primary" plain :icon="Plus" size="small" @click="openCreate('custom')">
-          添加其他服务商
+        <div class="section-header-left">
+          <h3>已接入服务商</h3>
+          <span class="section-count-badge">{{ providers.length }} 个已配置</span>
+        </div>
+        <el-button type="primary" :icon="Plus" size="default" @click="openCreate('deepseek')">
+          添加新服务商
         </el-button>
       </div>
 
       <div v-if="!loading && !providers.length" class="empty-state-card">
-        <el-empty description="尚未接入大模型服务商，点击上方「一键接入」即可开启智能功能">
-          <el-button type="primary" :icon="Plus" @click="openCreate('deepseek')">立即接入 DeepSeek</el-button>
+        <el-empty description="尚未接入大模型服务商，点击上方「添加新服务商」自由选用 OpenAI、Claude、DeepSeek、阿里等厂商">
+          <el-button type="primary" :icon="Plus" @click="openCreate('deepseek')">立即添加服务商</el-button>
         </el-empty>
       </div>
 
@@ -724,8 +723,10 @@ async function remove(p: LlmProvider) {
         <el-card v-for="p in providers" :key="p.id" shadow="never" class="prov" :class="{ disabled: !p.enabled }">
           <div class="prov-head">
             <div class="prov-title-wrap">
-              <span class="prov-name">{{ p.name }}</span>
-              <el-tag v-if="!p.enabled" size="small" type="info" class="ml">已停用</el-tag>
+              <div class="prov-name-row">
+                <span class="prov-name">{{ p.name }}</span>
+                <el-tag v-if="!p.enabled" size="small" type="info" class="ml">已停用</el-tag>
+              </div>
               <div v-if="p.active_tiers && p.active_tiers.length" class="prov-tier-tags">
                 <el-tag v-for="t in p.active_tiers" :key="t" size="small" type="success" effect="plain">
                   {{ tierLabels[t] || t }}
@@ -737,8 +738,8 @@ async function remove(p: LlmProvider) {
 
           <div class="prov-body">
             <div class="row">
-              <span class="muted small">接口</span>
-              <span class="mono small ellipsis">{{ p.base_url || '默认官方地址' }}</span>
+              <span class="muted small">端点</span>
+              <span class="mono small ellipsis">{{ p.base_url || '官方原生端点' }}</span>
             </div>
             <div class="row">
               <span class="muted small">Key</span>
@@ -747,11 +748,11 @@ async function remove(p: LlmProvider) {
             <div class="row">
               <span class="muted small">模型</span>
               <div class="models-tag-wrap ellipsis">
-                <span v-for="m in getProviderModels(p).slice(0, 4)" :key="m" class="small-tag mono">
+                <span v-for="m in getProviderModels(p).slice(0, 5)" :key="m" class="small-tag mono">
                   {{ m }}
                 </span>
-                <span v-if="getProviderModels(p).length > 4" class="small muted">
-                  +{{ getProviderModels(p).length - 4 }}
+                <span v-if="getProviderModels(p).length > 5" class="small muted">
+                  +{{ getProviderModels(p).length - 5 }}
                 </span>
               </div>
             </div>
@@ -763,7 +764,7 @@ async function remove(p: LlmProvider) {
               <span class="muted">{{ fmtTime(p.last_test_at) }}</span>
             </template>
             <template v-else-if="p.last_test_ok === false">
-              <el-tag size="small" type="danger" effect="plain">测试失败</el-tag>
+              <el-tag size="small" type="danger" effect="plain">连通失败</el-tag>
               <span class="muted ellipsis" :title="p.last_error || ''">{{ p.last_error }}</span>
             </template>
             <span v-else class="muted">尚未进行连通性测试</span>
@@ -778,123 +779,162 @@ async function remove(p: LlmProvider) {
       </div>
     </div>
 
-    <!-- 4. 接入 / 编辑服务商模态框 (Simplified Modal) -->
+    <!-- 3. 添加 / 编辑新服务商模态框 -->
     <el-dialog
       v-model="edit.open"
-      :title="edit.id ? `编辑接入 · ${edit.name}` : `接入大模型服务商 · ${activePreset?.name || '自定义'}`"
-      :width="isMobile ? '94%' : '600px'"
+      :title="edit.id ? `编辑服务商 · ${edit.name}` : '添加新服务商'"
+      :width="isMobile ? '95%' : '760px'"
       :close-on-click-modal="false"
-      class="model-dialog"
+      class="provider-dialog"
     >
-      <el-form label-width="100px" :label-position="isMobile ? 'top' : 'right'" class="model-form">
-        <el-form-item v-if="!edit.id" label="服务商预设">
-          <div class="preset-field-wrap">
-            <el-select v-model="edit.preset" class="full-width" placeholder="选择预设" @change="applyPreset">
-              <el-option v-for="p in presets" :key="p.id" :value="p.id" :label="p.name">
-                <div class="preset-option-row">
-                  <span class="preset-option-name">{{ p.name }}</span>
-                  <span v-if="p.note" class="preset-option-note">{{ p.note }}</span>
-                </div>
-              </el-option>
-            </el-select>
-            <div v-if="activePreset?.note" class="preset-hint">
-              <el-icon class="preset-hint-icon"><InfoFilled /></el-icon>
-              <span>{{ activePreset.note }}</span>
-            </div>
-          </div>
-        </el-form-item>
-
-        <el-form-item label="服务商名称" required>
-          <el-input v-model="edit.name" maxlength="64" placeholder="例如：DeepSeek、阿里百炼" />
-        </el-form-item>
-
-        <el-form-item label="接口地址" required>
-          <el-input v-model="edit.base_url" :placeholder="baseUrlPlaceholder" />
-        </el-form-item>
-
-        <el-form-item label="API Key" :required="!edit.id">
-          <el-input
-            v-model="edit.api_key"
-            type="password"
-            show-password
-            :placeholder="edit.id && edit.has_key ? `已保存 ${edit.masked}，留空保持不变` : 'sk-...'"
-            autocomplete="new-password"
-          />
-          <div v-if="needsNewKey" class="form-tip warn">{{ KEY_REBIND_TIP }}</div>
-        </el-form-item>
-
-        <!-- 可用模型管理 -->
-        <el-form-item label="可用模型">
-          <div class="models-manager">
-            <div class="tags-container">
-              <el-tag
-                v-for="m in edit.custom_models"
-                :key="m"
-                closable
-                class="model-tag"
-                @close="removeModelTag(m)"
+      <div class="dialog-body-container">
+        <!-- 预设选择区（药丸卡片风格，参考供应商列表设计） -->
+        <div v-if="!edit.id" class="preset-selection-panel">
+          <div class="preset-filter-row">
+            <span class="panel-section-label">预设供应商</span>
+            <div class="category-tabs">
+              <button
+                v-for="cat in categories"
+                :key="cat.key"
+                class="category-tab-btn"
+                :class="{ active: presetCategoryFilter === cat.key }"
+                type="button"
+                @click="presetCategoryFilter = cat.key"
               >
-                {{ m }}
-              </el-tag>
-              <div class="add-model-input-wrap">
-                <el-input
-                  v-model="edit.new_model_tag"
-                  placeholder="+ 手动添加模型名按回车"
-                  size="small"
-                  class="add-model-input"
-                  @keyup.enter="addModelTag"
-                />
-                <el-button size="small" @click="addModelTag">添加</el-button>
-              </div>
-            </div>
-
-            <div class="model-pull-bar">
-              <el-button size="small" :icon="Download" :loading="edit.fetching" @click="pullModels">
-                从接口拉取可用模型
-              </el-button>
-              <span class="pull-tip">填入 Key 后可在线查询该服务商所有可用模型</span>
+                {{ cat.label }}
+              </button>
             </div>
           </div>
-        </el-form-item>
 
-        <!-- 折叠高级选项 -->
-        <div class="advanced-toggle" @click="edit.show_advanced = !edit.show_advanced">
-          <span>{{ edit.show_advanced ? '收起高级设置' : '展开高级设置（超时与预算）' }}</span>
+          <div class="preset-pills-container">
+            <button
+              v-for="p in filteredPresets"
+              :key="p.id"
+              class="preset-pill-btn"
+              :class="{
+                active: edit.preset === p.id,
+                custom: p.id === 'custom',
+                connected: isPresetConnected(p.name),
+              }"
+              type="button"
+              @click="selectPreset(p.id)"
+            >
+              <span class="pill-title">{{ p.name }}</span>
+              <span v-if="isPresetConnected(p.name)" class="pill-dot" title="已接入"></span>
+            </button>
+          </div>
+
+          <div v-if="activePreset?.note" class="preset-notice-row">
+            <span class="notice-icon">💡</span>
+            <span class="notice-text">{{ activePreset.note }}</span>
+          </div>
         </div>
 
-        <template v-if="edit.show_advanced">
+        <el-form label-width="96px" :label-position="isMobile ? 'top' : 'right'" class="provider-form">
           <el-row :gutter="16">
-            <el-col :xs="24" :sm="12">
-              <el-form-item label="超时时间">
-                <el-input-number
-                  v-model="edit.timeout_seconds"
-                  :min="5"
-                  :max="600"
-                  :step="5"
-                  controls-position="right"
-                  class="full-width"
-                />
+            <el-col :xs="24" :sm="14">
+              <el-form-item label="服务商名称" required>
+                <el-input v-model="edit.name" maxlength="64" placeholder="例如：DeepSeek、阿里百炼、OpenAI" />
               </el-form-item>
             </el-col>
-            <el-col :xs="24" :sm="12">
-              <el-form-item label="Token 预算">
-                <el-input-number
-                  v-model="edit.daily_token_budget"
-                  :min="0"
-                  :step="100000"
-                  controls-position="right"
-                  placeholder="留空沿用全局"
-                  class="full-width"
-                />
+            <el-col :xs="24" :sm="10">
+              <el-form-item label="接口协议">
+                <el-select v-model="edit.kind" class="full-width">
+                  <el-option value="openai_compatible" label="OpenAI 兼容规范" />
+                  <el-option value="anthropic" label="Anthropic 官方协议" />
+                </el-select>
               </el-form-item>
             </el-col>
           </el-row>
-        </template>
-      </el-form>
+
+          <el-form-item label="接口地址" :required="edit.kind !== 'anthropic'">
+            <el-input v-model="edit.base_url" :placeholder="baseUrlPlaceholder" />
+          </el-form-item>
+
+          <el-form-item label="API Key" :required="!edit.id">
+            <el-input
+              v-model="edit.api_key"
+              type="password"
+              show-password
+              :placeholder="edit.id && edit.has_key ? `已加密保存 ${edit.masked}，留空保持不变` : 'sk-...'"
+              autocomplete="new-password"
+            />
+            <div v-if="needsNewKey" class="form-tip warn">{{ KEY_REBIND_TIP }}</div>
+          </el-form-item>
+
+          <!-- 可用模型管理区 -->
+          <el-form-item label="可用模型">
+            <div class="models-box">
+              <div class="tags-wall">
+                <el-tag
+                  v-for="m in edit.custom_models"
+                  :key="m"
+                  closable
+                  class="model-tag-pill mono"
+                  @close="removeModelTag(m)"
+                >
+                  {{ m }}
+                </el-tag>
+                <div class="quick-add-input-box">
+                  <el-input
+                    v-model="edit.new_model_tag"
+                    placeholder="+ 回车快速加模型"
+                    size="small"
+                    class="quick-input"
+                    @keyup.enter="addModelTag"
+                  />
+                  <el-button size="small" @click="addModelTag">添加</el-button>
+                </div>
+              </div>
+
+              <div class="model-action-bar">
+                <el-button size="small" :icon="Download" :loading="edit.fetching" @click="pullModels">
+                  从接口拉取模型列表
+                </el-button>
+                <span class="action-tip">填写接口与 Key 后可在线查询可用模型</span>
+              </div>
+            </div>
+          </el-form-item>
+
+          <!-- 高级配置折叠 -->
+          <div class="advanced-divider" @click="edit.show_advanced = !edit.show_advanced">
+            <span>{{ edit.show_advanced ? '▼ 收起高级设置' : '▶ 展开高级设置（超时与预算）' }}</span>
+          </div>
+
+          <template v-if="edit.show_advanced">
+            <el-row :gutter="16">
+              <el-col :xs="24" :sm="12">
+                <el-form-item label="超时时间">
+                  <el-input-number
+                    v-model="edit.timeout_seconds"
+                    :min="5"
+                    :max="600"
+                    :step="5"
+                    controls-position="right"
+                    class="full-width"
+                  />
+                </el-form-item>
+              </el-col>
+              <el-col :xs="24" :sm="12">
+                <el-form-item label="Token 预算">
+                  <el-input-number
+                    v-model="edit.daily_token_budget"
+                    :min="0"
+                    :step="100000"
+                    controls-position="right"
+                    placeholder="留空沿用全局"
+                    class="full-width"
+                  />
+                </el-form-item>
+              </el-col>
+            </el-row>
+          </template>
+        </el-form>
+      </div>
 
       <template #footer>
         <div class="dialog-footer-content">
-          <el-button :icon="Connection" :loading="edit.testing" @click="probe">测试连接</el-button>
+          <el-button :icon="Connection" :loading="edit.testing" @click="probe">测试连通性</el-button>
           <div class="footer-right-buttons">
             <el-button @click="edit.open = false">取消</el-button>
             <el-button type="primary" :loading="edit.saving" @click="save">完成接入并保存</el-button>
@@ -922,7 +962,7 @@ async function remove(p: LlmProvider) {
   display: block;
 }
 .block {
-  margin-bottom: 18px;
+  margin-bottom: 20px;
 }
 
 /* 顶部配置卡片 */
@@ -1113,99 +1153,36 @@ async function remove(p: LlmProvider) {
   margin-left: auto;
 }
 
-/* 快捷接入推荐 */
-.quick-connect-section {
-  margin-bottom: 24px;
+/* 服务商管理区 */
+.providers-section {
+  margin-top: 12px;
 }
 .section-header-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
   flex-wrap: wrap;
   gap: 8px;
 }
-.title-with-badge {
+.section-header-left {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
-.quick-badge {
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-  color: #fff;
-  font-size: 11px;
+.section-header-left h3 {
+  margin: 0;
+  font-size: 16px;
   font-weight: 600;
+}
+.section-count-badge {
+  font-size: 12px;
+  color: var(--xh-text-muted);
+  background: #f1f5f9;
   padding: 2px 8px;
-  border-radius: 12px;
-}
-.quick-title {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-}
-.quick-sub {
-  font-size: 12px;
-  color: var(--xh-text-muted);
-}
-.quick-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 12px;
-}
-.quick-card {
-  background: var(--xh-card);
-  border: 1px solid var(--xh-border);
-  border-radius: var(--xh-radius-md);
-  padding: 12px 14px;
-  cursor: pointer;
-  transition: all 0.2s;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.quick-card:hover {
-  border-color: var(--xh-brand);
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-}
-.quick-card.connected {
-  border-color: var(--el-color-success-light-5);
-  background: #f6ffed;
-}
-.quick-card-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.quick-card-name {
-  font-weight: 600;
-  font-size: 14px;
-  color: var(--xh-text);
-}
-.quick-card-note {
-  font-size: 12px;
-  color: var(--xh-text-muted);
-  margin: 0;
-  line-height: 1.3;
-}
-.quick-card-models {
-  display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-  margin-top: 4px;
-}
-.model-chip {
-  font-size: 10px;
-  background: rgba(0, 0, 0, 0.04);
-  padding: 1px 6px;
-  border-radius: 4px;
-  color: var(--xh-text-muted);
+  border-radius: 10px;
 }
 
-/* 已接入服务商列表 */
-.providers-section {
-  margin-bottom: 24px;
-}
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
@@ -1229,6 +1206,10 @@ async function remove(p: LlmProvider) {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+.prov-name-row {
+  display: flex;
+  align-items: center;
 }
 .prov-name {
   font-weight: 600;
@@ -1287,54 +1268,126 @@ async function remove(p: LlmProvider) {
   margin-left: 0;
 }
 
-/* 弹窗与模型管理 */
-.full-width {
-  width: 100% !important;
-}
-.preset-field-wrap {
-  width: 100%;
+/* ---------- 弹窗：参考新供应商多卡片风格 ---------- */
+.dialog-body-container {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 16px;
 }
-.preset-option-row {
+.preset-selection-panel {
+  background: #f8fafc;
+  border: 1px solid var(--xh-border);
+  border-radius: var(--xh-radius-md);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.preset-filter-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  width: 100%;
-  gap: 16px;
+  flex-wrap: wrap;
+  gap: 8px;
 }
-.preset-option-name {
-  font-weight: 500;
+.panel-section-label {
+  font-size: 13px;
+  font-weight: 600;
   color: var(--xh-text);
 }
-.preset-option-note {
-  font-size: 12px;
-  color: var(--xh-text-muted);
+.category-tabs {
+  display: flex;
+  gap: 4px;
+  background: #eef2f6;
+  padding: 2px;
+  border-radius: 6px;
 }
-.preset-hint {
+.category-tab-btn {
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--xh-text-muted);
+  transition: all 0.15s;
+}
+.category-tab-btn:hover {
+  color: var(--xh-text);
+}
+.category-tab-btn.active {
+  background: #ffffff;
+  color: var(--xh-brand);
+  font-weight: 500;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.preset-pills-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-height: 160px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.preset-pill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #ffffff;
+  border: 1px solid var(--xh-border);
+  border-radius: 20px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #334155;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+.preset-pill-btn:hover {
+  border-color: var(--xh-brand);
+  color: var(--xh-brand);
+  background: #f0fdf4;
+}
+.preset-pill-btn.active {
+  background: #0284c7;
+  border-color: #0284c7;
+  color: #ffffff;
+  font-weight: 600;
+  box-shadow: 0 2px 6px rgba(2, 132, 199, 0.28);
+}
+.preset-pill-btn.connected:not(.active) {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+.pill-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #22c55e;
+}
+.preset-notice-row {
   display: flex;
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: var(--xh-text-muted);
-  background: #f4f8fa;
+  color: #475569;
+  background: rgba(2, 132, 199, 0.06);
   padding: 6px 12px;
   border-radius: var(--xh-radius-sm);
   line-height: 1.4;
-  border-left: 3px solid var(--xh-brand);
-}
-.preset-hint-icon {
-  color: var(--xh-brand);
+  border-left: 3px solid #0284c7;
 }
 
-.models-manager {
+/* 模型管理区 */
+.models-box {
   width: 100%;
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
-.tags-container {
+.tags-wall {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
@@ -1345,27 +1398,28 @@ async function remove(p: LlmProvider) {
   min-height: 48px;
   align-items: center;
 }
-.model-tag {
-  font-family: monospace;
+.model-tag-pill {
+  font-size: 11px;
 }
-.add-model-input-wrap {
+.quick-add-input-box {
   display: flex;
   gap: 6px;
   align-items: center;
 }
-.add-model-input {
-  width: 180px;
+.quick-input {
+  width: 170px;
 }
-.model-pull-bar {
+.model-action-bar {
   display: flex;
   align-items: center;
   gap: 10px;
 }
-.pull-tip {
+.action-tip {
   font-size: 12px;
   color: var(--xh-text-muted);
 }
-.advanced-toggle {
+
+.advanced-divider {
   text-align: center;
   font-size: 12px;
   color: var(--xh-brand);
@@ -1373,9 +1427,10 @@ async function remove(p: LlmProvider) {
   padding: 8px 0;
   user-select: none;
 }
-.advanced-toggle:hover {
+.advanced-divider:hover {
   text-decoration: underline;
 }
+
 .dialog-footer-content {
   display: flex;
   justify-content: space-between;
@@ -1386,10 +1441,14 @@ async function remove(p: LlmProvider) {
   display: flex;
   gap: 8px;
 }
+
 .form-tip.warn {
   color: var(--el-color-warning);
   font-size: 12px;
   margin-top: 4px;
+}
+.full-width {
+  width: 100% !important;
 }
 .empty-state-card {
   background: var(--xh-card);
