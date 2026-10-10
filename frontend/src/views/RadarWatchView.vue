@@ -2,7 +2,7 @@
 import { computed, onActivated, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Bell, Delete, Edit, Link, Plus, Refresh, TrendCharts } from '@element-plus/icons-vue'
+import { Aim, Bell, CircleClose, Delete, Edit, Link, Plus, Refresh, TrendCharts } from '@element-plus/icons-vue'
 import {
   WATCH_INTERVALS,
   checkWatch,
@@ -336,8 +336,8 @@ const historyOption = computed(() => {
         </div>
 
         <div class="state small">
-          <template v-if="w.status === 'triggered'">🎯 {{ fmtRelative(w.triggered_at) }}到价，已提醒并暂停</template>
-          <template v-else-if="w.status === 'ended'">⛔ {{ w.ended_reason || '商品已下架' }}</template>
+          <template v-if="w.status === 'triggered'"><span class="state-icon on"><el-icon><Aim /></el-icon></span> {{ fmtRelative(w.triggered_at) }}到价，已提醒并暂停</template>
+          <template v-else-if="w.status === 'ended'"><span class="state-icon off"><el-icon><CircleClose /></el-icon></span> {{ w.ended_reason || '商品已下架' }}</template>
           <template v-else>上次检查 {{ w.last_checked_at ? fmtRelative(w.last_checked_at) : '—' }}</template>
           <el-tooltip v-if="w.last_error" :content="w.last_error">
             <div class="err ellipsis">检查失败：{{ w.last_error }}</div>
@@ -618,6 +618,17 @@ const historyOption = computed(() => {
   padding: 8px 12px;
   color: var(--xh-muted);
   flex: 1;
+}
+.state-icon {
+  display: inline-flex;
+  vertical-align: -1px;
+  margin-right: 3px;
+}
+.state-icon.on {
+  color: var(--xh-warning);
+}
+.state-icon.off {
+  color: var(--xh-danger);
 }
 .err {
   color: var(--el-color-danger);

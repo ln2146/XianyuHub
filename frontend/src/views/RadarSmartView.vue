@@ -15,6 +15,7 @@ import {
   Search,
   TrendCharts,
   Upload,
+  WarningFilled,
 } from '@element-plus/icons-vue'
 import {
   deleteTask,
@@ -575,7 +576,8 @@ onBeforeUnmount(stopTimer)
                 <div class="empty-desc-box">
                   <p class="empty-main-text">{{ tasks.length ? (currentTask?.running ? '正在搜索中，稍候出结果…' : '暂无符合筛选条件的商品') : '输入关键词，开始你的第一个智能搜索' }}</p>
                   <p v-if="currentTask?.paused_reason" class="empty-paused-hint">
-                    ⚠️ 当前任务已暂停：{{ currentTask.paused_reason }}
+                    <el-icon><WarningFilled /></el-icon>
+                    <span>当前任务已暂停：{{ currentTask.paused_reason }}</span>
                   </p>
                 </div>
               </template>
@@ -930,6 +932,9 @@ onBeforeUnmount(stopTimer)
   border-radius: var(--xh-radius-sm);
   font-size: var(--xh-fs-xs);
   max-width: 520px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 .empty-actions-row {
   display: flex;

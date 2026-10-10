@@ -54,9 +54,9 @@ function imConnected(id: number) {
 }
 
 function healthColor(h: number) {
-  if (h >= 80) return '#67c23a'
-  if (h >= 50) return '#e6a23c'
-  return '#f56c6c'
+  if (h >= 80) return 'var(--xh-success)'
+  if (h >= 50) return 'var(--xh-warning)'
+  return 'var(--xh-danger)'
 }
 
 async function withBusy(key: string, fn: () => Promise<void>) {

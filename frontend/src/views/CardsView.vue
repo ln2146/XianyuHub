@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Refresh } from '@element-plus/icons-vue'
+import { Box, Connection, Document, Lightning, Plus, Refresh } from '@element-plus/icons-vue'
 import {
   addBlacklist,
   createBinding,
@@ -488,7 +488,7 @@ const accountModal = reactive({
     <div class="delivery-steps-card">
       <div class="steps-card-header">
         <div class="steps-title">
-          <span class="spark-emoji">⚡</span>
+          <el-icon class="spark-icon"><Lightning /></el-icon>
           <span>自动发货 · 快速上手向导</span>
         </div>
       </div>
@@ -616,11 +616,11 @@ const accountModal = reactive({
                       </el-tag>
                     </div>
                   </template>
-                  <span v-else-if="row.kind === 'text'" class="muted mono small ellipsis-text" :title="row.text_preview">
-                    📄 {{ row.text_preview || '已加密固定内容' }}
+                  <span v-else-if="row.kind === 'text'" class="muted mono small ellipsis-text preview-inline" :title="row.text_preview">
+                    <el-icon><Document /></el-icon> {{ row.text_preview || '已加密固定内容' }}
                   </span>
-                  <span v-else class="muted mono small ellipsis-text" :title="row.api_config?.url">
-                    🔌 {{ row.api_config?.url || '自定义 API 接口' }}
+                  <span v-else class="muted mono small ellipsis-text preview-inline" :title="row.api_config?.url">
+                    <el-icon><Connection /></el-icon> {{ row.api_config?.url || '自定义 API 接口' }}
                   </span>
                 </template>
               </el-table-column>
@@ -688,7 +688,7 @@ const accountModal = reactive({
               </el-table-column>
               <el-table-column label="发放内容库" min-width="140">
                 <template #default="{ row }">
-                  <span class="badge-pool-name">📦 {{ poolName(row.pool_id) }}</span>
+                  <span class="badge-pool-name"><el-icon><Box /></el-icon> {{ poolName(row.pool_id) }}</span>
                 </template>
               </el-table-column>
               <el-table-column label="限定账号" min-width="120">
@@ -906,7 +906,7 @@ const accountModal = reactive({
           <el-table-column label="闲鱼账号" min-width="160">
             <template #default="{ row }">
               <div class="modal-acc-cell">
-                <div class="modal-acc-avatar">🐟</div>
+                <div class="modal-acc-avatar">{{ (row.remark || row.nickname || '闲')[0] }}</div>
                 <div>
                   <div class="font-semibold">{{ row.remark || row.nickname || row.unb }}</div>
                   <div class="muted smaller mono">{{ row.nickname }}</div>
@@ -959,78 +959,81 @@ const accountModal = reactive({
 
 <style scoped>
 .delivery-steps-card {
-  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+  background: var(--xh-card);
   border: 1px solid var(--xh-border);
-  border-radius: 12px;
-  padding: 16px 20px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+  border-radius: var(--xh-radius-lg);
+  padding: var(--xh-space-4) var(--xh-space-5);
+  box-shadow: var(--xh-shadow-1);
 }
 .steps-card-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 14px;
+  margin-bottom: var(--xh-space-3);
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--xh-space-2);
 }
 .steps-title {
-  font-size: 15px;
+  font-size: var(--xh-fs-md);
   font-weight: 700;
-  color: #1e293b;
+  color: var(--xh-text);
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--xh-space-2);
 }
-.spark-emoji {
-  font-size: 18px;
+.spark-icon {
+  font-size: var(--xh-fs-lg);
+  color: var(--xh-primary);
 }
 .steps-desc {
-  font-size: 12px;
-  color: #64748b;
+  font-size: var(--xh-fs-xs);
+  color: var(--xh-muted);
 }
 
 .delivery-steps-grid {
   display: grid;
   grid-template-columns: 1fr auto 1fr auto 1fr;
   align-items: center;
-  gap: 12px;
+  gap: var(--xh-space-3);
 }
 .delivery-step-item {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
+  background: var(--xh-fill);
+  border: 1px solid var(--xh-border);
+  border-radius: var(--xh-radius-md);
   padding: 12px 14px;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--xh-space-3);
   cursor: pointer;
   transition: all 0.15s ease;
 }
 .delivery-step-item:hover {
   transform: translateY(-1px);
-  border-color: #cbd5e1;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.04);
+  border-color: var(--xh-primary-border);
+  box-shadow: var(--xh-shadow-1);
 }
 .delivery-step-item.current {
-  border-color: #10b981;
-  background: #f0fdf4;
-  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.08);
+  border-color: var(--xh-primary);
+  background: var(--xh-primary-soft);
+  box-shadow: 0 2px 8px rgba(30, 158, 106, 0.08);
 }
 .step-num-badge {
   width: 28px;
   height: 28px;
-  border-radius: 8px;
-  background: #f1f5f9;
-  color: #475569;
+  border-radius: var(--xh-radius-sm);
+  background: var(--xh-card);
+  border: 1px solid var(--xh-border);
+  color: var(--xh-text-2);
   font-weight: 700;
-  font-size: 12px;
+  font-size: var(--xh-fs-xs);
   display: flex;
   align-items: center;
   justify-content: center;
   font-family: ui-monospace, SFMono-Regular, monospace;
 }
 .delivery-step-item.current .step-num-badge {
-  background: #10b981;
+  background: var(--xh-primary);
+  border-color: var(--xh-primary);
   color: #ffffff;
 }
 .step-content {
@@ -1038,38 +1041,38 @@ const accountModal = reactive({
   min-width: 0;
 }
 .step-label {
-  font-size: 13px;
+  font-size: var(--xh-fs-sm);
   font-weight: 600;
-  color: #1e293b;
+  color: var(--xh-text);
 }
 .step-detail {
-  font-size: 11px;
-  color: #94a3b8;
+  font-size: var(--xh-fs-xs);
+  color: var(--xh-muted);
   margin-top: 2px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .step-action-btn {
-  font-size: 11px;
+  font-size: var(--xh-fs-xs);
   padding: 4px 8px;
 }
 .step-arrow-divider {
-  color: #cbd5e1;
-  font-size: 18px;
+  color: var(--xh-muted);
+  font-size: var(--xh-fs-lg);
   font-weight: 600;
   user-select: none;
 }
 
 .content-card {
-  border-radius: 12px;
+  border-radius: var(--xh-radius-lg);
   border-color: var(--xh-border);
 }
 .tab-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: var(--xh-space-3);
   margin-bottom: 14px;
 }
 .tab-empty-box {
@@ -1080,33 +1083,42 @@ const accountModal = reactive({
 .stock-cell {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--xh-space-2);
   flex-wrap: wrap;
 }
 .stock-badge {
   padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 12px;
+  border-radius: var(--xh-radius-sm);
+  font-size: var(--xh-fs-xs);
   font-weight: 600;
   font-family: ui-monospace, SFMono-Regular, monospace;
 }
 .stock-badge.ok {
-  background: #ecfdf5;
-  color: #059669;
-  border: 1px solid #a7f3d0;
+  background: var(--xh-primary-soft);
+  color: var(--xh-primary);
+  border: 1px solid var(--xh-primary-border);
 }
 .stock-badge.low {
-  background: #fef2f2;
-  color: #dc2626;
-  border: 1px solid #fecaca;
+  background: var(--xh-danger-soft);
+  color: var(--xh-danger);
+  border: 1px solid var(--xh-danger-border);
 }
 .badge-pool-name {
-  background: #f1f5f9;
+  background: var(--xh-fill);
+  border: 1px solid var(--xh-border);
   padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 12px;
+  border-radius: var(--xh-radius-sm);
+  font-size: var(--xh-fs-xs);
   font-weight: 500;
-  color: #334155;
+  color: var(--xh-text-2);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.preview-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 .ellipsis-text {
   max-width: 320px;
@@ -1155,7 +1167,7 @@ const accountModal = reactive({
 }
 .mono :deep(textarea) {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 12px;
+  font-size: var(--xh-fs-xs);
 }
 .step-direct-switch {
   display: flex;
@@ -1167,8 +1179,8 @@ const accountModal = reactive({
   align-items: center;
 }
 .delivery-step-item.warning {
-  border-color: #fde047;
-  background: #fefce8;
+  border-color: var(--xh-warning);
+  background: var(--xh-warning-soft);
 }
 .account-modal-header {
   display: flex;
@@ -1177,11 +1189,11 @@ const accountModal = reactive({
   gap: 12px;
   flex-wrap: wrap;
   padding-bottom: 12px;
-  border-bottom: 1px solid #f1f5f9;
+  border-bottom: 1px solid var(--xh-border);
 }
 .account-modal-header .desc {
-  font-size: 13px;
-  color: #475569;
+  font-size: var(--xh-fs-sm);
+  color: var(--xh-text-2);
   flex: 1;
 }
 .modal-quick-ops {
@@ -1196,13 +1208,15 @@ const accountModal = reactive({
 .modal-acc-avatar {
   width: 26px;
   height: 26px;
-  border-radius: 6px;
-  background: #ecfdf5;
-  border: 1px solid #d1fae5;
+  border-radius: var(--xh-radius-sm);
+  background: var(--xh-primary-soft);
+  border: 1px solid var(--xh-primary-border);
+  color: var(--xh-primary);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
+  font-size: var(--xh-fs-sm);
+  font-weight: 600;
 }
 .modal-footer-flex {
   display: flex;

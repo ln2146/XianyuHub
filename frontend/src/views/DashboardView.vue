@@ -9,16 +9,19 @@ import {
   CircleCheck,
   Cpu,
   DataLine,
+  InfoFilled,
   Lightning,
   Money,
   Plus,
   Promotion,
+  Reading,
   Refresh,
   Right,
   Search,
   Setting,
   Timer,
   Tools,
+  TrendCharts,
   User,
   UserFilled,
   Warning,
@@ -389,7 +392,7 @@ function fmtJobNextRun(v: string | null | undefined): string {
                     <template #default="{ row }">
                       <div class="account-profile">
                         <div class="avatar-bubble">
-                          <span>🐟</span>
+                          <span>{{ (row.remark || row.nickname || '闲')[0] }}</span>
                           <span class="status-dot-pulse" :class="row.im_connected ? 'online' : 'offline'" />
                         </div>
                         <div class="account-texts">
@@ -582,7 +585,7 @@ function fmtJobNextRun(v: string | null | undefined): string {
                     </div>
 
                     <div class="shield-footer-tip">
-                      <span>💡 实时监听闲鱼滑块与登录状态，如遇风控将在此自动生成人工解除链接并即时通知。</span>
+                      <span><el-icon class="tip-icon"><InfoFilled /></el-icon> 实时监听闲鱼滑块与登录状态，如遇风控将在此自动生成人工解除链接并即时通知。</span>
                     </div>
                   </div>
 
@@ -725,7 +728,7 @@ function fmtJobNextRun(v: string | null | undefined): string {
             <div class="radar-discover-board">
               <div class="discover-col category-col">
                 <div class="discover-head">
-                  <span class="d-title">🔥 热门货源分类探索</span>
+                  <span class="d-title"><el-icon><TrendCharts /></el-icon> 热门货源分类探索</span>
                   <span class="d-sub">点击关键词直达全网最新挂牌底价</span>
                 </div>
                 <div class="category-matrix">
@@ -752,7 +755,7 @@ function fmtJobNextRun(v: string | null | undefined): string {
 
               <div class="discover-col tips-col">
                 <div class="discover-head">
-                  <span class="d-title">💡 闲鱼选品捡漏指南</span>
+                  <span class="d-title"><el-icon><Reading /></el-icon> 闲鱼选品捡漏指南</span>
                   <span class="d-sub">提升选品成功率与防踩坑小贴士</span>
                 </div>
                 <div class="tips-list">
@@ -852,7 +855,7 @@ function fmtJobNextRun(v: string | null | undefined): string {
 
                   <!-- AI 赋能核心链路状态 (与右侧常驻调度高度平衡对齐) -->
                   <div class="llm-features-banner">
-                    <div class="llm-features-title">✨ 当前 AI 引擎赋能场景</div>
+                    <div class="llm-features-title"><el-icon><Cpu /></el-icon> 当前 AI 引擎赋能场景</div>
                     <div class="llm-features-grid">
                       <div class="llm-feature-pill">
                         <span class="feature-dot" />

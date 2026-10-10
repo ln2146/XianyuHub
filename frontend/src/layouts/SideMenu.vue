@@ -141,30 +141,30 @@ const activeMenu = computed(() => {
   line-height: 40px;
   margin: 3px 10px;
   padding: 0 12px !important;
-  border-radius: 8px;
-  color: #374151;
-  font-size: 13.5px;
+  border-radius: var(--xh-radius-sm);
+  color: var(--xh-text);
+  font-size: var(--xh-fs-sm);
   font-weight: 500;
   transition: all 0.18s ease;
 }
 
 :deep(.el-menu-item:hover),
 :deep(.el-sub-menu__title:hover) {
-  background-color: #f3f4f6;
-  color: #111827;
+  background-color: var(--xh-fill);
+  color: var(--xh-text);
 }
 
 /* 一级主图标 */
 :deep(.menu-icon-primary) {
-  font-size: 17px;
+  font-size: var(--xh-fs-lg);
   margin-right: 10px;
-  color: #6b7280;
+  color: var(--xh-muted);
   transition: color 0.18s ease;
 }
 
 :deep(.el-menu-item:hover .menu-icon-primary),
 :deep(.el-sub-menu__title:hover .menu-icon-primary) {
-  color: var(--xh-primary, #1e9e6a);
+  color: var(--xh-primary);
 }
 
 /* 二级子菜单项样式（紧凑 + 缩进层次） */
@@ -178,40 +178,40 @@ const activeMenu = computed(() => {
   line-height: 36px;
   margin: 2px 10px 2px 14px;
   padding-left: 28px !important;
-  border-radius: 6px;
-  font-size: 13px;
+  border-radius: var(--xh-radius-sm);
+  font-size: var(--xh-fs-sm);
   font-weight: 400;
-  color: #4b5563;
+  color: var(--xh-text-2);
   transition: all 0.15s ease;
 }
 
 :deep(.el-sub-menu .el-menu-item:hover) {
-  background-color: #f3f4f6;
-  color: #111827;
+  background-color: var(--xh-fill);
+  color: var(--xh-text);
 }
 
 /* 二级子图标（稍小巧，色彩低调自然） */
 :deep(.sub-icon) {
-  font-size: 14.5px;
+  font-size: var(--xh-fs-md);
   margin-right: 8px;
-  color: #9ca3af;
+  color: var(--xh-muted);
   transition: all 0.15s ease;
 }
 
 :deep(.el-sub-menu .el-menu-item:hover .sub-icon) {
-  color: var(--xh-primary, #1e9e6a);
+  color: var(--xh-primary);
 }
 
 /* 激活状态（Active Highlighting） */
 :deep(.el-menu-item.is-active) {
-  background: rgba(30, 158, 106, 0.1) !important;
-  color: var(--xh-primary, #1e9e6a) !important;
+  background: var(--xh-primary-soft) !important;
+  color: var(--xh-primary) !important;
   font-weight: 600;
 }
 
 :deep(.el-menu-item.is-active .menu-icon-primary),
 :deep(.el-menu-item.is-active .sub-icon) {
-  color: var(--xh-primary, #1e9e6a) !important;
+  color: var(--xh-primary) !important;
 }
 
 /* 折叠状态调整 */

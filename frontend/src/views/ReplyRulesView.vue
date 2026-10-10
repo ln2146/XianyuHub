@@ -2,7 +2,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Check, Plus, Refresh, Setting } from '@element-plus/icons-vue'
+import { Check, Plus, Refresh, Setting, WarningFilled } from '@element-plus/icons-vue'
 import { createRule, deleteRule, listRules, updateRule, type RuleIn, type RuleOut } from '@/api/message'
 import { updateAccount, type Account } from '@/api/account'
 import { useAccountsStore } from '@/stores/accounts'
@@ -250,13 +250,13 @@ async function quickEnableTemplate(tpl: PresetTemplate) {
       <div v-else class="acc-grid">
         <div v-for="a in accounts.list" :key="a.id" class="acc-item-card">
           <div class="acc-item-left">
-            <div class="acc-avatar">{{ (a.remark || a.nickname || '🐟')[0] }}</div>
+            <div class="acc-avatar">{{ (a.remark || a.nickname || '闲')[0] }}</div>
             <div class="acc-text">
               <div class="acc-name">{{ a.remark || a.nickname || a.unb }}</div>
               <div class="acc-status-row">
                 <StatusTag :value="a.status" :map="accountStatusMap" />
-                <span v-if="!a.settings?.auto_reply" class="warn-badge">⚠️ 自动回复已关</span>
-                <span v-else-if="!a.settings?.keyword_reply" class="warn-badge">⚠️ 关键词回复已关</span>
+                <span v-if="!a.settings?.auto_reply" class="warn-badge"><el-icon><WarningFilled /></el-icon> 自动回复已关</span>
+                <span v-else-if="!a.settings?.keyword_reply" class="warn-badge"><el-icon><WarningFilled /></el-icon> 关键词回复已关</span>
               </div>
             </div>
           </div>
@@ -387,7 +387,8 @@ async function quickEnableTemplate(tpl: PresetTemplate) {
 
         <div class="table-footer-bar">
           <span class="footer-tip">
-            🟢 共有 {{ rules.length }} 条关键词回复规则 · 累计触发 {{ rules.reduce((a, b) => a + (b.hits || 0), 0) }} 次 · 优先于 AI 大模型执行
+            <span class="tip-dot" />
+            共有 {{ rules.length }} 条关键词回复规则 · 累计触发 {{ rules.reduce((a, b) => a + (b.hits || 0), 0) }} 次 · 优先于 AI 大模型执行
           </span>
           <el-button link type="primary" size="small" :icon="Plus" @click="openCreate">新建规则</el-button>
         </div>
@@ -578,9 +579,20 @@ async function quickEnableTemplate(tpl: PresetTemplate) {
   border-top: 1px dashed var(--xh-border);
   flex-shrink: 0;
 }
+.tip-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+  background: var(--xh-success);
+  margin-right: 6px;
+  vertical-align: middle;
+}
 .footer-tip {
-  font-size: 11.5px;
-  color: #94a3b8;
+  font-size: var(--xh-fs-xs);
+  color: var(--xh-muted);
+  display: inline-flex;
+  align-items: center;
 }
 
 /* 空状态模版冷启动面板 (填满高度，充满质感) */
@@ -590,22 +602,23 @@ async function quickEnableTemplate(tpl: PresetTemplate) {
   flex-direction: column;
   justify-content: center;
   padding: 24px 28px;
-  background: radial-gradient(circle at 50% 15%, #f0fdf4 0%, #ffffff 75%);
-  border-radius: 8px;
+  background: var(--xh-card);
+  border: 1px solid var(--xh-border);
+  border-radius: var(--xh-radius-lg);
 }
 .hero-top {
   text-align: center;
   margin-bottom: 22px;
 }
 .hero-title {
-  font-size: 19px;
+  font-size: var(--xh-fs-xl);
   font-weight: 700;
-  color: #0f172a;
+  color: var(--xh-text);
   margin: 0 0 8px;
 }
 .hero-sub {
-  font-size: 13px;
-  color: #64748b;
+  font-size: var(--xh-fs-sm);
+  color: var(--xh-muted);
   max-width: 620px;
   margin: 0 auto;
   line-height: 1.55;
@@ -622,27 +635,27 @@ async function quickEnableTemplate(tpl: PresetTemplate) {
   }
 }
 .preset-card {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 9px;
+  background: var(--xh-card);
+  border: 1px solid var(--xh-border);
+  border-radius: var(--xh-radius-md);
   padding: 14px;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  box-shadow: var(--xh-shadow-1);
   transition: all 0.18s ease;
 }
 .preset-card:hover {
   transform: translateY(-2px);
-  border-color: #cbd5e1;
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.06);
+  border-color: var(--xh-primary-border);
+  box-shadow: var(--xh-shadow-2);
 }
 .pc-head {
   display: flex;
   align-items: center;
   gap: 6px;
   font-weight: 600;
-  font-size: 13.5px;
-  color: #1e293b;
+  font-size: var(--xh-fs-sm);
+  color: var(--xh-text);
   margin-bottom: 8px;
 }
 .pc-name {
@@ -656,15 +669,16 @@ async function quickEnableTemplate(tpl: PresetTemplate) {
   margin-bottom: 8px;
 }
 .pc-kw-label {
-  font-size: 11px;
-  color: #94a3b8;
+  font-size: var(--xh-fs-xs);
+  color: var(--xh-muted);
 }
 .pc-kw-pill {
-  font-size: 11px;
-  background: #f1f5f9;
-  color: #475569;
+  font-size: var(--xh-fs-xs);
+  background: var(--xh-fill);
+  color: var(--xh-text-2);
   padding: 1px 6px;
-  border-radius: 4px;
+  border-radius: var(--xh-radius-sm);
+  border: 1px solid var(--xh-border);
 }
 .pc-note {
   font-size: var(--xh-fs-xs);
@@ -672,12 +686,12 @@ async function quickEnableTemplate(tpl: PresetTemplate) {
   color: var(--xh-warning-text);
 }
 .pc-reply {
-  font-size: 12px;
-  color: #475569;
-  background: #f8fafc;
+  font-size: var(--xh-fs-xs);
+  color: var(--xh-text-2);
+  background: var(--xh-fill);
   padding: 8px 10px;
-  border-radius: 6px;
-  border: 1px dashed #e2e8f0;
+  border-radius: var(--xh-radius-sm);
+  border: 1px dashed var(--xh-border-strong);
   line-height: 1.45;
   margin-bottom: 12px;
   flex: 1;
@@ -712,11 +726,11 @@ async function quickEnableTemplate(tpl: PresetTemplate) {
 }
 .dot-sep {
   margin: 0 4px;
-  color: #94a3b8;
+  color: var(--xh-muted);
 }
 .reply-text {
-  color: #334155;
-  font-size: 13px;
+  color: var(--xh-text);
+  font-size: var(--xh-fs-sm);
   line-height: 1.4;
 }
 .ops {
@@ -733,7 +747,7 @@ async function quickEnableTemplate(tpl: PresetTemplate) {
   font-weight: 500;
 }
 .smaller {
-  font-size: 11px;
+  font-size: var(--xh-fs-xs);
 }
 .mt-xs {
   margin-top: 3px;

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 商品分析 + 商家分析（IP 属地 × 评价动态）+ AI 综合点评
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { CopyDocument, MagicStick, Refresh } from '@element-plus/icons-vue'
+import { CopyDocument, MagicStick, Refresh, WarningFilled } from '@element-plus/icons-vue'
 import {
   itemAnalysis,
   itemInsight,
@@ -407,7 +407,10 @@ function rateTag(rate: number | null): { label: string; type: TagType } {
                   <div class="m-val">{{ seller.data.ratings.as_seller }} 条</div>
                 </div>
               </div>
-              <div v-if="seller.data.ratings.burst_note" class="small warn-line">⚠️ {{ seller.data.ratings.burst_note }}，存在刷评或批量出货可能</div>
+              <div v-if="seller.data.ratings.burst_note" class="small warn-line">
+                <el-icon><WarningFilled /></el-icon>
+                <span>{{ seller.data.ratings.burst_note }}，存在刷评或批量出货可能</span>
+              </div>
               <EChart v-if="seller.data.ratings.monthly.length >= 2" :option="ratingOption" height="170px" />
               <div v-if="seller.data.ratings.negative_hits.length || seller.data.ratings.positive_hits.length" class="chips mt">
                 <el-tag v-for="[w, n] in seller.data.ratings.negative_hits" :key="`n${w}`" size="small" type="danger" effect="light">{{ w }} ×{{ n }}</el-tag>
@@ -693,8 +696,11 @@ function rateTag(rate: number | null): { label: string; type: TagType } {
   color: #606266;
 }
 .warn-line {
-  color: #e6a23c;
+  color: var(--xh-warning-text);
   margin: 6px 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 .review {
   padding: 6px 0;

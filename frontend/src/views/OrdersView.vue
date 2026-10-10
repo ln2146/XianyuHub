@@ -3,7 +3,7 @@ import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRealtimeStore } from '@/stores/realtime'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Refresh, Search } from '@element-plus/icons-vue'
+import { Refresh, Search, WarningFilled } from '@element-plus/icons-vue'
 import {
   closeHold,
   createBinding,
@@ -280,7 +280,7 @@ async function openDetail(o: Order) {
           同步最新订单
         </el-button>
         <el-select v-model="filter.status" clearable placeholder="全部订单状态" class="w150" @change="load()">
-          <el-option :value="NEEDS_ACTION_STATUSES" label="⚠️ 需要我处理" />
+          <el-option :value="NEEDS_ACTION_STATUSES" label="需要我处理（待发/风控/失败）" />
           <el-option v-for="(v, k) in orderStatusMap" :key="k" :value="k" :label="v.label" />
         </el-select>
         <el-input v-model="filter.q" placeholder="搜索订单号 / 商品 / 买家" clearable class="w220" :prefix-icon="Search" @keyup.enter="load()" @clear="load()" />
@@ -351,7 +351,10 @@ async function openDetail(o: Order) {
             <template #default="{ row }">
               <StatusTag :value="row.status" :map="orderStatusMap" />
               <el-tooltip v-if="row.fail_reason" :content="row.fail_reason">
-                <div class="smaller err ellipsis mt-xs">⚠️ {{ row.fail_reason }}</div>
+                <div class="smaller err ellipsis mt-xs fail-reason-row">
+                  <el-icon><WarningFilled /></el-icon>
+                  <span>{{ row.fail_reason }}</span>
+                </div>
               </el-tooltip>
             </template>
           </el-table-column>
@@ -573,10 +576,10 @@ async function openDetail(o: Order) {
   width: 24px;
   height: 24px;
   border-radius: 50%;
-  background: #eff6ff;
-  color: #3b82f6;
-  border: 1px solid #dbeafe;
-  font-size: 11px;
+  background: var(--xh-primary-soft);
+  color: var(--xh-primary);
+  border: 1px solid var(--xh-primary-border);
+  font-size: var(--xh-fs-xs);
   font-weight: 700;
   display: flex;
   align-items: center;
@@ -584,21 +587,26 @@ async function openDetail(o: Order) {
   flex-shrink: 0;
 }
 .buyer-nick {
-  font-size: 13px;
-  color: #1e293b;
+  font-size: var(--xh-fs-sm);
+  color: var(--xh-text);
 }
 .price-wrap {
   display: flex;
   align-items: baseline;
 }
 .price-val {
-  color: #e11d48;
+  color: var(--xh-price);
   font-weight: 700;
-  font-size: 15px;
+  font-size: var(--xh-fs-md);
   font-variant-numeric: tabular-nums;
 }
 .err {
-  color: #e11d48;
+  color: var(--xh-danger);
+}
+.fail-reason-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
 }
 .orders-empty-box {
   padding: 40px 0;
@@ -617,7 +625,7 @@ async function openDetail(o: Order) {
   font-weight: 600;
 }
 .smaller {
-  font-size: 11px;
+  font-size: var(--xh-fs-xs);
 }
 .mt-xs {
   margin-top: 3px;
