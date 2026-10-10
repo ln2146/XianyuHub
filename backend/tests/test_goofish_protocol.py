@@ -241,6 +241,23 @@ def test_parse_chat_message():
     assert ev.cid == "50001" and ev.sender_id == "3300" and ev.item_id == "900000000001"
 
 
+def test_platform_tips_shown_as_buyer_are_system_messages():
+    # 实测：付款前后平台以买家身份插入的提示，不能当成买家咨询去自动回复 / 通知
+    tip = (
+        "温馨提醒：商品信息近期有过变更，请与买家沟通一致，防止误拍引起纠纷，<font color='#4F7CAF'>查看商品详情</font>"
+    )
+    assert parse_message(chat_message(tip)).is_system
+    assert parse_message(chat_message("有蚂蚁森林能量可领")).is_system
+    # 按内容类型识别：文字 / 图片是买家，其他卡片是平台
+    text = json.dumps({"contentType": 1, "text": {"text": "在吗"}})
+    ev = parse_message(chat_message("在吗", {"6": {"3": {"5": text}}}))
+    assert not ev.is_system and ev.content_type == 1
+    pic = json.dumps({"contentType": 2, "image": {"pics": []}})
+    assert not parse_message(chat_message("[图片]", {"6": {"3": {"5": pic}}})).is_system
+    card = json.dumps({"contentType": 14, "tip": {"text": "x"}})
+    assert parse_message(chat_message("某个新提示", {"6": {"3": {"5": card}}})).is_system
+
+
 def test_parse_paid_system_message_with_order_id():
     card = json.dumps({"dxCard": {"item": {"main": {"targetUrl": "fleamarket://order_detail?id=4400123456789"}}}})
     ev = parse_message(chat_message("[我已付款，等待你发货]", {"6": {"3": {"5": card}}}))

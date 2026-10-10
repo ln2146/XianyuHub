@@ -183,6 +183,8 @@ async def handle_event(account_id: int, ev: ImEvent) -> None:
                 sender_id=ev.sender_id,
                 is_system=ev.is_system,
                 notice=ev.notice if ev.notice != SystemNotice.NONE else None,
+                # 留存内容类型：平台调整消息形态时有据可查
+                meta={"content_type": ev.content_type} if ev.content_type is not None else None,
             )
         if from_me and not echo and not ev.is_system:
             # 卖家亲自回复 → 该会话进入人工接管

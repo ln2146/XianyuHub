@@ -168,5 +168,6 @@ class ImEvent(BaseModel):
     created_at: datetime | None = None
     is_system: bool = False
     notice: SystemNotice = SystemNotice.NONE
+    content_type: int | None = None  # 消息内容类型：1 文字、2 图片，其他为平台卡片 / 提示
     status_text: str = ""
     raw: dict[str, Any] = Field(default_factory=dict, exclude=True)

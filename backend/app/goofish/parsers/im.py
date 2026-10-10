@@ -23,6 +23,11 @@ NOTICE_RULES: list[tuple[SystemNotice, tuple[str, ...]]] = [
     (SystemNotice.BARGAIN_CARD, ("小刀",)),
 ]
 
+# 平台插进会话里的提示：发送者显示为买家，但不是买家打的字（买家也打不出 <font> 这类排版标记）
+PLATFORM_TIP_MARKERS = ("<font", "蚂蚁森林能量", "商品信息近期有过变更")
+# 买家自己发的内容类型：1 文字、2 图片；其他（卡片、提示条等）都是平台消息
+USER_CONTENT_TYPES = {1, 2}
+
 _ORDER_ID_PATTERNS = [
     re.compile(r"orderId=(\d{6,})"),
     re.compile(r"order_detail\?id=(\d{6,})"),
@@ -60,6 +65,16 @@ def _item_id_from_url(url: str | None) -> str | None:
     return m.group(1) if m else None
 
 
+def _content_type(blob: Any) -> int | None:
+    if not isinstance(blob, str) or not blob.startswith("{"):
+        return None
+    try:
+        value = json.loads(blob).get("contentType")
+    except (ValueError, AttributeError):
+        return None
+    return value if isinstance(value, int) else None
+
+
 def _strip_cid(cid: str | None) -> str | None:
     return cid.split("@", 1)[0] if cid else None
 
@@ -92,9 +107,17 @@ def parse_message(message: Any) -> ImEvent:
         is_system = text.startswith("[") and text.endswith("]")
         notice = classify_notice(text) if is_system else SystemNotice.NONE
         content_blob = dig(body, "6", "3", "5")
+        content_type = _content_type(content_blob)
+        if is_system and notice == SystemNotice.NONE and content_type in USER_CONTENT_TYPES:
+            is_system = False  # 买家发的图片等，提醒文案也是「[图片]」这样的方括号形式
         if not is_system and isinstance(content_blob, str) and "dxCard" in content_blob:
             is_system = True
             notice = classify_notice(content_blob)
+        elif not is_system and (
+            (content_type is not None and content_type not in USER_CONTENT_TYPES)
+            or any(m in text for m in PLATFORM_TIP_MARKERS)
+        ):
+            is_system = True
         return ImEvent(
             type=ImEventType.CHAT,
             cid=_strip_cid(body.get("2")),
@@ -106,6 +129,7 @@ def parse_message(message: Any) -> ImEvent:
             created_at=parse_ms(body.get("5")),
             is_system=is_system,
             notice=notice,
+            content_type=content_type,
             raw=message,
         )
     return ImEvent(type=ImEventType.UNKNOWN, raw=message)
