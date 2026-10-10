@@ -44,8 +44,8 @@ const currentProblem = computed(() =>
   current.value ? accounts.problemOf(accounts.list.find((x) => x.id === current.value?.account_id)) : null,
 )
 
-// 商品与订单上下文侧边栏控制
-const showContextSidebar = ref(!isMobile.value)
+// 商品与订单上下文侧边栏控制（持久化卖家习惯）
+const showContextSidebar = ref(!isMobile.value && localStorage.getItem('xh_inbox_sidebar') !== 'collapsed')
 const showMobileSidebar = ref(false)
 
 function toggleContextSidebar() {
@@ -53,6 +53,7 @@ function toggleContextSidebar() {
     showMobileSidebar.value = !showMobileSidebar.value
   } else {
     showContextSidebar.value = !showContextSidebar.value
+    localStorage.setItem('xh_inbox_sidebar', showContextSidebar.value ? 'expanded' : 'collapsed')
   }
 }
 
@@ -150,8 +151,19 @@ function select(c: Conversation) {
   loadThread()
 }
 
-// ---------------------------------------------------------------- 发送
+// ---------------------------------------------------------------- 发送与快捷话术
 const draft = ref('')
+const quickPhrases = [
+  '在的亲，请问有什么可以帮您？',
+  '拍下后系统自动发货，请放心下单～',
+  '全新正品，功能完好，支持验货',
+  '价格已经非常实惠了，不议价哦亲',
+  '今天拍下当天发出，默认顺丰速递',
+]
+
+function insertPhrase(phrase: string) {
+  draft.value = draft.value ? `${draft.value} ${phrase}` : phrase
+}
 
 // 售后举证：订单、发货记录与完整聊天记录整理成一份材料
 const evidence = reactive({ open: false, loading: false, markdown: '', filename: '' })
@@ -496,19 +508,43 @@ const showThread = computed(() => !isMobile.value || !!currentId.value)
           </div>
         </div>
 
-        <footer class="composer">
-          <el-input
-            v-model="draft"
-            type="textarea"
-            :autosize="{ minRows: 2, maxRows: 5 }"
-            maxlength="1000"
-            placeholder="输入回复内容，Ctrl / ⌘ + Enter 发送。人工发送后会自动接管该会话。"
-            @keydown="onKeydown"
-          />
-          <el-button type="primary" :icon="Promotion" :loading="sending" :disabled="!draft.trim()" @click="send">发送</el-button>
-        </footer>
+        <div class="composer-container">
+          <div class="quick-phrase-bar">
+            <span class="quick-phrase-label">常用话术：</span>
+            <div class="phrase-scroll">
+              <button
+                v-for="(p, idx) in quickPhrases"
+                :key="idx"
+                type="button"
+                class="phrase-chip"
+                :title="`点击填入：${p}`"
+                @click="insertPhrase(p)"
+              >
+                {{ p }}
+              </button>
+            </div>
+          </div>
+
+          <footer class="composer">
+            <el-input
+              v-model="draft"
+              type="textarea"
+              :autosize="{ minRows: 2, maxRows: 5 }"
+              maxlength="1000"
+              placeholder="输入回复内容，Ctrl / ⌘ + Enter 发送。人工发送后会自动接管该会话。"
+              @keydown="onKeydown"
+            />
+            <el-button type="primary" :icon="Promotion" :loading="sending" :disabled="!draft.trim()" @click="send">发送</el-button>
+          </footer>
+        </div>
       </template>
-      <el-empty v-else description="选择左侧会话查看消息" class="placeholder" />
+      <div v-else class="placeholder-wrap">
+        <el-empty description="选择左侧会话查看消息" :image-size="70">
+          <div class="empty-stats-row">
+            <span class="muted small">共 {{ convTotal }} 个会话 · {{ realtime.totalUnread }} 条未读</span>
+          </div>
+        </el-empty>
+      </div>
     </section>
 
     <!-- 商品与订单上下文侧边栏 (桌面端内嵌) -->
@@ -892,12 +928,66 @@ const showThread = computed(() => !isMobile.value || !!currentId.value)
   margin-top: 6px;
   flex-wrap: wrap;
 }
+.composer-container {
+  border-top: 1px solid var(--xh-border);
+  background: var(--xh-card);
+}
+.quick-phrase-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px 2px;
+  overflow: hidden;
+}
+.quick-phrase-label {
+  font-size: 11.5px;
+  color: var(--xh-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.phrase-scroll {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: none;
+}
+.phrase-scroll::-webkit-scrollbar {
+  display: none;
+}
+.phrase-chip {
+  background: var(--xh-fill);
+  border: 1px solid var(--xh-border);
+  border-radius: 12px;
+  padding: 2px 9px;
+  font-size: 11.5px;
+  color: var(--xh-text-2);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  line-height: 1.5;
+}
+.phrase-chip:hover {
+  background: var(--xh-primary-soft);
+  border-color: var(--xh-primary-border);
+  color: var(--xh-primary);
+}
 .composer {
   display: flex;
   gap: 8px;
   align-items: flex-end;
-  padding: 10px 14px;
-  border-top: 1px solid var(--xh-border);
+  padding: 6px 14px 10px;
+}
+.placeholder-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--xh-fill);
+}
+.empty-stats-row {
+  margin-top: 6px;
 }
 .mb {
   margin-bottom: 8px;
