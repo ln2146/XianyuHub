@@ -16,7 +16,7 @@ from app.core.deps import AdminUser, CurrentUser, SessionDep
 from app.domains.system import llm as llm_service
 from app.domains.system.audit import record_audit
 from app.domains.system.models import LlmProvider
-from app.intelligence.llm import LlmConfig, get_config, get_llm
+from app.intelligence.llm import LLMError, LlmConfig, get_config, get_llm
 
 router = APIRouter(prefix="/llm", tags=["llm"])
 
@@ -415,6 +415,8 @@ async def fetch_models(body: TestIn, admin: AdminUser, session: SessionDep) -> d
     config = _config_from_body(body, row)
     try:
         models = await llm_service.list_remote_models(config)
+    except LLMError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(e)[:300]) from e
     return {"models": models}

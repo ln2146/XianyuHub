@@ -118,6 +118,12 @@ async def test_connection_test_and_model_list(admin_client):
     r = await admin_client.post("/api/v1/llm/models", json=_provider_body())
     assert r.json()["models"] == ["deepseek-chat", "deepseek-reasoner"]
 
+    # 缺少 API Key 时返回友好 400 校验提示
+    no_key_body = _provider_body()
+    no_key_body["api_key"] = ""
+    r_no_key = await admin_client.post("/api/v1/llm/models", json=no_key_body)
+    assert r_no_key.status_code == 400 and "API Key" in r_no_key.text
+
     # 测试失败的配置会记下 last_error
     respx.post("https://llm.example.com/v1/chat/completions").mock(return_value=httpx.Response(401, text="bad key"))
     saved = (await admin_client.post("/api/v1/llm/providers", json=_provider_body(name="坏的"))).json()

@@ -243,8 +243,9 @@ const edit = reactive({
   has_key: false,
   orig_kind: '' as string,
   orig_base_url: '',
-  show_advanced: false,
 })
+
+const remoteFetchedModels = ref<string[]>([])
 
 const normUrl = (u: string) => u.trim().replace(/\/+$/, '')
 const needsNewKey = computed(
@@ -256,6 +257,31 @@ const needsNewKey = computed(
 )
 const KEY_REBIND_TIP = '修改了接口地址，请重新填写 API Key（已保存的 Key 不会发往新的地址）'
 const activePreset = computed(() => presets.value.find((x) => x.id === edit.preset))
+
+const suggestedPresetModels = computed(() => {
+  const p = activePreset.value
+  if (!p) return []
+  const list = [p.models.chat, p.models.vision, p.models.fast, ...(p.suggested_models || [])].filter(Boolean)
+  return Array.from(new Set(list))
+})
+
+function toggleModel(model: string) {
+  if (edit.custom_models.includes(model)) {
+    edit.custom_models = edit.custom_models.filter((m) => m !== model)
+  } else {
+    edit.custom_models.push(model)
+  }
+}
+
+function addAllSuggested() {
+  const merged = new Set([...edit.custom_models, ...suggestedPresetModels.value])
+  edit.custom_models = Array.from(merged)
+}
+
+function addAllRemote() {
+  const merged = new Set([...edit.custom_models, ...remoteFetchedModels.value])
+  edit.custom_models = Array.from(merged)
+}
 
 const baseUrlPlaceholder = computed(() => {
   if (edit.preset === 'dashscope') return 'https://dashscope.aliyuncs.com/compatible-mode/v1'
@@ -277,15 +303,14 @@ function applyPreset(id: string) {
   if (!p) return
   edit.kind = (p.kind || 'openai_compatible') as LlmKind
   edit.base_url = p.base_url
-  edit.model_vision = p.models.vision
-  edit.model_chat = p.models.chat
-  edit.model_fast = p.models.fast
+  edit.model_vision = ''
+  edit.model_chat = ''
+  edit.model_fast = ''
   if (!edit.id) {
     edit.name = p.name === '自定义配置' ? '' : p.name
+    edit.custom_models = []
   }
-  const suggested = p.suggested_models || []
-  const initial = [p.models.chat, p.models.vision, p.models.fast, ...suggested].filter(Boolean)
-  edit.custom_models = Array.from(new Set(initial))
+  remoteFetchedModels.value = []
 }
 
 function selectPreset(id: string) {
@@ -295,6 +320,7 @@ function selectPreset(id: string) {
 
 function openCreate(presetId = 'deepseek') {
   presetCategoryFilter.value = 'all'
+  remoteFetchedModels.value = []
   Object.assign(edit, {
     open: true,
     id: null,
@@ -316,7 +342,6 @@ function openCreate(presetId = 'deepseek') {
     has_key: false,
     orig_kind: '',
     orig_base_url: '',
-    show_advanced: false,
   })
   applyPreset(presetId)
 }
@@ -324,6 +349,7 @@ function openCreate(presetId = 'deepseek') {
 function openEdit(p: LlmProvider) {
   const presetMatch = presets.value.find((x) => x.name === p.name || x.base_url === p.base_url)
   const allModels = getProviderModels(p)
+  remoteFetchedModels.value = []
 
   Object.assign(edit, {
     open: true,
@@ -346,7 +372,6 @@ function openEdit(p: LlmProvider) {
     has_key: p.has_api_key,
     orig_kind: p.kind,
     orig_base_url: p.base_url,
-    show_advanced: false,
   })
 }
 
@@ -364,17 +389,20 @@ function removeModelTag(tag: string) {
 }
 
 function payload() {
+  const custom = edit.custom_models
+  const first = custom[0] || ''
+  const visionCandidate = custom.find((m) => /vl|vision|4v|image|gpt-4o|claude|gemini/i.test(m)) || first
   return {
     name: edit.name.trim(),
     kind: edit.kind,
     base_url: edit.base_url.trim(),
     api_key: edit.api_key,
-    model_vision: edit.model_vision.trim() || (edit.custom_models.find((m) => /vl|vision|4v|image|gpt-4o|claude|gemini/i.test(m)) || ''),
-    model_chat: edit.model_chat.trim() || edit.custom_models[0] || '',
-    model_fast: edit.model_fast.trim() || edit.custom_models[0] || '',
-    custom_models: edit.custom_models,
-    timeout_seconds: edit.timeout_seconds,
-    anthropic_fallbacks: edit.anthropic_fallbacks,
+    model_vision: edit.model_vision.trim() || visionCandidate,
+    model_chat: edit.model_chat.trim() || first,
+    model_fast: edit.model_fast.trim() || first,
+    custom_models: custom,
+    timeout_seconds: edit.timeout_seconds || 90,
+    anthropic_fallbacks: edit.anthropic_fallbacks ?? true,
     daily_token_budget: edit.daily_token_budget,
   }
 }
@@ -392,8 +420,8 @@ function validate(): boolean {
     ElMessage.warning('请填写 API Key')
     return false
   }
-  if (!edit.custom_models.length && !edit.model_chat.trim() && !edit.model_fast.trim()) {
-    ElMessage.warning('请至少添加一个可用模型')
+  if (!edit.custom_models.length) {
+    ElMessage.warning('请至少选择或添加一个可用模型')
     return false
   }
   if (needsNewKey.value) {
@@ -441,19 +469,21 @@ async function probe() {
 
 async function pullModels() {
   if (edit.kind !== 'anthropic' && !edit.base_url.trim()) return ElMessage.warning('请先填写接口地址')
+  if (!edit.api_key.trim() && !edit.has_key) {
+    return ElMessage.warning('请先填写 API Key，服务商需鉴权后才能获取可用模型')
+  }
   if (needsNewKey.value) return ElMessage.warning(KEY_REBIND_TIP)
   edit.fetching = true
   try {
     const r = await fetchLlmModels({ ...payload(), id: edit.id ?? undefined })
     if (r.models.length) {
-      const merged = new Set([...edit.custom_models, ...r.models])
-      edit.custom_models = Array.from(merged)
-      ElMessage.success(`拉取成功！已同步 ${r.models.length} 个可用模型`)
+      remoteFetchedModels.value = r.models
+      ElMessage.success(`拉取成功！已查询到 ${r.models.length} 个可用模型，可在下方点击选择`)
     } else {
-      ElMessage.warning('接口未返回可用模型列表，请手动添加模型名')
+      ElMessage.warning('接口未返回可用模型列表，请直接点击推荐模型或手动添加')
     }
-  } catch (e) {
-    ElMessage.error(errorMessage(e))
+  } catch {
+    /* 拦截器已统一展示错误提示，避免重复弹窗 */
   } finally {
     edit.fetching = false
   }
@@ -863,9 +893,12 @@ async function remove(p: LlmProvider) {
           </el-form-item>
 
           <!-- 可用模型管理区 -->
-          <el-form-item label="可用模型">
+          <el-form-item label="可用模型" required>
             <div class="models-box">
               <div class="tags-wall">
+                <span v-if="!edit.custom_models.length" class="empty-models-hint">
+                  暂未选择模型，请从下方推荐模型点选或手动输入添加
+                </span>
                 <el-tag
                   v-for="m in edit.custom_models"
                   :key="m"
@@ -878,7 +911,7 @@ async function remove(p: LlmProvider) {
                 <div class="quick-add-input-box">
                   <el-input
                     v-model="edit.new_model_tag"
-                    placeholder="+ 回车快速加模型"
+                    placeholder="+ 回车自定义模型"
                     size="small"
                     class="quick-input"
                     @keyup.enter="addModelTag"
@@ -887,48 +920,60 @@ async function remove(p: LlmProvider) {
                 </div>
               </div>
 
+              <!-- 快捷点选预设推荐模型 -->
+              <div v-if="suggestedPresetModels.length" class="quick-suggest-section">
+                <div class="suggest-header">
+                  <span class="suggest-title">推荐常用模型（点击选择）：</span>
+                  <div class="suggest-actions">
+                    <button type="button" class="link-btn primary" @click="addAllSuggested">全选推荐</button>
+                    <button v-if="edit.custom_models.length" type="button" class="link-btn muted" @click="edit.custom_models = []">清空</button>
+                  </div>
+                </div>
+                <div class="suggest-chips">
+                  <button
+                    v-for="m in suggestedPresetModels"
+                    :key="m"
+                    type="button"
+                    class="model-chip-btn"
+                    :class="{ selected: edit.custom_models.includes(m) }"
+                    @click="toggleModel(m)"
+                  >
+                    <span class="chip-icon">{{ edit.custom_models.includes(m) ? '✓' : '+' }}</span>
+                    <span class="chip-text mono">{{ m }}</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- 从接口拉取模型列表操作区 -->
               <div class="model-action-bar">
                 <el-button size="small" :icon="Download" :loading="edit.fetching" @click="pullModels">
                   从接口拉取模型列表
                 </el-button>
-                <span class="action-tip">填写接口与 Key 后可在线查询可用模型</span>
+                <span class="action-tip">填写 Key 后可在线查询该服务商所有可用模型</span>
+              </div>
+
+              <!-- 在线拉取到的模型列表点选区 -->
+              <div v-if="remoteFetchedModels.length" class="remote-models-section">
+                <div class="suggest-header">
+                  <span class="suggest-title">接口在线返回模型（{{ remoteFetchedModels.length }} 个）：</span>
+                  <button type="button" class="link-btn primary" @click="addAllRemote">全选接口模型</button>
+                </div>
+                <div class="suggest-chips remote-scroll">
+                  <button
+                    v-for="m in remoteFetchedModels"
+                    :key="m"
+                    type="button"
+                    class="model-chip-btn"
+                    :class="{ selected: edit.custom_models.includes(m) }"
+                    @click="toggleModel(m)"
+                  >
+                    <span class="chip-icon">{{ edit.custom_models.includes(m) ? '✓' : '+' }}</span>
+                    <span class="chip-text mono">{{ m }}</span>
+                  </button>
+                </div>
               </div>
             </div>
           </el-form-item>
-
-          <!-- 高级配置折叠 -->
-          <div class="advanced-divider" @click="edit.show_advanced = !edit.show_advanced">
-            <span>{{ edit.show_advanced ? '▼ 收起高级设置' : '▶ 展开高级设置（超时与预算）' }}</span>
-          </div>
-
-          <template v-if="edit.show_advanced">
-            <el-row :gutter="16">
-              <el-col :xs="24" :sm="12">
-                <el-form-item label="超时时间">
-                  <el-input-number
-                    v-model="edit.timeout_seconds"
-                    :min="5"
-                    :max="600"
-                    :step="5"
-                    controls-position="right"
-                    class="full-width"
-                  />
-                </el-form-item>
-              </el-col>
-              <el-col :xs="24" :sm="12">
-                <el-form-item label="Token 预算">
-                  <el-input-number
-                    v-model="edit.daily_token_budget"
-                    :min="0"
-                    :step="100000"
-                    controls-position="right"
-                    placeholder="留空沿用全局"
-                    class="full-width"
-                  />
-                </el-form-item>
-              </el-col>
-            </el-row>
-          </template>
         </el-form>
       </div>
 
@@ -1419,16 +1464,100 @@ async function remove(p: LlmProvider) {
   color: var(--xh-text-muted);
 }
 
-.advanced-divider {
-  text-align: center;
+.empty-models-hint {
   font-size: 12px;
-  color: var(--xh-brand);
+  color: var(--xh-text-muted);
+  padding: 4px;
+}
+
+.quick-suggest-section,
+.remote-models-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: #f8fafc;
+  border: 1px dashed var(--xh-border);
+  border-radius: var(--xh-radius-sm);
+  padding: 8px 10px;
+}
+
+.suggest-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.suggest-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: #475569;
+}
+
+.suggest-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 11px;
   cursor: pointer;
-  padding: 8px 0;
   user-select: none;
 }
-.advanced-divider:hover {
+.link-btn.primary {
+  color: var(--xh-brand);
+}
+.link-btn.primary:hover {
   text-decoration: underline;
+}
+.link-btn.muted {
+  color: #94a3b8;
+}
+.link-btn.muted:hover {
+  color: #64748b;
+}
+
+.suggest-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.suggest-chips.remote-scroll {
+  max-height: 140px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.model-chip-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 12px;
+  color: #334155;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+.model-chip-btn:hover {
+  border-color: #0284c7;
+  color: #0284c7;
+  background: #f0f9ff;
+}
+.model-chip-btn.selected {
+  background: #0284c7;
+  border-color: #0284c7;
+  color: #ffffff;
+  font-weight: 500;
+}
+.chip-icon {
+  font-weight: 700;
+  font-size: 11px;
 }
 
 .dialog-footer-content {

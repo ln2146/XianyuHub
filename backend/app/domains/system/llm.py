@@ -424,24 +424,72 @@ def _candidate_models(config: LlmConfig) -> list[str]:
 async def list_remote_models(config: LlmConfig) -> list[str]:
     """尽力向供应商拉取可用模型列表；接口不支持时抛 LLMError，由调用方提示手填。"""
     if config.kind == "anthropic":
+        if not config.api_key:
+            raise LLMError("请先填写 API Key（Anthropic 需鉴权后获取可用模型）")
         return await _list_anthropic_models(config)
+
+    if not config.base_url:
+        raise LLMError("请先填写接口地址")
+    if not config.api_key:
+        raise LLMError("请先填写 API Key（服务商需鉴权后才能返回可用模型列表）")
+
+    base = config.base_url.strip().rstrip("/")
+    headers = {"Authorization": f"Bearer {config.api_key}"}
+
+    candidates: list[str] = []
+    if base.endswith("/v1"):
+        candidates.append(f"{base}/models")
+        candidates.append(f"{base[:-3]}/models")
     else:
-        if not config.base_url:
-            raise LLMError("请先填写接口地址")
-        url = f"{config.base_url.rstrip('/')}/models"
-        headers = {"Authorization": f"Bearer {config.api_key}"} if config.api_key else {}
-    async with httpx.AsyncClient(timeout=20) as http:
-        resp = await http.get(url, headers=headers)
-    if resp.status_code in (401, 403):
-        raise LLMError(f"鉴权失败（HTTP {resp.status_code}），请检查 API Key")
-    if resp.status_code >= 400:
-        raise LLMError(f"接口返回 HTTP {resp.status_code}：{resp.text[:200]}")
-    data = resp.json()
-    rows = data.get("data") if isinstance(data, dict) else data
-    if not isinstance(rows, list):
-        raise LLMError("接口没有返回模型列表，请手动填写模型名")
-    ids = [str(r.get("id") or r.get("name") or "").strip() for r in rows if isinstance(r, dict)]
-    return sorted({i for i in ids if i})
+        candidates.append(f"{base}/models")
+        candidates.append(f"{base}/v1/models")
+
+    # 去重保留候选顺序
+    seen_urls: set[str] = set()
+    uniq_candidates = [u for u in candidates if not (u in seen_urls or seen_urls.add(u))]
+
+    last_error = ""
+    auth_failed = False
+
+    async with httpx.AsyncClient(timeout=20, follow_redirects=True) as http:
+        for url in uniq_candidates:
+            try:
+                resp = await http.get(url, headers=headers)
+            except httpx.RequestError as exc:
+                last_error = f"网络连接失败：{exc}"
+                continue
+
+            if resp.status_code in (401, 403):
+                auth_failed = True
+                last_error = f"鉴权失败（HTTP {resp.status_code}），请检查 API Key 是否有效"
+                break
+
+            if resp.status_code == 404:
+                last_error = "服务商未提供在线模型列表端点（HTTP 404）"
+                continue
+
+            if resp.status_code >= 400:
+                last_error = f"接口返回 HTTP {resp.status_code}：{resp.text[:200]}"
+                continue
+
+            try:
+                data = resp.json()
+            except Exception:
+                continue
+
+            rows = data.get("data") if isinstance(data, dict) else data
+            if not isinstance(rows, list):
+                continue
+            ids = [str(r.get("id") or r.get("name") or "").strip() for r in rows if isinstance(r, dict)]
+            models = sorted({i for i in ids if i})
+            if models:
+                return models
+
+    if auth_failed:
+        raise LLMError(last_error)
+    if last_error:
+        raise LLMError(f"{last_error}，请直接在下方快捷选择推荐模型或手动添加")
+    raise LLMError("接口未返回可用模型列表，请直接在下方快捷选择推荐模型或手动添加")
 
 
 async def _list_anthropic_models(config: LlmConfig) -> list[str]:
