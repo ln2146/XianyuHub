@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { ArrowDown, ArrowLeft, Cpu, Document, Goods, Promotion, Refresh, Search, UserFilled } from '@element-plus/icons-vue'
+import { ArrowDown, ArrowLeft, Cpu, Document, Goods, Promotion, Refresh, Search, User, UserFilled } from '@element-plus/icons-vue'
 import {
   conversationEvidence,
   handleSuggestion,
@@ -346,7 +346,12 @@ const showThread = computed(() => !isMobile.value || !!currentId.value)
               <span class="conv-last ellipsis">{{ c.last_message }}</span>
               <el-tag v-if="c.in_takeover" size="small" type="warning" effect="plain" class="tk">接管中</el-tag>
             </div>
-            <div class="muted conv-acc ellipsis">{{ accounts.nameOf(c.account_id) }}</div>
+            <div class="conv-acc-row">
+              <span class="conv-acc-tag" :title="`所属账号：${accounts.nameOf(c.account_id)}`">
+                <el-icon class="acc-icon"><User /></el-icon>
+                <span class="acc-name ellipsis">{{ accounts.nameOf(c.account_id) }}</span>
+              </span>
+            </div>
           </div>
         </div>
         <div v-if="convs.length" class="conv-foot">
@@ -367,13 +372,26 @@ const showThread = computed(() => !isMobile.value || !!currentId.value)
                 {{ current.peer_name || '买家' }}
                 <el-tag v-if="current.in_takeover" size="small" type="warning">人工接管中</el-tag>
               </div>
-              <div class="muted small ellipsis">
-                {{ accounts.nameOf(current.account_id) }}
+              <div class="th-sub-meta">
+                <span class="th-sub-chip" :title="`接待账号：${accounts.nameOf(current.account_id)}`">
+                  <el-icon><User /></el-icon>
+                  <span>账号：<b>{{ accounts.nameOf(current.account_id) }}</b></span>
+                </span>
                 <template v-if="current.item_id">
-                  · <el-link :href="itemUrl(current.item_id)" target="_blank" type="primary" class="small">商品 {{ current.item_id }}</el-link>
+                  <span class="th-sub-chip item-chip">
+                    <el-icon><Goods /></el-icon>
+                    <span>咨询商品：</span>
+                    <el-link :href="itemUrl(current.item_id)" target="_blank" type="primary" class="small mono">
+                      {{ current.item_id }}
+                    </el-link>
+                  </span>
                 </template>
-                <template v-if="current.bargain_rounds"> · 已议价 {{ current.bargain_rounds }} 轮</template>
-                <template v-if="current.in_takeover && current.takeover_until"> · 接管至 {{ fmtTime(current.takeover_until) }}</template>
+                <template v-if="current.bargain_rounds">
+                  <span class="th-sub-chip">已议价 {{ current.bargain_rounds }} 轮</span>
+                </template>
+                <template v-if="current.in_takeover && current.takeover_until">
+                  <span class="th-sub-chip takeover-chip">接管至 {{ fmtTime(current.takeover_until) }}</span>
+                </template>
               </div>
             </div>
           </div>
@@ -622,8 +640,60 @@ const showThread = computed(() => !isMobile.value || !!currentId.value)
 .tk {
   flex-shrink: 0;
 }
-.conv-acc {
+.conv-acc-row {
+  display: flex;
+  align-items: center;
+  margin-top: 4px;
+}
+.conv-acc-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  background: var(--xh-fill);
+  border: 1px solid var(--xh-border);
+  border-radius: var(--xh-radius-sm, 4px);
+  font-size: 11px;
+  color: var(--xh-text-secondary, #64748b);
+  max-width: 100%;
+}
+.conv-acc-tag .acc-icon {
+  font-size: 11px;
+  color: var(--xh-muted);
+  flex-shrink: 0;
+}
+.conv-acc-tag .acc-name {
+  max-width: 140px;
+}
+.th-sub-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+.th-sub-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: var(--xh-fs-xs);
+  color: var(--xh-muted);
+  background: var(--xh-fill);
+  padding: 2px 8px;
+  border-radius: var(--xh-radius-sm);
+  border: 1px solid var(--xh-border);
+}
+.th-sub-chip b {
+  color: var(--xh-text);
+  font-weight: 500;
+}
+.th-sub-chip.item-chip .el-link {
+  font-size: var(--xh-fs-xs);
+}
+.th-sub-chip.takeover-chip {
+  background: var(--xh-warning-soft, #fef3c7);
+  color: var(--xh-warning-text, #92400e);
+  border-color: var(--xh-warning-border, #fde68a);
 }
 .thread-pane {
   flex: 1;

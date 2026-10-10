@@ -199,22 +199,24 @@ const statusTagType = (st: string) => {
               <div class="item-id-row">
                 <span class="id-text mono">ID: {{ context.item.item_id }}</span>
                 <el-button link size="small" :icon="CopyDocument" @click="copyText(context.item.item_id)">复制</el-button>
+              </div>
+
+              <div class="item-bottom-row">
+                <div class="item-stats-chips">
+                  <span v-if="context.item.status" class="stat-chip status-chip" :class="context.item.status">
+                    {{ context.item.status === 'on_sale' ? '在售中' : context.item.status === 'sold' ? '已售出' : '已下架' }}
+                  </span>
+                  <span v-if="context.item.want_cnt !== null && context.item.want_cnt !== undefined" class="stat-chip">
+                    {{ context.item.want_cnt }} 想要
+                  </span>
+                  <span v-if="context.item.browse_cnt !== null && context.item.browse_cnt !== undefined" class="stat-chip">
+                    {{ context.item.browse_cnt }} 浏览
+                  </span>
+                </div>
                 <a :href="itemUrl(context.item.item_id)" target="_blank" rel="noopener" class="jump-link">
                   <span>闲鱼直达</span>
                   <el-icon><TopRight /></el-icon>
                 </a>
-              </div>
-
-              <div class="item-stats-chips">
-                <span v-if="context.item.status" class="stat-chip status-chip" :class="context.item.status">
-                  {{ context.item.status === 'on_sale' ? '在售中' : context.item.status === 'sold' ? '已售出' : '已下架' }}
-                </span>
-                <span v-if="context.item.want_cnt !== null && context.item.want_cnt !== undefined" class="stat-chip">
-                  {{ context.item.want_cnt }} 想要
-                </span>
-                <span v-if="context.item.browse_cnt !== null && context.item.browse_cnt !== undefined" class="stat-chip">
-                  {{ context.item.browse_cnt }} 浏览
-                </span>
               </div>
             </div>
           </div>
@@ -600,24 +602,43 @@ const statusTagType = (st: string) => {
   margin-top: 3px;
 }
 
+.item-bottom-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+}
+
 .jump-link {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  color: #3b82f6;
+  color: var(--xh-primary, #059669);
   text-decoration: none;
   font-size: 11px;
-  margin-left: auto;
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
+  padding: 2px 7px;
+  background: var(--xh-primary-soft, #ecfdf5);
+  border: 1px solid var(--xh-primary-border, #a7f3d0);
+  border-radius: 4px;
+  transition: all 0.15s ease;
+  line-height: 1.2;
 }
 
 .jump-link:hover {
-  text-decoration: underline;
+  background: var(--xh-primary, #059669);
+  color: #fff;
+  text-decoration: none;
 }
 
 .item-stats-chips {
   display: flex;
   gap: 6px;
-  margin-top: 4px;
+  flex-wrap: wrap;
+  align-items: center;
 }
 
 .stat-chip {
