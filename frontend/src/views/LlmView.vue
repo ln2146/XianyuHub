@@ -2,12 +2,18 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  ChatLineRound,
+  ChatDotRound,
   Check,
+  Coin,
   Connection,
+  Cpu,
+  DataLine,
   Delete,
   Download,
+  Edit,
+  Key,
   Lightning,
+  Link,
   Picture,
   Plus,
   Refresh,
@@ -62,6 +68,84 @@ const tierLabels: Record<string, string> = {
 const tokenUsed = computed(() =>
   status.value ? status.value.gateway.usage_today.input_tokens + status.value.gateway.usage_today.output_tokens : 0,
 )
+
+/** 服务商品牌元信息识别（用于精致的卡片 Logo 与配色） */
+function getProviderMeta(name: string) {
+  const n = (name || '').toLowerCase()
+  if (n.includes('deepseek')) {
+    return { brand: 'DeepSeek', color: '#1677ff', bg: 'rgba(22, 119, 255, 0.12)', border: 'rgba(22, 119, 255, 0.25)' }
+  }
+  if (n.includes('阿里') || n.includes('qwen') || n.includes('tongyi') || n.includes('通义')) {
+    return { brand: 'Qwen', color: '#ff6a00', bg: 'rgba(255, 106, 0, 0.12)', border: 'rgba(255, 106, 0, 0.25)' }
+  }
+  if (n.includes('智谱') || n.includes('glm') || n.includes('zhipu')) {
+    return { brand: 'GLM', color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.12)', border: 'rgba(59, 130, 246, 0.25)' }
+  }
+  if (n.includes('openai') || n.includes('gpt')) {
+    return { brand: 'OpenAI', color: '#10a37f', bg: 'rgba(16, 163, 127, 0.12)', border: 'rgba(16, 163, 127, 0.25)' }
+  }
+  if (n.includes('claude') || n.includes('anthropic')) {
+    return { brand: 'Claude', color: '#d97706', bg: 'rgba(217, 119, 6, 0.12)', border: 'rgba(217, 119, 6, 0.25)' }
+  }
+  if (n.includes('gemini') || n.includes('google')) {
+    return { brand: 'Gemini', color: '#4285f4', bg: 'rgba(66, 133, 244, 0.12)', border: 'rgba(66, 133, 244, 0.25)' }
+  }
+  if (n.includes('kimi') || n.includes('moonshot')) {
+    return { brand: 'Kimi', color: '#10b981', bg: 'rgba(16, 185, 129, 0.12)', border: 'rgba(16, 185, 129, 0.25)' }
+  }
+  if (n.includes('silicon') || n.includes('硅基流动')) {
+    return { brand: 'Silicon', color: '#7c3aed', bg: 'rgba(124, 58, 237, 0.12)', border: 'rgba(124, 58, 237, 0.25)' }
+  }
+  if (n.includes('ollama') || n.includes('local') || n.includes('本地')) {
+    return { brand: 'Local', color: '#475569', bg: 'rgba(71, 85, 105, 0.12)', border: 'rgba(71, 85, 105, 0.25)' }
+  }
+  const clean = (name || '').replace(/[\(\)（）\s]/g, '')
+  return {
+    brand: clean ? clean.slice(0, 4).toUpperCase() : 'AI',
+    color: 'var(--xh-primary)',
+    bg: 'var(--xh-primary-soft)',
+    border: 'var(--xh-border)',
+  }
+}
+
+const activeChatModel = computed(() => {
+  if (tierForm.chat) {
+    const parts = tierForm.chat.split(':')
+    return parts.slice(1).join(':') || tierForm.chat
+  }
+  return status.value?.gateway.models.chat || '未配置'
+})
+
+const activeVisionModel = computed(() => {
+  if (tierForm.vision) {
+    const parts = tierForm.vision.split(':')
+    return parts.slice(1).join(':') || tierForm.vision
+  }
+  return status.value?.gateway.models.vision || '未配置'
+})
+
+const activeFastModel = computed(() => {
+  if (tierForm.fast) {
+    const parts = tierForm.fast.split(':')
+    return parts.slice(1).join(':') || tierForm.fast
+  }
+  return status.value?.gateway.models.fast || '未配置'
+})
+
+function getScenarioProviderName(tierKey: 'chat' | 'vision' | 'fast'): string {
+  const formVal = tierForm[tierKey]
+  if (formVal) {
+    const pid = Number(formVal.split(':')[0])
+    const p = providers.value.find((x) => x.id === pid)
+    if (p) return p.name
+  }
+  if (status.value?.tiers?.[tierKey]?.provider_id) {
+    const pid = status.value.tiers[tierKey].provider_id
+    const p = providers.value.find((x) => x.id === pid)
+    if (p) return p.name
+  }
+  return status.value?.gateway.provider || status.value?.active_source || '系统主用'
+}
 
 function isPresetConnected(presetName: string): boolean {
   return providers.value.some((p) => p.name === presetName || p.name.includes(presetName))
@@ -543,10 +627,11 @@ async function remove(p: LlmProvider) {
 
 <template>
   <div class="page">
+    <!-- 1. 规范页面头部 -->
     <div class="page-head">
-      <div>
+      <div class="title-row">
+        <el-icon class="title-icon"><Cpu /></el-icon>
         <h2>模型配置</h2>
-        <span class="page-subtitle">接入主流大模型服务商，自由分派客服问答、识图发品与意图识别场景</span>
       </div>
       <div class="toolbar">
         <el-button :icon="Refresh" :loading="loading" @click="load">刷新状态</el-button>
@@ -554,19 +639,22 @@ async function remove(p: LlmProvider) {
       </div>
     </div>
 
-    <!-- 1. 业务场景模型配置 (Top Section) -->
+    <!-- 2. 业务场景模型配置 (Top Section) -->
     <el-card shadow="never" class="block config-card">
       <template #header>
         <div class="card-head">
           <div class="card-title-group">
             <el-icon class="title-icon"><Setting /></el-icon>
-            <span class="section-title">业务场景模型配置</span>
-            <span class="section-hint">按业务场景灵活挑选生效模型，支持跨服务商任意混搭</span>
+            <div class="title-text-group">
+              <span class="section-title">业务场景模型配置</span>
+              <span class="section-hint">按场景灵活挑选生效模型，支持跨服务商任意混搭调度</span>
+            </div>
           </div>
           <div class="card-head-extra">
-            <el-tag :type="status?.gateway.available ? 'success' : 'danger'" size="small" effect="dark">
-              {{ status?.gateway.available ? '● 网关运行中' : '● 网关未就绪' }}
-            </el-tag>
+            <span class="gateway-live-pill" :class="status?.gateway.available ? 'online' : 'offline'">
+              <span class="pulse-dot" :class="status?.gateway.available ? 'green' : 'red'"></span>
+              <span>{{ status?.gateway.available ? '网关运行中' : '网关未就绪' }}</span>
+            </span>
             <el-button
               v-if="auth.isAdmin"
               type="primary"
@@ -580,22 +668,37 @@ async function remove(p: LlmProvider) {
         </div>
       </template>
 
+      <!-- 场景三列卡片网格 -->
       <div class="scenario-grid">
-        <!-- 客服问答 -->
-        <div class="scenario-card">
-          <div class="scenario-badge-row">
-            <div class="badge-icon-title">
-              <el-icon class="scenario-icon chat"><ChatLineRound /></el-icon>
-              <span class="scenario-name">智能客服问答</span>
+        <!-- 1. 智能客服问答 -->
+        <div class="scenario-card chat-scenario">
+          <div class="scenario-header">
+            <div class="scenario-icon-title">
+              <div class="scenario-icon-box chat">
+                <el-icon><ChatDotRound /></el-icon>
+              </div>
+              <div class="scenario-meta">
+                <span class="scenario-name">智能客服问答</span>
+                <span class="scenario-slug">BUYER CHAT AGENT</span>
+              </div>
             </div>
-            <el-tag size="small" type="primary" effect="plain">对话主力 · Chat</el-tag>
+            <el-tag size="small" type="success" effect="light" round>对话主力 · Chat</el-tag>
           </div>
-          <p class="scenario-desc">买家消息自动问答、多轮议价谈判与防封打招呼</p>
+
+          <p class="scenario-desc">买家消息实时智能回复、多轮议价谈判与防封打招呼策略</p>
+
+          <div class="active-model-strip">
+            <span class="pulse-dot green"></span>
+            <span class="strip-label">生效模型：</span>
+            <span class="strip-val mono">{{ activeChatModel }}</span>
+            <span class="strip-source">{{ getScenarioProviderName('chat') }}</span>
+          </div>
+
           <div class="scenario-select-wrap">
-            <span class="select-label">选用模型：</span>
+            <label class="select-label">指定模型（可选，默认继承当前服务商）：</label>
             <el-select
               v-model="tierForm.chat"
-              placeholder="选择已接入的模型"
+              :placeholder="`默认继承主服务商（${status?.gateway.models.chat || '未配置'}）`"
               clearable
               class="full-width"
               :disabled="!auth.isAdmin"
@@ -608,34 +711,44 @@ async function remove(p: LlmProvider) {
                   :label="`${g.name} · ${m.label}`"
                 >
                   <div class="model-opt-item">
-                    <span>{{ m.label }}</span>
+                    <span class="mono">{{ m.label }}</span>
                     <span class="opt-prov-tag">{{ g.name }}</span>
                   </div>
                 </el-option>
               </el-option-group>
             </el-select>
           </div>
-          <div class="scenario-footer">
-            <span class="cur-label">当前生效：</span>
-            <span class="cur-val mono">{{ status?.gateway.models.chat || '未配置' }}</span>
-          </div>
         </div>
 
-        <!-- 看图发品 -->
-        <div class="scenario-card">
-          <div class="scenario-badge-row">
-            <div class="badge-icon-title">
-              <el-icon class="scenario-icon vision"><Picture /></el-icon>
-              <span class="scenario-name">看图发品与质检</span>
+        <!-- 2. 看图发品与质检 -->
+        <div class="scenario-card vision-scenario">
+          <div class="scenario-header">
+            <div class="scenario-icon-title">
+              <div class="scenario-icon-box vision">
+                <el-icon><Picture /></el-icon>
+              </div>
+              <div class="scenario-meta">
+                <span class="scenario-name">看图发品与质检</span>
+                <span class="scenario-slug">MULTIMODAL VISION</span>
+              </div>
             </div>
-            <el-tag size="small" type="warning" effect="plain">多模态视觉 · Vision</el-tag>
+            <el-tag size="small" type="warning" effect="light" round>多模态视觉 · Vision</el-tag>
           </div>
-          <p class="scenario-desc">以图搜款、看图写标题文案及成色瑕疵自动化评估</p>
+
+          <p class="scenario-desc">以图搜款、看图自动提炼规格瑕疵文案与成色评估</p>
+
+          <div class="active-model-strip">
+            <span class="pulse-dot orange"></span>
+            <span class="strip-label">生效模型：</span>
+            <span class="strip-val mono">{{ activeVisionModel }}</span>
+            <span class="strip-source">{{ getScenarioProviderName('vision') }}</span>
+          </div>
+
           <div class="scenario-select-wrap">
-            <span class="select-label">选用模型：</span>
+            <label class="select-label">指定视觉模型（识图必填）：</label>
             <el-select
               v-model="tierForm.vision"
-              placeholder="选择支持识图的视觉模型"
+              :placeholder="`默认继承主服务商（${status?.gateway.models.vision || '未配置'}）`"
               clearable
               class="full-width"
               :disabled="!auth.isAdmin"
@@ -648,38 +761,49 @@ async function remove(p: LlmProvider) {
                   :label="`${g.name} · ${m.label}`"
                 >
                   <div class="model-opt-item">
-                    <span>{{ m.label }}</span>
+                    <span class="mono">{{ m.label }}</span>
                     <el-tag size="small" type="warning" effect="light">视觉支持</el-tag>
                   </div>
                 </el-option>
               </el-option-group>
             </el-select>
           </div>
+
           <div v-if="!hasConnectedVisionModel" class="vision-warn-tip">
             <el-icon><WarningFilled /></el-icon>
-            <span>提示：DeepSeek 暂不提供识图模型，推荐接入阿里百炼、OpenAI 或智谱</span>
-          </div>
-          <div class="scenario-footer">
-            <span class="cur-label">当前生效：</span>
-            <span class="cur-val mono">{{ status?.gateway.models.vision || '未配置' }}</span>
+            <span>提示：DeepSeek 官方暂不提供识图，建议接入阿里百炼、OpenAI 或智谱</span>
           </div>
         </div>
 
-        <!-- 意图识别 -->
-        <div class="scenario-card">
-          <div class="scenario-badge-row">
-            <div class="badge-icon-title">
-              <el-icon class="scenario-icon fast"><Lightning /></el-icon>
-              <span class="scenario-name">意图分类与快筛</span>
+        <!-- 3. 意图分类与快筛 -->
+        <div class="scenario-card fast-scenario">
+          <div class="scenario-header">
+            <div class="scenario-icon-title">
+              <div class="scenario-icon-box fast">
+                <el-icon><Lightning /></el-icon>
+              </div>
+              <div class="scenario-meta">
+                <span class="scenario-name">意图分类与快筛</span>
+                <span class="scenario-slug">ULTRA-FAST ROUTING</span>
+              </div>
             </div>
-            <el-tag size="small" type="info" effect="plain">快速轻量 · Fast</el-tag>
+            <el-tag size="small" type="info" effect="light" round>毫秒极速 · Fast</el-tag>
           </div>
-          <p class="scenario-desc">买家消息意图毫秒级识别与规则前置粗筛，追求极低延迟与成本</p>
+
+          <p class="scenario-desc">买家意图毫秒级分流与转人工规则过滤，低延迟极低成本</p>
+
+          <div class="active-model-strip">
+            <span class="pulse-dot blue"></span>
+            <span class="strip-label">生效模型：</span>
+            <span class="strip-val mono">{{ activeFastModel }}</span>
+            <span class="strip-source">{{ getScenarioProviderName('fast') }}</span>
+          </div>
+
           <div class="scenario-select-wrap">
-            <span class="select-label">选用模型：</span>
+            <label class="select-label">指定快筛模型（追求极低延迟与成本）：</label>
             <el-select
               v-model="tierForm.fast"
-              placeholder="选择轻量高速模型"
+              :placeholder="`默认继承主服务商（${status?.gateway.models.fast || '未配置'}）`"
               clearable
               class="full-width"
               :disabled="!auth.isAdmin"
@@ -692,120 +816,215 @@ async function remove(p: LlmProvider) {
                   :label="`${g.name} · ${m.label}`"
                 >
                   <div class="model-opt-item">
-                    <span>{{ m.label }}</span>
+                    <span class="mono">{{ m.label }}</span>
                     <span class="opt-prov-tag">{{ g.name }}</span>
                   </div>
                 </el-option>
               </el-option-group>
             </el-select>
           </div>
-          <div class="scenario-footer">
-            <span class="cur-label">当前生效：</span>
-            <span class="cur-val mono">{{ status?.gateway.models.fast || '未配置' }}</span>
-          </div>
         </div>
       </div>
 
-      <!-- 网关运行信息条 -->
-      <div v-if="status" class="gateway-stats-bar">
-        <div class="stat-item">
-          <span class="stat-label">生效来源：</span>
-          <el-tag v-if="status.using_env" size="small" type="warning">.env 环境变量</el-tag>
-          <el-tag v-else size="small" type="success">{{ status.active_source }}</el-tag>
+      <!-- 3. 网关运行信息指标条 (Metrics Strip) -->
+      <div v-if="status" class="gateway-metrics-strip">
+        <div class="metric-cell">
+          <div class="metric-icon-box source">
+            <el-icon><Connection /></el-icon>
+          </div>
+          <div class="metric-info">
+            <span class="metric-label">网关生效来源</span>
+            <div class="metric-val-wrap">
+              <el-tag v-if="status.using_env" size="small" type="warning" effect="light">.env 环境变量</el-tag>
+              <span v-else class="metric-val-text font-medium">{{ status.active_source }}</span>
+            </div>
+          </div>
         </div>
-        <div class="stat-item">
-          <span class="stat-label">今日调用：</span>
-          <span class="stat-num">{{ status.gateway.usage_today.calls }} 次</span>
+
+        <div class="metric-cell">
+          <div class="metric-icon-box calls">
+            <el-icon><DataLine /></el-icon>
+          </div>
+          <div class="metric-info">
+            <span class="metric-label">今日总调用量</span>
+            <div class="metric-val-wrap">
+              <span class="metric-val-num">{{ status.gateway.usage_today.calls }}</span>
+              <span class="metric-unit">次</span>
+            </div>
+          </div>
         </div>
-        <div class="stat-item">
-          <span class="stat-label">今日 Token：</span>
-          <span class="stat-num">{{ tokenUsed.toLocaleString() }} tokens</span>
-          <span v-if="status.gateway.usage_today.budget" class="muted small">
-            （预算上限 {{ status.gateway.usage_today.budget.toLocaleString() }}）
-          </span>
+
+        <div class="metric-cell">
+          <div class="metric-icon-box tokens">
+            <el-icon><Coin /></el-icon>
+          </div>
+          <div class="metric-info">
+            <span class="metric-label">Token 消耗统计</span>
+            <div class="metric-val-wrap">
+              <span class="metric-val-num">{{ tokenUsed.toLocaleString() }}</span>
+              <span class="metric-unit">tokens</span>
+              <span v-if="status.gateway.usage_today.budget" class="metric-budget">
+                / 上限 {{ status.gateway.usage_today.budget.toLocaleString() }}
+              </span>
+            </div>
+          </div>
         </div>
-        <div v-if="status.gateway.error" class="stat-error">
-          <el-icon><WarningFilled /></el-icon>
-          <span>{{ status.gateway.error }}</span>
+
+        <div class="metric-cell">
+          <div class="metric-icon-box status-ok">
+            <el-icon><Check /></el-icon>
+          </div>
+          <div class="metric-info">
+            <span class="metric-label">智能路由状态</span>
+            <div class="metric-val-wrap">
+              <span class="status-live-pill">
+                <span class="pulse-dot green"></span>
+                <span>按场景分发中</span>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="status.gateway.error" class="metric-cell error">
+          <div class="metric-icon-box err">
+            <el-icon><WarningFilled /></el-icon>
+          </div>
+          <div class="metric-info">
+            <span class="metric-label">异常告警</span>
+            <span class="err-text">{{ status.gateway.error }}</span>
+          </div>
         </div>
       </div>
     </el-card>
 
-    <!-- 2. 已接入服务商管理 (Connected Providers List) -->
+    <!-- 4. 已接入服务商管理 (Connected Providers List) -->
     <div v-if="auth.isAdmin" class="providers-section">
       <div class="section-header-row">
         <div class="section-header-left">
           <h3>已接入服务商</h3>
           <span class="section-count-badge">{{ providers.length }} 个已配置</span>
         </div>
-        <el-button type="primary" :icon="Plus" size="default" @click="openCreate('deepseek')">
-          添加新服务商
+        <el-button text bg size="small" :icon="Plus" @click="openCreate('deepseek')">
+          添加服务商
         </el-button>
       </div>
 
       <div v-if="!loading && !providers.length" class="empty-state-card">
-        <el-empty description="尚未接入大模型服务商，点击上方「添加新服务商」自由选用 OpenAI、Claude、DeepSeek、阿里等厂商">
+        <el-empty description="尚未接入大模型服务商，点击右上角「添加新服务商」自由选用 OpenAI、Claude、DeepSeek、阿里等厂商">
           <el-button type="primary" :icon="Plus" @click="openCreate('deepseek')">立即添加服务商</el-button>
         </el-empty>
       </div>
 
-      <div v-else class="grid">
-        <el-card v-for="p in providers" :key="p.id" shadow="never" class="prov" :class="{ disabled: !p.enabled }">
-          <div class="prov-head">
-            <div class="prov-title-wrap">
-              <div class="prov-name-row">
-                <span class="prov-name">{{ p.name }}</span>
-                <el-tag v-if="!p.enabled" size="small" type="info" class="ml">已停用</el-tag>
-              </div>
-              <div v-if="p.active_tiers && p.active_tiers.length" class="prov-tier-tags">
-                <el-tag v-for="t in p.active_tiers" :key="t" size="small" type="success" effect="plain">
-                  {{ tierLabels[t] || t }}
+      <div v-else class="providers-grid">
+        <div
+          v-for="p in providers"
+          :key="p.id"
+          class="provider-card"
+          :class="{ disabled: !p.enabled }"
+        >
+          <!-- 卡片头部：品牌 Avatar + 名称 + 状态开关 -->
+          <div class="card-top-row">
+            <div
+              class="provider-brand-box"
+              :style="{
+                background: getProviderMeta(p.name).bg,
+                color: getProviderMeta(p.name).color,
+                borderColor: getProviderMeta(p.name).border,
+              }"
+            >
+              <span class="brand-text">{{ getProviderMeta(p.name).brand }}</span>
+            </div>
+
+            <div class="provider-info-col">
+              <div class="provider-name-line">
+                <span class="provider-title">{{ p.name }}</span>
+                <el-tag size="small" :type="p.enabled ? 'success' : 'info'" effect="light" round>
+                  {{ p.enabled ? '已启用' : '已停用' }}
                 </el-tag>
               </div>
+              <div class="provider-sub-meta">
+                <span class="protocol-badge">{{ p.kind === 'anthropic' ? 'Anthropic 协议' : 'OpenAI 规范' }}</span>
+                <div v-if="p.active_tiers && p.active_tiers.length" class="active-tiers-list">
+                  <span v-for="t in p.active_tiers" :key="t" class="active-tier-pill">
+                    {{ tierLabels[t] || t }}
+                  </span>
+                </div>
+              </div>
             </div>
-            <el-switch :model-value="p.enabled" @change="(v: string | number | boolean) => toggle(p, !!v)" />
+
+            <div class="provider-switch-wrap">
+              <el-switch :model-value="p.enabled" @change="(v: string | number | boolean) => toggle(p, !!v)" />
+            </div>
           </div>
 
-          <div class="prov-body">
-            <div class="row">
-              <span class="muted small">端点</span>
-              <span class="mono small ellipsis">{{ p.base_url || '官方原生端点' }}</span>
+          <!-- 卡片中间：端点、Key与模型 Specs -->
+          <div class="provider-specs-card">
+            <div class="spec-row">
+              <span class="spec-label">
+                <el-icon><Link /></el-icon>
+                <span>端点</span>
+              </span>
+              <span class="spec-val mono ellipsis" :title="p.base_url || '官方原生端点'">
+                {{ p.base_url || '官方原生端点' }}
+              </span>
             </div>
-            <div class="row">
-              <span class="muted small">Key</span>
-              <span class="mono small">{{ p.api_key_masked || '未填写' }}</span>
+
+            <div class="spec-row">
+              <span class="spec-label">
+                <el-icon><Key /></el-icon>
+                <span>Key</span>
+              </span>
+              <span class="spec-val mono">
+                {{ p.api_key_masked || '未填写' }}
+              </span>
             </div>
-            <div class="row">
-              <span class="muted small">模型</span>
-              <div class="models-tag-wrap ellipsis">
-                <span v-for="m in getProviderModels(p).slice(0, 5)" :key="m" class="small-tag mono">
+
+            <div class="spec-row models-row">
+              <span class="spec-label">
+                <el-icon><Cpu /></el-icon>
+                <span>模型</span>
+              </span>
+              <div class="models-chips-wrap">
+                <span v-for="m in getProviderModels(p).slice(0, 4)" :key="m" class="model-chip-tag mono">
                   {{ m }}
                 </span>
-                <span v-if="getProviderModels(p).length > 5" class="small muted">
-                  +{{ getProviderModels(p).length - 5 }}
+                <span v-if="getProviderModels(p).length > 4" class="more-models-chip">
+                  +{{ getProviderModels(p).length - 4 }}
                 </span>
               </div>
             </div>
           </div>
 
-          <div class="prov-test small">
-            <template v-if="p.last_test_ok === true">
-              <el-tag size="small" type="success" effect="plain">连通正常</el-tag>
-              <span class="muted">{{ fmtTime(p.last_test_at) }}</span>
-            </template>
-            <template v-else-if="p.last_test_ok === false">
-              <el-tag size="small" type="danger" effect="plain">连通失败</el-tag>
-              <span class="muted ellipsis" :title="p.last_error || ''">{{ p.last_error }}</span>
-            </template>
-            <span v-else class="muted">尚未进行连通性测试</span>
-          </div>
+          <!-- 卡片底部：连通健康度 + 操作按钮 -->
+          <div class="card-bottom-row">
+            <div class="health-status-wrap">
+              <template v-if="p.last_test_ok === true">
+                <span class="health-pill ok">
+                  <span class="pulse-dot green"></span>
+                  <span>连通正常</span>
+                </span>
+                <span class="health-time">{{ fmtTime(p.last_test_at) }}</span>
+              </template>
+              <template v-else-if="p.last_test_ok === false">
+                <span class="health-pill fail" :title="p.last_error || ''">
+                  <span class="pulse-dot red"></span>
+                  <span>连通失败</span>
+                </span>
+                <span class="health-err-msg ellipsis" :title="p.last_error || ''">{{ p.last_error }}</span>
+              </template>
+              <span v-else class="health-pill none">
+                <span class="pulse-dot gray"></span>
+                <span>尚未测试</span>
+              </span>
+            </div>
 
-          <div class="prov-ops">
-            <el-button size="small" :icon="Connection" :loading="busy[`t-${p.id}`]" @click="test(p)">测试</el-button>
-            <el-button size="small" @click="openEdit(p)">编辑</el-button>
-            <el-button size="small" type="danger" plain :icon="Delete" @click="remove(p)">删除</el-button>
+            <div class="actions-group">
+              <el-button size="small" :icon="Connection" :loading="busy[`t-${p.id}`]" @click="test(p)">测试</el-button>
+              <el-button size="small" :icon="Edit" @click="openEdit(p)">编辑</el-button>
+              <el-button size="small" type="danger" plain :icon="Delete" @click="remove(p)">删除</el-button>
+            </div>
           </div>
-        </el-card>
+        </div>
       </div>
     </div>
 
@@ -991,31 +1210,60 @@ async function remove(p: LlmProvider) {
 </template>
 
 <style scoped>
+/* ================= 1. 页面头部 ================= */
 .page {
   padding-bottom: 24px;
 }
+
 .page-head {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--xh-space-3);
+  margin-bottom: var(--xh-space-4);
 }
-.page-subtitle {
-  font-size: 13px;
-  color: var(--xh-text-muted);
-  margin-top: 4px;
-  display: block;
+
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--xh-space-2);
 }
+
+.title-row h2 {
+  margin: 0;
+  font-size: var(--xh-fs-xl);
+  font-weight: 600;
+  color: var(--xh-text);
+}
+
+.title-icon {
+  font-size: var(--xh-fs-xl);
+  color: var(--xh-primary);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--xh-space-2);
+}
+
+.toolbar :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+
 .block {
   margin-bottom: 20px;
 }
 
-/* 顶部配置卡片 */
+/* ================= 2. 顶部配置卡片 ================= */
 .config-card {
   border-radius: var(--xh-radius-lg);
   border: 1px solid var(--xh-border);
   background: var(--xh-card);
+  box-shadow: var(--xh-shadow-sm);
 }
+
 .card-head {
   display: flex;
   justify-content: space-between;
@@ -1023,122 +1271,220 @@ async function remove(p: LlmProvider) {
   flex-wrap: wrap;
   gap: 12px;
 }
+
 .card-title-group {
   display: flex;
   align-items: center;
+  gap: 10px;
+}
+
+.title-text-group {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
   gap: 8px;
 }
-.title-icon {
-  font-size: 18px;
-  color: var(--xh-brand);
-}
+
 .section-title {
-  font-size: 15px;
+  font-size: var(--xh-fs-md);
   font-weight: 600;
   color: var(--xh-text);
 }
+
 .section-hint {
-  font-size: 12px;
-  color: var(--xh-text-muted);
-  margin-left: 6px;
+  font-size: var(--xh-fs-xs);
+  color: var(--xh-muted);
 }
+
 .card-head-extra {
   display: flex;
   align-items: center;
   gap: 12px;
 }
 
-/* 场景三列网格 */
+.gateway-live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--xh-radius-full);
+  font-size: var(--xh-fs-xs);
+  font-weight: 500;
+  background: var(--xh-fill);
+  border: 1px solid var(--xh-border);
+}
+
+.gateway-live-pill.online {
+  color: var(--xh-primary);
+  background: var(--xh-primary-soft);
+  border-color: rgba(16, 185, 129, 0.25);
+}
+
+.gateway-live-pill.offline {
+  color: var(--xh-danger);
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.2);
+}
+
+/* ================= 3. 场景卡片网格 ================= */
 .scenario-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 16px;
-  margin-bottom: 16px;
+  margin-bottom: 20px;
 }
-@media (max-width: 900px) {
+
+@media (max-width: 960px) {
   .scenario-grid {
     grid-template-columns: 1fr;
   }
 }
+
 .scenario-card {
-  background: #fcfdfe;
+  background: var(--xh-card);
   border: 1px solid var(--xh-border);
-  border-radius: var(--xh-radius-md);
-  padding: 16px;
+  border-radius: var(--xh-radius-lg);
+  padding: 18px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  transition: box-shadow 0.2s, border-color 0.2s;
+  gap: 12px;
+  box-shadow: var(--xh-shadow-sm);
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s ease, border-color 0.2s ease;
+  position: relative;
+  overflow: hidden;
 }
+
 .scenario-card:hover {
-  border-color: var(--el-color-primary-light-5);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  transform: translateY(-2px);
+  box-shadow: var(--xh-shadow-md);
 }
-.scenario-badge-row {
+
+.scenario-card.chat-scenario {
+  border-top: 3px solid var(--xh-primary);
+}
+
+.scenario-card.vision-scenario {
+  border-top: 3px solid #f59e0b;
+}
+
+.scenario-card.fast-scenario {
+  border-top: 3px solid #6366f1;
+}
+
+.scenario-header {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  align-items: center;
 }
-.badge-icon-title {
+
+.scenario-icon-title {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
-.scenario-icon {
+
+.scenario-icon-box {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--xh-radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-size: 18px;
-  border-radius: 6px;
-  padding: 4px;
+  flex-shrink: 0;
 }
-.scenario-icon.chat {
-  background: #ecf5ff;
-  color: var(--el-color-primary);
+
+.scenario-icon-box.chat {
+  background: var(--xh-primary-soft);
+  color: var(--xh-primary);
 }
-.scenario-icon.vision {
-  background: #fdf6ec;
-  color: var(--el-color-warning);
+
+.scenario-icon-box.vision {
+  background: rgba(245, 158, 11, 0.12);
+  color: #d97706;
 }
-.scenario-icon.fast {
-  background: #f4f4f5;
-  color: #606266;
+
+.scenario-icon-box.fast {
+  background: rgba(99, 102, 241, 0.12);
+  color: #6366f1;
 }
+
+.scenario-meta {
+  display: flex;
+  flex-direction: column;
+}
+
 .scenario-name {
   font-weight: 600;
-  font-size: 14px;
+  font-size: var(--xh-fs-base);
   color: var(--xh-text);
+  line-height: 1.3;
 }
+
+.scenario-slug {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--xh-muted);
+  letter-spacing: 0.5px;
+}
+
 .scenario-desc {
-  font-size: 12px;
-  color: var(--xh-text-muted);
+  font-size: var(--xh-fs-xs);
+  color: var(--xh-muted);
   margin: 0;
-  line-height: 1.4;
+  line-height: 1.45;
   min-height: 34px;
 }
+
+/* 生效模型条 */
+.active-model-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--xh-fill);
+  border: 1px solid var(--xh-border);
+  border-radius: var(--xh-radius-sm);
+  padding: 6px 10px;
+  font-size: var(--xh-fs-xs);
+}
+
+.strip-label {
+  color: var(--xh-muted);
+  flex-shrink: 0;
+}
+
+.strip-val {
+  font-weight: 600;
+  color: var(--xh-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.strip-source {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--xh-muted);
+  background: var(--xh-card);
+  border: 1px solid var(--xh-border);
+  padding: 1px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
 .scenario-select-wrap {
   display: flex;
   flex-direction: column;
   gap: 6px;
-}
-.select-label {
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--xh-text);
-}
-.scenario-footer {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
   margin-top: auto;
-  font-size: 12px;
-  padding-top: 8px;
-  border-top: 1px dashed var(--xh-border);
 }
-.cur-label {
-  color: var(--xh-text-muted);
-}
-.cur-val {
-  color: var(--xh-brand);
+
+.select-label {
+  font-size: var(--xh-fs-xs);
   font-weight: 500;
+  color: var(--xh-text-2);
 }
+
 .vision-warn-tip {
   display: flex;
   align-items: center;
@@ -1158,50 +1504,145 @@ async function remove(p: LlmProvider) {
   align-items: center;
   width: 100%;
 }
+
 .opt-prov-tag {
   font-size: 11px;
-  color: var(--xh-text-muted);
-  background: #f0f2f5;
+  color: var(--xh-muted);
+  background: var(--xh-fill-strong);
   padding: 1px 6px;
   border-radius: 4px;
 }
 
-/* 网关状态条 */
-.gateway-stats-bar {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  flex-wrap: wrap;
-  padding: 10px 14px;
+/* ================= 4. 网关统计指标条 ================= */
+.gateway-metrics-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  padding: 14px 16px;
   background: var(--xh-fill);
-  border-radius: var(--xh-radius-sm);
+  border-radius: var(--xh-radius-md);
   border: 1px solid var(--xh-border);
-  font-size: 12px;
-}
-.stat-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.stat-label {
-  color: var(--xh-text-muted);
-}
-.stat-num {
-  font-weight: 600;
-  color: var(--xh-text);
-}
-.stat-error {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--el-color-danger);
-  margin-left: auto;
 }
 
-/* 服务商管理区 */
-.providers-section {
-  margin-top: 12px;
+@media (max-width: 900px) {
+  .gateway-metrics-strip {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
+
+@media (max-width: 600px) {
+  .gateway-metrics-strip {
+    grid-template-columns: 1fr;
+  }
+}
+
+.metric-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.metric-icon-box {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--xh-radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.metric-icon-box.source {
+  background: rgba(16, 185, 129, 0.12);
+  color: var(--xh-primary);
+}
+
+.metric-icon-box.calls {
+  background: rgba(59, 130, 246, 0.12);
+  color: #3b82f6;
+}
+
+.metric-icon-box.tokens {
+  background: rgba(245, 158, 11, 0.12);
+  color: #f59e0b;
+}
+
+.metric-icon-box.status-ok {
+  background: rgba(16, 185, 129, 0.12);
+  color: var(--xh-primary);
+}
+
+.metric-icon-box.err {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--xh-danger);
+}
+
+.metric-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.metric-label {
+  font-size: 11px;
+  color: var(--xh-muted);
+}
+
+.metric-val-wrap {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+}
+
+.metric-val-num {
+  font-size: var(--xh-fs-md);
+  font-weight: 700;
+  color: var(--xh-text);
+  line-height: 1.2;
+}
+
+.metric-val-text {
+  font-size: var(--xh-fs-xs);
+  font-weight: 600;
+  color: var(--xh-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.metric-unit {
+  font-size: 11px;
+  color: var(--xh-muted);
+}
+
+.metric-budget {
+  font-size: 11px;
+  color: var(--xh-muted);
+}
+
+.status-live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--xh-fs-xs);
+  font-weight: 500;
+  color: var(--xh-primary);
+}
+
+.err-text {
+  font-size: 11px;
+  color: var(--xh-danger);
+}
+
+/* ================= 5. 已接入服务商管理网格 ================= */
+.providers-section {
+  margin-top: 20px;
+}
+
 .section-header-row {
   display: flex;
   justify-content: space-between;
@@ -1210,107 +1651,289 @@ async function remove(p: LlmProvider) {
   flex-wrap: wrap;
   gap: 8px;
 }
+
 .section-header-left {
   display: flex;
   align-items: center;
   gap: 10px;
 }
+
 .section-header-left h3 {
   margin: 0;
-  font-size: 16px;
+  font-size: var(--xh-fs-md);
   font-weight: 600;
-}
-.section-count-badge {
-  font-size: 12px;
-  color: var(--xh-text-muted);
-  background: #f1f5f9;
-  padding: 2px 8px;
-  border-radius: 10px;
-}
-
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 12px;
-}
-.prov :deep(.el-card__body) {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  height: 100%;
-}
-.prov.disabled {
-  opacity: 0.65;
-}
-.prov-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-}
-.prov-title-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.prov-name-row {
-  display: flex;
-  align-items: center;
-}
-.prov-name {
-  font-weight: 600;
-  font-size: 15px;
   color: var(--xh-text);
 }
-.prov-tier-tags {
-  display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
+
+.section-count-badge {
+  font-size: var(--xh-fs-xs);
+  color: var(--xh-muted);
+  background: var(--xh-fill-strong);
+  padding: 2px 8px;
+  border-radius: var(--xh-radius-full);
 }
-.prov-body {
-  background: var(--xh-fill);
-  border-radius: var(--xh-radius-sm);
+
+.providers-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 16px;
+}
+
+@media (max-width: 640px) {
+  .providers-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.provider-card {
+  background: var(--xh-card);
   border: 1px solid var(--xh-border);
-  padding: 8px 10px;
+  border-radius: var(--xh-radius-lg);
+  padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 12px;
+  box-shadow: var(--xh-shadow-sm);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
 }
-.row {
+
+.provider-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--xh-shadow-md);
+  border-color: var(--xh-primary-soft);
+}
+
+.provider-card.disabled {
+  opacity: 0.65;
+}
+
+.card-top-row {
   display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.provider-brand-box {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--xh-radius-md);
+  border: 1px solid transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  flex-shrink: 0;
+}
+
+.provider-info-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.provider-name-line {
+  display: flex;
+  align-items: center;
   gap: 8px;
   min-width: 0;
 }
-.row > span:first-child {
-  flex: 0 0 36px;
+
+.provider-title {
+  font-size: var(--xh-fs-base);
+  font-weight: 600;
+  color: var(--xh-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.models-tag-wrap {
+
+.provider-sub-meta {
   display: flex;
-  gap: 4px;
   align-items: center;
   flex-wrap: wrap;
+  gap: 6px;
 }
-.small-tag {
+
+.protocol-badge {
   font-size: 11px;
-  background: #eef2f6;
+  color: var(--xh-muted);
+  background: var(--xh-fill);
+  border: 1px solid var(--xh-border);
   padding: 1px 6px;
   border-radius: 4px;
-  color: #334155;
 }
-.prov-test {
+
+.active-tiers-list {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.active-tier-pill {
+  font-size: 11px;
+  color: var(--xh-primary);
+  background: var(--xh-primary-soft);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+.provider-switch-wrap {
+  flex-shrink: 0;
+}
+
+.provider-specs-card {
+  background: var(--xh-fill);
+  border: 1px solid var(--xh-border);
+  border-radius: var(--xh-radius-md);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.spec-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--xh-fs-xs);
+  min-width: 0;
+}
+
+.spec-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 48px;
+  flex-shrink: 0;
+  color: var(--xh-muted);
+}
+
+.spec-val {
+  color: var(--xh-text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.models-row {
+  align-items: flex-start;
+}
+
+.models-chips-wrap {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.model-chip-tag {
+  font-size: 11px;
+  color: var(--xh-text-2);
+  background: var(--xh-card);
+  border: 1px solid var(--xh-border);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.more-models-chip {
+  font-size: 11px;
+  color: var(--xh-muted);
+}
+
+.card-bottom-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 4px;
+}
+
+.health-status-wrap {
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
 }
-.prov-ops {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: auto;
-  padding-top: 6px;
+
+.health-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--xh-fs-xs);
+  font-weight: 500;
 }
-.prov-ops .el-button + .el-button {
+
+.health-pill.ok {
+  color: var(--xh-primary);
+}
+
+.health-pill.fail {
+  color: var(--xh-danger);
+}
+
+.health-pill.none {
+  color: var(--xh-muted);
+}
+
+.health-time {
+  font-size: 11px;
+  color: var(--xh-muted);
+}
+
+.health-err-msg {
+  font-size: 11px;
+  color: var(--xh-danger);
+  max-width: 140px;
+}
+
+.actions-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.actions-group :deep(.el-button + .el-button) {
   margin-left: 0;
+}
+
+/* ================= 6. 脉冲圆点通用动效 ================= */
+.pulse-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.pulse-dot.green {
+  background: #10b981;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+}
+
+.pulse-dot.orange {
+  background: #f59e0b;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2);
+}
+
+.pulse-dot.blue {
+  background: #6366f1;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+}
+
+.pulse-dot.red {
+  background: #ef4444;
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2);
+}
+
+.pulse-dot.gray {
+  background: #94a3b8;
 }
 
 /* ---------- 弹窗：参考新供应商多卡片风格 ---------- */
