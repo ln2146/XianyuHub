@@ -2,7 +2,18 @@ from datetime import datetime
 from typing import Any
 
 import jwt
-from fastapi import APIRouter, HTTPException, Query, Response, WebSocket, WebSocketDisconnect, status
+from fastapi import (
+    APIRouter,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Response,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 
@@ -16,7 +27,15 @@ from app.domains.account.service import accessible_account_ids, get_account_for
 from app.domains.goods.models import MyItem
 from app.domains.message import service
 from app.domains.message.evidence import build_evidence
-from app.domains.message.models import ChatMessage, Conversation, MessageSource, ReplyRule, ReplySuggestion
+from app.domains.message.knowledge import UnsupportedFile, extract_text
+from app.domains.message.models import (
+    ChatMessage,
+    Conversation,
+    KnowledgeDoc,
+    MessageSource,
+    ReplyRule,
+    ReplySuggestion,
+)
 from app.domains.order.models import (
     ORDER_STATE_LABELS,
     CardBinding,
@@ -478,6 +497,104 @@ async def test_reply(body: TestReplyIn, user: CurrentUser, session: SessionDep) 
     """试运行：给定一条买家消息，返回系统将如何回复（不发送、不改变会话状态）。"""
     conv = await _own_conv(session, user, body.conversation_id)
     return await service.plan_reply(conv.id, dry_run_text=body.text)
+
+
+class TrialIn(BaseModel):
+    account_id: int
+    text: str = Field(min_length=1, max_length=500)
+    item_id: str | None = None
+
+
+@router.post("/ai-trial")
+async def ai_trial(body: TrialIn, user: CurrentUser, session: SessionDep) -> dict[str, Any]:
+    """「自动回复」页试运行：不需要已有会话，演示当前规则、店主说明和资料下会怎么回（不发送）。"""
+    await get_account_for(session, user, body.account_id)
+    return await service.trial_reply(body.account_id, body.text, body.item_id or None)
+
+
+# ---------------------------------------------------------------- AI 资料
+class DocOut(BaseModel):
+    id: int
+    account_id: int | None
+    name: str
+    chars: int
+    preview: str
+    enabled: bool
+    created_at: datetime
+
+
+def _doc_out(d: KnowledgeDoc) -> DocOut:
+    return DocOut(
+        id=d.id,
+        account_id=d.account_id,
+        name=d.name,
+        chars=len(d.content or ""),
+        preview=(d.content or "")[:120],
+        enabled=d.enabled,
+        created_at=d.created_at,
+    )
+
+
+async def _own_doc(session, user: User, doc_id: int) -> KnowledgeDoc:  # noqa: ANN001
+    d = await session.get(KnowledgeDoc, doc_id)
+    if d is None or d.owner_id != user.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "资料不存在")
+    return d
+
+
+@router.get("/knowledge-docs", response_model=list[DocOut])
+async def list_docs(user: CurrentUser, session: SessionDep) -> list[DocOut]:
+    rows = await session.execute(
+        select(KnowledgeDoc).where(KnowledgeDoc.owner_id == user.id).order_by(KnowledgeDoc.id.desc())
+    )
+    return [_doc_out(d) for d in rows.scalars()]
+
+
+@router.post("/knowledge-docs", response_model=DocOut, status_code=201)
+async def upload_doc(
+    user: CurrentUser,
+    session: SessionDep,
+    file: UploadFile = File(...),
+    account_id: int | None = Form(default=None),
+) -> DocOut:
+    """上传给 AI 参考的资料（txt / md / csv / pdf / docx，≤ 5MB），保存提取出的文字。"""
+    if account_id is not None:
+        await get_account_for(session, user, account_id)
+    data = await file.read()
+    try:
+        text = extract_text(file.filename or "", data)
+    except UnsupportedFile as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
+    d = KnowledgeDoc(owner_id=user.id, account_id=account_id, name=(file.filename or "资料")[:200], content=text)
+    session.add(d)
+    await session.commit()
+    return _doc_out(d)
+
+
+class DocPatch(BaseModel):
+    enabled: bool | None = None
+    account_id: int | None = None
+    all_accounts: bool = False  # 改为所有账号通用（account_id 为空时区分“不修改”与“设为通用”）
+
+
+@router.patch("/knowledge-docs/{doc_id}", response_model=DocOut)
+async def update_doc(doc_id: int, body: DocPatch, user: CurrentUser, session: SessionDep) -> DocOut:
+    d = await _own_doc(session, user, doc_id)
+    if body.enabled is not None:
+        d.enabled = body.enabled
+    if body.all_accounts:
+        d.account_id = None
+    elif body.account_id is not None:
+        await get_account_for(session, user, body.account_id)
+        d.account_id = body.account_id
+    await session.commit()
+    return _doc_out(d)
+
+
+@router.delete("/knowledge-docs/{doc_id}", status_code=204)
+async def delete_doc(doc_id: int, user: CurrentUser, session: SessionDep) -> None:
+    await session.delete(await _own_doc(session, user, doc_id))
+    await session.commit()
 
 
 # ---------------------------------------------------------------- 规则

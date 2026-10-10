@@ -82,3 +82,16 @@ class ReplySuggestion(IdMixin, Base):
     status: Mapped[str] = mapped_column(String(12), default="pending")  # pending / sent / discarded
     note: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class KnowledgeDoc(IdMixin, TimestampMixin, Base):
+    """卖家上传给 AI 客服参考的资料（说明书、FAQ、价目表等），保存提取出的纯文本。
+    回复时按与买家问题的相关度挑选段落放进提示词，不整篇发送。"""
+
+    __tablename__ = "knowledge_docs"
+
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    account_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)  # 为空表示所有账号通用
+    name: Mapped[str] = mapped_column(String(200))
+    content: Mapped[str] = mapped_column(Text, default="")
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)

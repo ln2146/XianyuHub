@@ -14,7 +14,10 @@ class AccountSettings(BaseModel):
     # 消息
     auto_reply: bool = False
     keyword_reply: bool = True
-    ai_mode: Literal["off", "suggest", "auto"] = "suggest"
+    # AI 回复需要卖家自己选择开启：默认关闭（建议模式即使总开关关闭也会调用模型、消耗额度）
+    ai_mode: Literal["off", "suggest", "auto"] = "off"
+    # 给 AI 的说明：店铺介绍、语气、发货 / 售后规则等；不能覆盖底价、站外联系等护栏
+    ai_instructions: str = Field(default="", max_length=2000)
     takeover_minutes: int = Field(default=60, ge=1, le=24 * 60)
     reply_delay_min: float = Field(default=2, ge=0)
     reply_delay_max: float = Field(default=6, ge=0)

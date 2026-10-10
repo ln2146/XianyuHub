@@ -17,7 +17,15 @@ from app.core.realtime import hub
 from app.domains.account.models import AccountSettings, XyAccount
 from app.domains.goods.models import MyItem
 from app.domains.message.agent import ReplyContext, compose_reply
-from app.domains.message.models import ChatMessage, Conversation, MessageSource, ReplyRule, ReplySuggestion
+from app.domains.message.knowledge import select_from_docs
+from app.domains.message.models import (
+    ChatMessage,
+    Conversation,
+    KnowledgeDoc,
+    MessageSource,
+    ReplyRule,
+    ReplySuggestion,
+)
 from app.goofish.dto import ImEvent, ImEventType, SystemNotice
 from app.goofish.errors import RiskBlockedError
 from app.intelligence.bargain import BargainAction, BargainState, decide
@@ -410,12 +418,39 @@ async def plan_reply(conv_id: int, *, dry_run_text: str | None = None) -> dict[s
         bargain_state = BargainState(conv.bargain_rounds, conv.bargain_last_offer)
         default_reply = settings.default_reply if not conv.default_replied else None
 
-    llm = get_llm()
     if settings.ai_mode == "off" or not in_work_hours(settings):
         if default_reply:
             return {"action": "send", "text": default_reply, "source": MessageSource.AUTO_DEFAULT}
         return {"action": "none", "note": "AI 未开启或不在工作时段"}
+    plan = await _ai_plan(acc.owner_id, acc.id, settings, item, history, bargain_state, text)
+    if plan.get("text"):
+        plan["action"] = "suggest" if settings.ai_mode == "suggest" else "send"
+    return plan
 
+
+async def _load_docs(owner_id: int, account_id: int) -> list[tuple[str, str]]:
+    async with session_factory()() as s:
+        rows = await s.execute(
+            select(KnowledgeDoc.name, KnowledgeDoc.content).where(
+                KnowledgeDoc.owner_id == owner_id,
+                KnowledgeDoc.enabled.is_(True),
+                or_(KnowledgeDoc.account_id.is_(None), KnowledgeDoc.account_id == account_id),
+            )
+        )
+        return [(name, content) for name, content in rows]
+
+
+async def _ai_plan(
+    owner_id: int,
+    account_id: int,
+    settings: AccountSettings,
+    item: MyItem | None,
+    history: list[tuple[str, str]],
+    bargain_state: BargainState,
+    text: str,
+) -> dict[str, Any]:
+    """AI 回复：意图 → 议价决策 → 结合商品、知识库、店主说明与资料写回复 → 护栏。不决定是否发送。"""
+    llm = get_llm()
     intent = await classify_intent(text, llm)
     if intent == Intent.NO_REPLY:
         return {"action": "none", "note": "无需回复", "intent": intent}
@@ -435,6 +470,8 @@ async def plan_reply(conv_id: int, *, dry_run_text: str | None = None) -> dict[s
         history=history,
         # 没有配置议价策略时，任何低于标价的报价都会被护栏拦截
         floor_price=(policy.floor_price if policy else (item.price if item else None)),
+        instructions=settings.ai_instructions,
+        docs=select_from_docs(await _load_docs(owner_id, account_id), text),
     )
     reply = await compose_reply(llm, ctx, intent, text, decision)
     plan: dict[str, Any] = {
@@ -445,6 +482,7 @@ async def plan_reply(conv_id: int, *, dry_run_text: str | None = None) -> dict[s
         "violations": reply.violations,
         "need_human": reply.need_human,
         "used_llm": reply.used_llm,
+        "used_docs": bool(ctx.docs),
     }
     if decision is not None:
         plan["bargain"] = {
@@ -455,8 +493,31 @@ async def plan_reply(conv_id: int, *, dry_run_text: str | None = None) -> dict[s
         }
     if not reply.text:
         plan["action"] = "handoff" if reply.need_human else "none"
-        return plan
-    plan["action"] = "suggest" if settings.ai_mode == "suggest" else "send"
+    return plan
+
+
+async def trial_reply(account_id: int, text: str, item_id: str | None = None) -> dict[str, Any]:
+    """「自动回复」页的试运行：不需要已有会话，按当前规则、店主说明和资料演示会怎么回（不发送）。
+    AI 未开启时也会给出 AI 的回答，方便开启前先看效果。"""
+    async with session_factory()() as s:
+        acc = await s.get(XyAccount, account_id)
+        if acc is None:
+            return {"action": "none", "note": "账号不存在"}
+        settings = acc.get_settings()
+        if detect_injection(text):
+            return {"action": "none", "note": "疑似套取设定 / 探测，不回复", "intent": Intent.NO_REPLY}
+        rule = await match_rule(s, acc.owner_id, acc.id, item_id, text) if settings.keyword_reply else None
+        if rule is not None:
+            return {"action": "send", "text": rule.reply, "source": MessageSource.AUTO_KEYWORD, "rule_id": rule.id}
+        item = None
+        if item_id:
+            item = (
+                await s.execute(select(MyItem).where(MyItem.account_id == acc.id, MyItem.item_id == item_id))
+            ).scalar_one_or_none()
+        owner_id = acc.owner_id
+    plan = await _ai_plan(owner_id, account_id, settings, item, [], BargainState(0, None), text)
+    if plan.get("text"):
+        plan["action"] = {"off": "off", "suggest": "suggest"}.get(settings.ai_mode, "send")
     return plan
 
 
