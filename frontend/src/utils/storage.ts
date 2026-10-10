@@ -27,4 +27,3 @@ export const TOKEN_KEY = 'xh_token'
 export const USER_KEY = 'xh_user'
 /** 使用模式：all / buyer / seller（只影响菜单与上手清单） */
 export const MODE_KEY = 'xh_usage_mode'
-export const SETUP_DISMISSED_KEY = 'xh_setup_dismissed'
