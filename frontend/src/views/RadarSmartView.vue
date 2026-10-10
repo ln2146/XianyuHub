@@ -497,7 +497,13 @@ function quickResell(r: ResultOut) {
   const suggestedPrice = Math.round(p * 1.15) || p
   router.push({
     path: '/goods/publish',
-    query: { from: 'resell', title: r.item.title, price: suggestedPrice || undefined, hint: `原低价捡漏入手，原价 ${p}，成色完好，转手诚出` },
+    query: {
+      from: 'resell',
+      title: r.item.title,
+      price: suggestedPrice || undefined,
+      image_url: r.item.image_url || undefined,
+      hint: `原低价捡漏入手，原价 ${p}，成色完好，转手诚出`,
+    },
   })
 }
 

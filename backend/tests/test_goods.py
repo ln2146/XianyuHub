@@ -268,3 +268,19 @@ async def test_multi_inventory_blocked_before_upload_when_account_lacks_it(admin
         return_value=ok({"commonAddresses": [{"city": "上海", "prov": "上海", "area": "浦东", "divisionId": 1}]})
     )
     assert (await admin_client.post(f"/api/v1/goods/drafts/{d['id']}/publish")).status_code == 200
+
+
+@respx.mock
+async def test_import_image_url(admin_client):
+    respx.get("https://img.alicdn.com/test.png").mock(
+        return_value=httpx.Response(200, content=PNG, headers={"content-type": "image/png"})
+    )
+    r = await admin_client.post("/api/v1/goods/import-image-url", json={"url": "https://img.alicdn.com/test.png"})
+    assert r.status_code == 200
+    data = r.json()
+    assert "id" in data
+    assert data["url"] == f"/api/v1/goods/uploads/{data['id']}"
+
+    img_resp = await admin_client.get(data["url"])
+    assert img_resp.status_code == 200
+    assert img_resp.content == PNG

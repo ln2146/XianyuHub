@@ -321,6 +321,7 @@ function quickResell(it: SearchItem) {
       from: 'resell',
       title: it.title,
       price: suggestedPrice || undefined,
+      image_url: it.image_url || undefined,
       hint: `原低价捡漏入手，原价 ${p}，成色完好，转手诚出`,
     },
   })

@@ -179,6 +179,8 @@ export const uploadImage = (file: File) => {
   fd.append('file', file)
   return http.post<{ id: string; url: string }>('/goods/uploads', fd).then((r) => r.data)
 }
+export const importImageUrl = (url: string) =>
+  http.post<{ id: string; url: string }>('/goods/import-image-url', { url }).then((r) => r.data)
 export const uploadUrl = (imageId: string) => `/api/v1/goods/uploads/${imageId}`
 export const aiCopy = (image_ids: string[], hint: string) =>
   http.post<CopyOut>('/goods/ai-copy', { image_ids, hint }, { timeout: 180_000 }).then((r) => r.data)

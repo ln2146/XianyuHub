@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 from typing import Any
 
+import httpx
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, model_validator
@@ -279,6 +280,30 @@ async def upload(_: CurrentUser, file: UploadFile = File(...)) -> dict[str, str]
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
     return {"id": image_id, "url": f"/api/v1/goods/uploads/{image_id}"}
+
+
+class ImportImageUrlIn(BaseModel):
+    url: str
+
+
+@router.post("/import-image-url")
+async def import_image_url(body: ImportImageUrlIn, _: CurrentUser) -> dict[str, str]:
+    """通过图片外链（例如选品雷达中的商品原图）转存为本地草稿图片。"""
+    url = body.url.strip()
+    if not (url.startswith("http://") or url.startswith("https://") or url.startswith("//")):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "无效的图片 URL")
+    if url.startswith("//"):
+        url = "https:" + url
+    try:
+        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+            resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0", "Referer": "https://www.goofish.com/"})
+            if resp.status_code != 200:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, f"下载图片失败：HTTP {resp.status_code}")
+            content_type = resp.headers.get("content-type", "image/jpeg")
+            image_id = service.save_upload(resp.content, content_type)
+            return {"id": image_id, "url": f"/api/v1/goods/uploads/{image_id}"}
+    except Exception as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"转存图片失败：{e}") from e
 
 
 @router.get("/uploads/{image_id}")

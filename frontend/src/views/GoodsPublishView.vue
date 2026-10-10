@@ -15,6 +15,7 @@ import {
   deleteDraft,
   getLocations,
   getPublishMeta,
+  importImageUrl,
   listDrafts,
   publishDraft,
   updateDraft,
@@ -475,7 +476,21 @@ onMounted(async () => {
     if (typeof q.hint === 'string' && q.hint.trim()) {
       gen.hint = q.hint.trim()
     }
-    ElMessage.success('已自动带入雷达好货信息，补充实拍商品图后即可一键 AI 生成！')
+    if (typeof q.image_url === 'string' && q.image_url.trim()) {
+      const imgUrl = q.image_url.trim()
+      importImageUrl(imgUrl)
+        .then((res) => {
+          if (res.id && !form.image_ids.includes(res.id)) {
+            form.image_ids.push(res.id)
+            ElMessage.success('已自动带入雷达好货信息与原图，可直接一键 AI 生成！')
+          }
+        })
+        .catch(() => {
+          ElMessage.success('已自动带入雷达好货信息，补充实拍商品图后即可一键 AI 生成！')
+        })
+    } else {
+      ElMessage.success('已自动带入雷达好货信息，补充实拍商品图后即可一键 AI 生成！')
+    }
   }
 })
 onBeforeUnmount(() => window.clearInterval(timer))
