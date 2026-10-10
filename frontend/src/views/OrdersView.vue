@@ -116,7 +116,7 @@ async function openQuickBind(o: Order) {
 
 async function saveQuickBind(andDeliver = false) {
   if (!quickBind.order || !quickBind.pool_id) {
-    ElMessage.warning('请选择关联的发货内容库')
+    ElMessage.warning('请选择要关联的发货内容')
     return
   }
   const o = quickBind.order
@@ -136,7 +136,7 @@ async function saveQuickBind(andDeliver = false) {
       delay_seconds: 0,
       max_per_buyer: 0,
     })
-    ElMessage.success('商品发货库关联成功')
+    ElMessage.success('已关联发货内容')
 
     if (andDeliver) {
       const r = await deliverOrder(o.id)
@@ -238,7 +238,7 @@ async function openQuickReplenish(o: Order) {
 
 async function submitQuickReplenish() {
   if (!quickReplenish.order || !quickReplenish.pool_id) {
-    ElMessage.warning('请选择目标卡密库')
+    ElMessage.warning('请选择要补充卡密的发货内容')
     return
   }
   const lines = quickReplenish.lines.trim()
@@ -552,7 +552,7 @@ async function openDetail(o: Order) {
 
         <el-form label-position="top" class="mt">
           <el-form-item label="选择发货内容库（固定网盘 / 卡密库存 / API）" required>
-            <el-select v-model="quickBind.pool_id" placeholder="请选择发货内容库" class="w-full">
+            <el-select v-model="quickBind.pool_id" placeholder="请选择发货内容" class="w-full">
               <el-option
                 v-for="p in pools"
                 :key="p.id"
@@ -561,7 +561,7 @@ async function openDetail(o: Order) {
               />
             </el-select>
             <div v-if="!pools.length" class="smaller err mt-xs">
-              暂无可用的发货内容库，
+              暂无可用的发货内容，
               <el-link type="primary" class="smaller" @click="router.push('/orders/cards')">前往自动发货管理新建内容库 &gt;</el-link>
             </div>
           </el-form-item>
@@ -589,7 +589,7 @@ async function openDetail(o: Order) {
 
       <template #footer>
         <div class="bind-dialog-footer">
-          <el-link type="info" class="smaller" @click="goLink(quickBind.order!)">前往发货库中心高级配置 &gt;</el-link>
+          <el-link type="info" class="smaller" @click="goLink(quickBind.order!)">前往「自动发货」页配置 &gt;</el-link>
           <div class="footer-btns">
             <el-button @click="quickBind.open = false">取消</el-button>
             <el-button :loading="quickBind.saving && !quickBind.delivering" @click="saveQuickBind(false)">
@@ -643,8 +643,8 @@ async function openDetail(o: Order) {
         />
 
         <el-form label-position="top" class="mt">
-          <el-form-item label="目标卡密库" required>
-            <el-select v-model="quickReplenish.pool_id" placeholder="请选择卡密库" class="w-full">
+          <el-form-item label="补充到" required>
+            <el-select v-model="quickReplenish.pool_id" placeholder="请选择发货内容（卡密库存）" class="w-full">
               <el-option
                 v-for="p in pools.filter((x) => x.kind === 'pool')"
                 :key="p.id"

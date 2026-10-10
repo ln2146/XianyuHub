@@ -113,7 +113,7 @@ function openQuickDelivery(it: MyItem) {
 
 async function saveQuickDelivery() {
   if (!quickDelivery.item || !quickDelivery.pool_id) {
-    ElMessage.warning('请选择要关联的发货内容库')
+    ElMessage.warning('请选择要关联的发货内容')
     return
   }
   const it = quickDelivery.item
@@ -133,7 +133,7 @@ async function saveQuickDelivery() {
       ElMessage.success('已更新发货内容关联')
     } else {
       await createBinding(body)
-      ElMessage.success('已成功关联发货内容库')
+      ElMessage.success('已关联发货内容')
     }
     quickDelivery.open = false
     await loadDelivery()
@@ -146,11 +146,11 @@ async function saveQuickDelivery() {
 
 async function unbindQuickDelivery() {
   if (!quickDelivery.currentBinding) return
-  await ElMessageBox.confirm('确定解除该商品的发货库关联吗？解除后该商品付款将不再自动发货。', '解除关联', { type: 'warning' })
+  await ElMessageBox.confirm('确定解除该商品的发货内容关联吗？解除后该商品付款将不再自动发货。', '解除关联', { type: 'warning' })
   quickDelivery.unbinding = true
   try {
     await deleteBinding(quickDelivery.currentBinding.id)
-    ElMessage.success('已解除发货库关联')
+    ElMessage.success('已解除发货内容关联')
     quickDelivery.open = false
     await loadDelivery()
   } catch {
@@ -568,7 +568,7 @@ function listingHint(row: MyItem): { label: string; type: 'warning' | 'success';
 
         <el-form label-position="top" class="mt">
           <el-form-item label="关联发货内容库（固定网盘 / 卡密库存 / API）" required>
-            <el-select v-model="quickDelivery.pool_id" placeholder="请选择发货内容库" class="w-full">
+            <el-select v-model="quickDelivery.pool_id" placeholder="请选择发货内容" class="w-full">
               <el-option
                 v-for="p in pools"
                 :key="p.id"
@@ -577,7 +577,7 @@ function listingHint(row: MyItem): { label: string; type: 'warning' | 'success';
               />
             </el-select>
             <div v-if="!pools.length" class="smaller err mt-xs">
-              暂无可用的发货内容库，
+              暂无可用的发货内容，
               <el-link type="primary" class="smaller" @click="goDeliveryCards()">前往自动发货管理新建内容库 &gt;</el-link>
             </div>
           </el-form-item>
@@ -590,7 +590,7 @@ function listingHint(row: MyItem): { label: string; type: 'warning' | 'success';
           </el-form-item>
 
           <el-collapse class="template-collapse">
-            <el-collapse-item title="自定义发货留言模版（可选）" name="tpl">
+            <el-collapse-item title="自定义发货留言模板（可选）" name="tpl">
               <el-input
                 v-model="quickDelivery.template"
                 type="textarea"
@@ -617,7 +617,7 @@ function listingHint(row: MyItem): { label: string; type: 'warning' | 'success';
               解除当前关联
             </el-button>
             <el-link type="info" class="smaller ml-xs" @click="goDeliveryCards(quickDelivery.item)">
-              前往完整发货库 &gt;
+              前往「自动发货」页 &gt;
             </el-link>
           </div>
           <div class="footer-btns">

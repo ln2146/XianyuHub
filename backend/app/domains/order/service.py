@@ -675,6 +675,8 @@ async def sync_all_auto_delivery() -> None:
             await sync_orders(account_id, pages=1)
         except GoofishError as e:
             logger.warning("订单同步失败 account={} err={}", account_id, e)
+        except Exception:  # noqa: BLE001  一个账号出错不能让其余账号的付款都漏同步
+            logger.exception("订单同步异常 account={}", account_id)
 
 
 async def maybe_rate(order_pk: int) -> None:

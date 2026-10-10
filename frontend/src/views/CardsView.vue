@@ -579,10 +579,10 @@ const accountModal = reactive({
     <el-card shadow="never" class="content-card">
       <el-tabs v-model="tab" class="delivery-tabs">
         <!-- 发货内容 -->
-        <el-tab-pane label="① 发货内容库" name="pools">
+        <el-tab-pane label="① 发货内容" name="pools">
           <div class="tab-bar">
             <el-button type="primary" :icon="Plus" @click="openPoolCreate">新建发货内容</el-button>
-            <span class="muted small">支持固定网盘文本、单卡单发卡密库、自有系统 API 接口三种发货方式</span>
+            <span class="muted small">支持固定网盘文本、卡密库存（一单一张）、自有系统 API 接口三种发货方式</span>
           </div>
           <div class="table-wrap">
             <el-table v-loading="poolsLoading" :data="pools">
@@ -883,7 +883,7 @@ const accountModal = reactive({
     <!-- 账号自动发货免跳转设置弹窗 -->
     <el-dialog v-model="accountModal.open" title="账号自动发货开关管理" width="680px">
       <div class="account-modal-header">
-        <div class="desc">在此快速管理每个闲鱼账号的自动发货开关与通知模式，修改即时生效，无需前往账号管理：</div>
+        <div class="desc">在此快速管理每个闲鱼账号的自动发货开关与通知模式，修改即时生效，无需前往账号配置：</div>
         <div class="modal-quick-ops">
           <el-button size="small" type="success" plain :loading="accountsLoading" @click="toggleAllAccountsDelivery(true)">
             全部开启
@@ -941,7 +941,7 @@ const accountModal = reactive({
       <template #footer>
         <div class="modal-footer-flex">
           <el-button link type="primary" size="small" @click="router.push('/accounts')">
-            前往完整账号管理中心 &gt;
+            前往账号配置 &gt;
           </el-button>
           <el-button type="primary" @click="accountModal.open = false">完成</el-button>
         </div>

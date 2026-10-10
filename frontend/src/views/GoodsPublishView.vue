@@ -358,7 +358,7 @@ async function doPublish(draftId: number, accountId: number, poolId: number | nu
           delay_seconds: 0,
           max_per_buyer: 1,
         })
-        ElMessage.success('已自动关联发货内容库')
+        ElMessage.success('已自动关联发货内容')
       } catch {
         /* 仅辅助绑定，失败可在商品管理中补绑 */
       }

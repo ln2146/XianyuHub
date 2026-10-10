@@ -24,7 +24,7 @@ import { useRouter } from 'vue-router'
 import { useAccountsStore } from '@/stores/accounts'
 import { useRealtimeStore, type RealtimeEvent } from '@/stores/realtime'
 import { useMobile } from '@/composables/useMobile'
-import { copyText, fmtRelative, fmtTime, itemUrl, sourceMap } from '@/utils/format'
+import { copyText, fmtRelative, fmtTime, intentText, itemUrl, sourceMap } from '@/utils/format'
 
 const accounts = useAccountsStore()
 const router = useRouter()
@@ -485,7 +485,7 @@ const showThread = computed(() => !isMobile.value || !!currentId.value)
             <div class="sug-text" title="点击填入输入框编辑" @click="useSuggestion(s)">{{ s.text }}</div>
             <div class="sug-meta">
               <span class="muted small">
-                <template v-if="s.intent">意图：{{ s.intent }}</template>
+                <template v-if="s.intent">意图：{{ intentText(s.intent) }}</template>
                 <template v-if="s.note"> · {{ s.note }}</template>
               </span>
               <span>
@@ -552,7 +552,7 @@ const showThread = computed(() => !isMobile.value || !!currentId.value)
           <el-descriptions-item v-if="trial.plan.source" label="来源">
             {{ sourceMap[trial.plan.source]?.label || trial.plan.source }}
           </el-descriptions-item>
-          <el-descriptions-item v-if="trial.plan.intent" label="意图">{{ trial.plan.intent }}</el-descriptions-item>
+          <el-descriptions-item v-if="trial.plan.intent" label="意图">{{ intentText(trial.plan.intent) }}</el-descriptions-item>
           <el-descriptions-item v-if="trial.plan.note" label="说明">{{ trial.plan.note }}</el-descriptions-item>
         </el-descriptions>
         <div v-if="trial.plan.text" class="trial-reply">

@@ -15,6 +15,64 @@ http.interceptors.request.use((config) => {
   return config
 })
 
+interface ValidationItem {
+  loc?: (string | number)[]
+  msg?: string
+  type?: string
+  ctx?: Record<string, unknown>
+}
+
+const FIELD_NAMES: Record<string, string> = {
+  title: '标题',
+  desc: '描述',
+  price: '售价',
+  orig_price: '原价',
+  floor_price: '底价',
+  quantity: '数量',
+  image_ids: '图片',
+  account_id: '账号',
+  name: '名称',
+  keyword: '关键词',
+  keywords: '关键词',
+  reply: '回复内容',
+  cron: '定时规则',
+  target_price: '目标价',
+  drop_percent: '降幅',
+  interval_minutes: '检查频率',
+  template: '发货模板',
+  cookies: 'Cookie',
+  description: '需求描述',
+  item: '商品链接',
+}
+
+function validationText(d: ValidationItem): string {
+  const key = (d.loc || []).filter((x) => x !== 'body' && x !== 'query' && typeof x === 'string').pop() as
+    | string
+    | undefined
+  const field = key ? FIELD_NAMES[key] || key : undefined
+  const ctx = d.ctx || {}
+  const why: Record<string, string> = {
+    missing: '不能为空',
+    string_too_short: '内容太短',
+    string_too_long: '内容太长',
+    greater_than: `需要大于 ${ctx.gt}`,
+    greater_than_equal: `不能小于 ${ctx.ge}`,
+    less_than: `需要小于 ${ctx.lt}`,
+    less_than_equal: `不能大于 ${ctx.le}`,
+    int_parsing: '需要填写整数',
+    float_parsing: '需要填写数字',
+    bool_parsing: '取值不正确',
+    literal_error: '取值不在可选范围内',
+    enum: '取值不在可选范围内',
+    string_pattern_mismatch: '格式不正确',
+    too_short: '至少需要填写一项',
+    too_long: '填写的项太多',
+  }
+  // 我们自己写的校验（ValueError）本来就是中文说明：去掉「Value error, 」前缀直接显示
+  const text = d.type === 'value_error' ? (d.msg || '').replace(/^Value error,\s*/, '') : why[d.type || ''] || '填写不正确'
+  return field && d.type !== 'value_error' ? `「${field}」${text}` : text
+}
+
 /** 从 FastAPI 错误响应中提取可读信息：{detail: string} 或 422 校验列表 */
 export function errorMessage(err: unknown): string {
   if (axios.isAxiosError(err)) {
@@ -22,12 +80,8 @@ export function errorMessage(err: unknown): string {
     const detail = data?.detail
     if (typeof detail === 'string') return detail
     if (Array.isArray(detail)) {
-      return detail
-        .map((d: { loc?: (string | number)[]; msg?: string }) => {
-          const loc = (d.loc || []).filter((x) => x !== 'body').join('.')
-          return loc ? `${loc}：${d.msg}` : d.msg
-        })
-        .join('；')
+      // 422 参数校验：不把 Pydantic 的英文原文直接给用户
+      return detail.map(validationText).join('；')
     }
     if (err.response) return `请求失败（HTTP ${err.response.status}）`
     if (err.code === 'ECONNABORTED') return '请求超时'

@@ -194,3 +194,15 @@ export function friendlyError(raw: string | null | undefined): string {
   const m = raw.match(/^[A-Z0-9_]+::(.+)$/)
   return m ? m[1] : raw
 }
+
+/** 买家消息意图（后端 Intent） */
+export const intentMap: Record<string, string> = {
+  bargain: '议价',
+  product: '商品咨询',
+  logistics: '发货 / 物流',
+  after_sale: '售后 / 投诉',
+  greeting: '打招呼',
+  no_reply: '无需回复',
+  other: '其他',
+}
+export const intentText = (v: string | null | undefined) => (v ? intentMap[v] || v : '')

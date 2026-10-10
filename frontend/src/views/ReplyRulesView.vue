@@ -135,9 +135,9 @@ async function toggleAccountKeywordReply(a: Account, val: boolean) {
   }
 }
 
-// ---------------------------------------------------------------- 常用模版
+// ---------------------------------------------------------------- 常用模板
 // 关键词回复会以卖家本人的口吻发出，也是闲鱼小法庭认定承诺的依据。
-// 只有不含任何承诺的模版可以一键启用；涉及发货时效、快递、正品、运费的模版必须先改成你的实际情况。
+// 只有不含任何承诺的模板可以一键启用；涉及发货时效、快递、正品、运费的模板必须先改成你的实际情况。
 const PLACEHOLDER = /【[^】]*】/
 
 interface PresetTemplate {
@@ -211,7 +211,7 @@ async function quickEnableTemplate(tpl: PresetTemplate) {
       reply_once: false,
       enabled: true,
     })
-    ElMessage.success(`已启用模版「${tpl.name}」`)
+    ElMessage.success(`已启用模板「${tpl.name}」`)
     await load()
   } catch {
     /* 拦截器提示 */
@@ -240,7 +240,7 @@ async function quickEnableTemplate(tpl: PresetTemplate) {
           <el-icon class="title-icon"><Setting /></el-icon>
           <span>闲鱼账号自动回复状态</span>
         </div>
-        <el-link type="primary" class="smaller" @click="router.push('/accounts')">前往账号管理中心 &gt;</el-link>
+        <el-link type="primary" class="smaller" @click="router.push('/accounts')">前往账号配置 &gt;</el-link>
       </div>
 
       <div v-if="!accounts.list.length" class="empty-acc-tip muted small">
@@ -297,7 +297,7 @@ async function quickEnableTemplate(tpl: PresetTemplate) {
       <!-- 空规则冷启动推荐面板 -->
       <div v-if="!loading && !rules.length" class="empty-rules-hero">
         <div class="hero-top">
-          <h3 class="hero-title">常用关键词回复预设模版</h3>
+          <h3 class="hero-title">常用关键词回复预设模板</h3>
         </div>
 
         <div class="preset-cards-grid">
@@ -424,6 +424,9 @@ async function quickEnableTemplate(tpl: PresetTemplate) {
         </el-form-item>
         <el-form-item label="优先级">
           <el-input-number v-model="edit.form.priority" :min="-100" :max="100" />
+          <div class="form-tip">
+            多条规则同时命中时，先看适用范围：指定商品 &gt; 指定账号 &gt; 全部；范围相同才比优先级，数字大的优先。
+          </div>
         </el-form-item>
         <el-form-item label="执行选项">
           <el-checkbox v-model="edit.form.reply_once">每个买家会话仅回复一次（避免刷屏）</el-checkbox>
@@ -580,7 +583,7 @@ async function quickEnableTemplate(tpl: PresetTemplate) {
   align-items: center;
 }
 
-/* 空状态模版冷启动面板 (填满高度，充满质感) */
+/* 空状态模板冷启动面板 (填满高度，充满质感) */
 .empty-rules-hero {
   flex: 1;
   display: flex;

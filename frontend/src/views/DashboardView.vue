@@ -383,7 +383,7 @@ function fmtJobNextRun(v: string | null | undefined): string {
                   </button>
                   <button type="button" class="mini-capsule-btn primary" @click="router.push('/accounts')">
                     <el-icon><User /></el-icon>
-                    <span>账号管理中心</span>
+                    <span>账号概览</span>
                     <el-icon class="arrow-ico"><Right /></el-icon>
                   </button>
                 </div>
@@ -394,7 +394,7 @@ function fmtJobNextRun(v: string | null | undefined): string {
                 <el-table
                   :data="data?.accounts || []"
                   size="small"
-                  empty-text="还没有添加闲鱼账号，请前往账号管理添加"
+                  empty-text="还没有添加闲鱼账号，请前往账号配置添加"
                   class="modern-account-table"
                   max-height="160"
                 >

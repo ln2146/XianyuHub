@@ -873,9 +873,11 @@ onBeforeUnmount(() => {
         <el-divider content-position="left">消息</el-divider>
         <el-form-item label="自动回复总开关">
           <el-switch v-model="settings.form.auto_reply" />
+          <div class="form-tip">关闭时不会替你发出任何消息；关闭期间收到的消息，重新打开后也不会补回复。</div>
         </el-form-item>
         <el-form-item label="关键词回复">
           <el-switch v-model="settings.form.keyword_reply" />
+          <div class="form-tip">优先于 AI：命中「回复规则」时直接发规则里的话术，不受工作时段限制。</div>
         </el-form-item>
         <el-form-item label="AI 模式">
           <el-radio-group v-model="settings.form.ai_mode">
@@ -883,9 +885,21 @@ onBeforeUnmount(() => {
             <el-radio-button value="suggest">建议</el-radio-button>
             <el-radio-button value="auto">自动发送</el-radio-button>
           </el-radio-group>
+          <div class="form-tip">
+            {{
+              settings.form.ai_mode === 'auto'
+                ? settings.form.auto_reply
+                  ? 'AI 写好就直接发给买家。'
+                  : '总开关关闭时 AI 不工作；想先看看 AI 怎么回，可以改用「建议」。'
+                : settings.form.ai_mode === 'suggest'
+                  ? 'AI 只在收件箱里给出建议，由你确认后发送；即使总开关关闭也会生成建议（消耗模型额度）。'
+                  : '不调用 AI，只用关键词回复和默认回复。'
+            }}
+          </div>
         </el-form-item>
         <el-form-item label="人工接管时长（分钟）">
           <el-input-number v-model="settings.form.takeover_minutes" :min="1" :max="1440" />
+          <div class="form-tip">你亲自回复后，这个会话暂停自动回复的时长；期间买家再发消息会提醒你。</div>
         </el-form-item>
         <el-form-item label="回复延迟（秒）">
           <div class="range">
@@ -904,9 +918,11 @@ onBeforeUnmount(() => {
             <span>至</span>
             <el-time-select v-model="settings.workEnd" start="00:00" step="00:30" end="23:59" placeholder="结束" />
           </div>
+          <div class="form-tip">只限制 AI 回复；关键词回复和默认回复在工作时段外照常发送。</div>
         </el-form-item>
         <el-form-item label="默认回复">
           <el-input v-model="settings.form.default_reply" type="textarea" :rows="2" placeholder="留空不发送。例如：在的，稍等马上回复您～" />
+          <div class="form-tip">AI 关闭或在工作时段外时使用，每个会话只发一次。</div>
         </el-form-item>
 
         <el-divider content-position="left">发货</el-divider>
