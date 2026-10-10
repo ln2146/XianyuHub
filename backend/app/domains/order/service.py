@@ -77,6 +77,19 @@ async def transition(s: AsyncSession, order: Order, to: str, *, reason: str | No
         if to == OrderState.DELIVERED and not order.delivered_at:
             order.delivered_at = now
             values["delivered_at"] = order.delivered_at
+        # 订单履约成功：若此前发货重试锁定了卡密，同步转为已使用
+        await s.execute(
+            update(CardItem)
+            .where(CardItem.order_pk == order.id, CardItem.status == "locked")
+            .values(status="used", used_at=now)
+        )
+    elif to in (OrderState.CLOSED, OrderState.REFUNDED):
+        # 订单关闭 / 退款 / 取消：若有未完成发货的锁定卡密，自动释放回库存
+        await s.execute(
+            update(CardItem)
+            .where(CardItem.order_pk == order.id, CardItem.status == "locked")
+            .values(status="available", order_pk=None)
+        )
     if reason is not None:
         order.fail_reason = reason
         values["fail_reason"] = reason

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Box, Connection, Document, Lightning, Plus, Refresh } from '@element-plus/icons-vue'
@@ -416,6 +416,15 @@ onMounted(async () => {
     router.replace({ path: route.path, query: { tab: tab.value } })
   }
 })
+
+watch(
+  () => route.query.tab,
+  (newTab) => {
+    if (typeof newTab === 'string' && ['pools', 'bindings', 'blacklist'].includes(newTab)) {
+      tab.value = newTab
+    }
+  },
+)
 
 const lowStock = (p: PoolOut) => p.kind === 'pool' && p.stock.available <= p.low_stock_threshold
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRealtimeStore } from '@/stores/realtime'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -46,10 +46,19 @@ const pageSize = ref(50)
 const total = ref(0)
 const busy = reactive<Record<string, boolean>>({})
 const filter = reactive({
-  account_id: undefined as number | undefined,
+  account_id: (route.query.account_id ? Number(route.query.account_id) : undefined) as number | undefined,
   status: (typeof route.query.status === 'string' ? route.query.status : '') as string,
   q: '',
 })
+
+watch(
+  () => [route.query.status, route.query.account_id],
+  ([newStatus, newAccId]) => {
+    filter.status = typeof newStatus === 'string' ? newStatus : ''
+    filter.account_id = newAccId ? Number(newAccId) : undefined
+    load(1)
+  },
+)
 
 async function load(p = 1) {
   loading.value = true

@@ -4,7 +4,7 @@ import asyncio
 import random
 import time
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from loguru import logger
@@ -275,11 +275,12 @@ async def publish_draft(draft_id: int, user_id: int | None = None) -> str:
             self_pickup=snapshot["self_pickup"],
         )
         item_id = await gateway.publish_item(account_id, payload, location)
-    except (GoofishError, ValueError, FileNotFoundError) as e:
+    except Exception as e:
         async with session_factory()() as s:
             d = await s.get(PublishDraftRecord, draft_id)
-            d.status, d.error = DraftStatus.FAILED, str(e)[:500]
-            await s.commit()
+            if d:
+                d.status, d.error = DraftStatus.FAILED, str(e)[:500]
+                await s.commit()
         await record_audit(
             "goods.publish",
             user_id=user_id,
@@ -329,6 +330,20 @@ async def publish_draft(draft_id: int, user_id: int | None = None) -> str:
 async def publish_due_drafts() -> None:
     now = datetime.now(UTC)
     async with session_factory()() as s:
+        # 自愈：卡在 publishing 超过 10 分钟未完成的草稿（如进程意外中断）重置为失败
+        stale_threshold = now - timedelta(minutes=10)
+        stale = (
+            await s.execute(
+                select(PublishDraftRecord).where(
+                    PublishDraftRecord.status == DraftStatus.PUBLISHING,
+                    PublishDraftRecord.updated_at <= stale_threshold,
+                )
+            )
+        ).scalars()
+        for d in stale:
+            d.status, d.error = DraftStatus.FAILED, "发布超时（服务重启或闲鱼未响应）"
+        await s.commit()
+
         due = [
             d.id
             for d in (

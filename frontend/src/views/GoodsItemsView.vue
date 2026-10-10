@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Delete, MagicStick, Plus, Refresh, Search } from '@element-plus/icons-vue'
+import { DataLine, Delete, MagicStick, MoreFilled, Plus, Refresh, Search } from '@element-plus/icons-vue'
 import { getMarket, listItems, offlineItem, polishAllItems, polishItem, syncItems, updateItem, type MarketView, type MyItem } from '@/api/goods'
 import {
   createBinding,
@@ -28,7 +28,21 @@ const items = ref<MyItem[]>([])
 const loading = ref(false)
 const syncing = ref(false)
 const busy = reactive<Record<string, boolean>>({})
-const filter = reactive({ account_id: undefined as number | undefined, status: '', q: '' })
+const route = useRoute()
+const filter = reactive({
+  account_id: (route.query.account_id ? Number(route.query.account_id) : undefined) as number | undefined,
+  status: (typeof route.query.status === 'string' ? route.query.status : '') as string,
+  q: '',
+})
+
+watch(
+  () => [route.query.status, route.query.account_id],
+  ([newStatus, newAccId]) => {
+    filter.status = typeof newStatus === 'string' ? newStatus : ''
+    filter.account_id = newAccId ? Number(newAccId) : undefined
+    load()
+  },
+)
 
 async function load() {
   loading.value = true

@@ -214,18 +214,31 @@ async def probe_account(account_id: int) -> bool:
                 avatar = data.get("avatar") or data.get("userIcon") or data.get("portrait") or data.get("headUrl")
                 if avatar:
                     acc.avatar = avatar
+                guard_state = rt.guard.runtime(account_key(account_id)).state
                 sync_runtime_to_model(acc, rt.guard.runtime(account_key(account_id)))
-                # 探活通过证明当前登录态正常，自动解决未解除的 need_login 事件
-                unresolved = await s.execute(
-                    select(RiskEvent).where(
-                        RiskEvent.account_id == account_id,
-                        RiskEvent.resolved_at.is_(None),
-                        RiskEvent.state == AccountState.NEED_LOGIN,
+                if guard_state == AccountState.ACTIVE:
+                    # 账号完全正常，自动解决所有未解除的风控与失效事件
+                    unresolved = await s.execute(
+                        select(RiskEvent).where(
+                            RiskEvent.account_id == account_id,
+                            RiskEvent.resolved_at.is_(None),
+                        )
                     )
-                )
-                now = datetime.now(UTC)
-                for ev in unresolved.scalars():
-                    ev.resolved_at = now
+                    now = datetime.now(UTC)
+                    for ev in unresolved.scalars():
+                        ev.resolved_at = now
+                elif guard_state != AccountState.NEED_LOGIN:
+                    # 探活通过证明当前登录态有效，解决未解除的 need_login 事件
+                    unresolved = await s.execute(
+                        select(RiskEvent).where(
+                            RiskEvent.account_id == account_id,
+                            RiskEvent.resolved_at.is_(None),
+                            RiskEvent.state == AccountState.NEED_LOGIN,
+                        )
+                    )
+                    now = datetime.now(UTC)
+                    for ev in unresolved.scalars():
+                        ev.resolved_at = now
                 await s.commit()
         return True
     except SessionExpiredError:

@@ -916,8 +916,14 @@ async def update_watch(watch_id: int, body: WatchUpdate, user: CurrentUser, sess
     for k, v in body.model_dump().items():
         setattr(w, k, v)
     if reopen:
-        # 重新开启：以当前价格作为新的降幅基准，清除失败计数
-        w.status, w.triggered_at, w.consecutive_failures, w.last_error = WatchStatus.WATCHING, None, 0, None
+        # 重新开启：以当前价格作为新的降幅基准，清除失败计数与结束原因
+        w.status, w.triggered_at, w.consecutive_failures, w.last_error, w.ended_reason = (
+            WatchStatus.WATCHING,
+            None,
+            0,
+            None,
+            None,
+        )
         w.base_price = w.last_price or w.base_price
         if watch_service.alert_hit(w, w.last_price):
             price = w.last_price

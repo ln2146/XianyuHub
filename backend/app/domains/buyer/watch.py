@@ -144,7 +144,7 @@ async def check_watch(watch_id: int, account_id: int | None = None) -> PriceWatc
         return w
     except (RiskBlockedError, RiskControlError):
         raise
-    except GoofishError as e:
+    except Exception as e:
         async with session_factory()() as s:
             w = await s.get(PriceWatch, watch_id)
             if w is None:
