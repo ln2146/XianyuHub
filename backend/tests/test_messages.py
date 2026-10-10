@@ -322,3 +322,27 @@ async def test_outbound_sensitive_message_interceptor(admin_client, im):
     assert r.status_code == 423
     assert "导流风控" in r.text
     assert len(fake.sent) == 0
+
+
+@respx.mock
+async def test_alert_when_im_stays_disconnected(admin_client, im):
+    from app.workers.im_gateway import get_im_manager
+
+    account_id, fake = im
+    hook = respx.post("https://hook.example.com/im").mock(return_value=httpx.Response(200))
+    await admin_client.post(
+        "/api/v1/notify/channels",
+        json={"name": "h", "type": "webhook", "config": {"url": "https://hook.example.com/im"}},
+    )
+    manager = get_im_manager()
+    manager.alert_after = 0
+    # 很快重连上：不提醒
+    await manager._on_status(account_id, "disconnected", "net")
+    await asyncio.gather(*manager._watchers.values())
+    assert not hook.called
+    # 一直没连上：提醒一次
+    fake.connected.clear()
+    await manager._on_status(account_id, "disconnected", "ConnectionClosed")
+    await asyncio.gather(*manager._watchers.values())
+    assert hook.call_count == 1 and "消息连接已断开" in hook.calls[0].request.content.decode()
+    fake.connected.set()

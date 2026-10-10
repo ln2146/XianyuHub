@@ -41,6 +41,8 @@ MAX_FAILURES_BEFORE_PAUSE = 3
 # 若该通道的冷却期更长，则等到冷却结束再试（冷却期内重试只会被本地拦下）
 RISK_RETRY_BASE_SECONDS = 120
 RISK_RETRY_MAX_SECONDS = 3600
+# 连续被限制这么多次（约 1 小时以上拿不到结果）时提醒一次，否则用户只会看到「等待重试」
+RISK_ALERT_AFTER = 5
 NOTIFY_DIGEST_MAX = 10  # 汇总通知里最多列出的商品数
 _locks: dict[int, asyncio.Lock] = {}
 
@@ -253,10 +255,28 @@ async def _run(task_id: int, account_id: int | None = None) -> RunStats:
         paused = task.paused_reason
         retry_at = task.retry_at
         name = task.name
+        failures, anonymous = task.consecutive_failures, task.account_id is None
         await s.commit()
     if retry_at is not None or had_retry:
         # 让调度进程按 retry_at 安排（或取消）一次性重试
         await bus.publish(Topics.BUYER_TASK_CHANGED, {"task_id": task_id})
+    if status == "risk" and failures == RISK_ALERT_AFTER:
+        tip = (
+            "匿名通道可能被闲鱼限制了你当前网络的 IP。可以在任务设置里把「搜索账号」改成你的闲鱼账号，"
+            "或换个网络；系统会继续在后台自动重试。"
+            if anonymous
+            else "该账号可能被闲鱼临时限制了搜索。系统会继续在后台自动重试，长时间不恢复请到「账号」页检查。"
+        )
+        await notify(
+            owner_id,
+            Notification(
+                event=NotifyEvents.TASK_FAILED,
+                title=f"智能搜索「{name}」连续 {failures} 次被闲鱼限制",
+                content=f"已经一段时间没有拿到新结果。{tip}",
+            ),
+            dedupe_key=f"task_risk:{task_id}",
+            cooldown=6 * 3600,
+        )
     if retry_at is not None:
         logger.info("选品任务 {} 被闲鱼限制，{} 后台重试", task_id, retry_at.isoformat())
     if status != "ok" and paused:

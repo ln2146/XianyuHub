@@ -23,6 +23,8 @@ from app.goofish.protocol.lwp import LwpClient
 from app.runtime import get_runtime
 
 EventHandler = Callable[[int, ImEvent], Awaitable[None]]
+# 意外断线超过这个时间还没重连上：通知卖家（期间收不到买家消息，自动回复 / 发货都会停）
+DISCONNECT_ALERT_SECONDS = 300
 
 
 class ImClient(Protocol):
@@ -75,9 +77,39 @@ class ImGatewayManager:
         self._clients: dict[int, ImClient] = {}
         self._tasks: dict[int, asyncio.Task] = {}
         self.status: dict[int, dict[str, Any]] = {}
+        self._watchers: dict[int, asyncio.Task] = {}
+        self.alert_after = DISCONNECT_ALERT_SECONDS
 
     async def _on_status(self, account_id: int, status: str, detail: str | None) -> None:
         self.status[account_id] = {"status": status, "detail": detail, "at": time.time()}
+        if status == "disconnected" and not (account_id in self._watchers and not self._watchers[account_id].done()):
+            self._watchers[account_id] = asyncio.create_task(self._alert_if_still_down(account_id))
+
+    async def _alert_if_still_down(self, account_id: int) -> None:
+        await asyncio.sleep(self.alert_after)
+        if account_id not in self._clients or self.is_connected(account_id):
+            return  # 已重连，或是主动停掉的（掉登录 / 停用另有通知）
+        from app.domains.account.models import XyAccount
+        from app.notify.senders import Notification
+        from app.notify.service import NotifyEvents, notify
+
+        async with session_factory()() as s:
+            acc = await s.get(XyAccount, account_id)
+            if acc is None:
+                return
+            owner_id, name = acc.owner_id, acc.nickname or acc.unb
+        detail = (self.status.get(account_id) or {}).get("detail") or ""
+        await notify(
+            owner_id,
+            Notification(
+                event=NotifyEvents.ACCOUNT_RISK,
+                title=f"⚠️ 账号 {name} 的消息连接已断开",
+                content=f"已断开超过 {self.alert_after // 60} 分钟，系统仍在自动重连。期间收不到买家消息，"
+                "自动回复和自动发货都会暂停。如果长时间无法恢复，请到「账号」页检查登录状态。"
+                + (f"\n原因：{detail[:120]}" if detail else ""),
+            ),
+            dedupe_key=f"im_down:{account_id}",
+        )
 
     async def start_account(self, account_id: int) -> None:
         if account_id in self._tasks and not self._tasks[account_id].done():
@@ -89,6 +121,9 @@ class ImGatewayManager:
         logger.info("IM 连接启动 account={}", account_id)
 
     async def stop_account(self, account_id: int) -> None:
+        watcher = self._watchers.pop(account_id, None)
+        if watcher:
+            watcher.cancel()
         client = self._clients.pop(account_id, None)
         task = self._tasks.pop(account_id, None)
         if client:

@@ -145,6 +145,33 @@ async def test_buyer_task_backs_off_on_risk_instead_of_pausing(admin_client):
     assert task["last_status"] == "ok" and task["retry_at"] is None
 
 
+@respx.mock
+async def test_repeated_risk_alerts_once_with_a_hint(admin_client):
+    from app.domains.buyer.models import MonitorTask
+    from app.domains.buyer.pipeline import RISK_ALERT_AFTER
+
+    hook = respx.post("https://hook.example.com/t").mock(return_value=httpx.Response(200))
+    await admin_client.post(
+        "/api/v1/notify/channels",
+        json={"name": "h", "type": "webhook", "config": {"url": "https://hook.example.com/t"}},
+    )
+    respx.post(url__regex=r".*mtop\.gaia.*").mock(
+        return_value=httpx.Response(200, json={"ret": ["SUCCESS"], "data": {}}, headers={"set-cookie": "_m_h5_tk=a_1"})
+    )
+    respx.post(url__regex=r".*idlemtopsearch.*").mock(
+        return_value=httpx.Response(200, json={"ret": ["RGV587_ERROR::SM::哎哟喂,被挤爆啦"], "data": {}})
+    )
+    task_id = (await admin_client.post("/api/v1/buyer/tasks", json={**TASK, "decision_mode": "rule"})).json()["id"]
+    for _ in range(RISK_ALERT_AFTER + 1):
+        get_runtime().gateway.guard.load(account_key(None), "active")
+        async with session_factory()() as s:
+            (await s.get(MonitorTask, task_id)).retry_at = None  # 跳过退避等待
+            await s.commit()
+        await run_task(task_id)
+    alerts = [c for c in hook.calls if "被闲鱼限制" in c.request.content.decode()]
+    assert len(alerts) == 1 and "搜索账号" in alerts[0].request.content.decode()
+
+
 def test_risk_retry_delay_backs_off_and_respects_cooldown():
     from app.domains.buyer.pipeline import RISK_RETRY_MAX_SECONDS, risk_retry_delay
 
