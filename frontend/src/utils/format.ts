@@ -111,16 +111,16 @@ export const notifyEventMap: Record<string, string> = {
 }
 
 export const notifyTypeMap: Record<string, string> = {
-  serverchan: 'Server酱（个人微信）',
-  pushplus: 'PushPlus（个人微信）',
+  serverchan: '微信服务号（Server酱）',
+  pushplus: '微信公众号（PushPlus）',
   wecom: '企业微信',
   feishu: '飞书',
   dingtalk: '钉钉',
   telegram: 'Telegram',
-  bark: 'Bark',
+  bark: 'Bark (iOS)',
   ntfy: 'ntfy',
-  webhook: 'Webhook',
-  email: '邮件',
+  webhook: '自定义 Webhook',
+  email: 'QQ邮箱 / 常用邮箱',
 }
 
 /** 复制提问并打开闲鱼商品页：到闲鱼里点「我想要」进入聊天，直接粘贴发送 */

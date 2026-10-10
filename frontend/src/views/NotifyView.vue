@@ -8,7 +8,6 @@ import {
   Delete,
   Edit,
   Hide,
-  InfoFilled,
   Refresh,
   Search,
   View,
@@ -25,6 +24,7 @@ import {
   type Channel,
   type NotifyMeta,
 } from '@/api/notify'
+import ConnectorIcon from '@/components/ConnectorIcon.vue'
 import { useMobile } from '@/composables/useMobile'
 import { notifyEventMap, notifyTypeMap } from '@/utils/format'
 
@@ -46,13 +46,12 @@ const showSecrets = reactive<Record<string, boolean>>({})
 interface ConnectorApp {
   type: string
   name: string
+  subTag?: string
   category: 'collab' | 'mobile' | 'email' | 'dev'
   categoryLabel: string
   desc: string
   guide: string
   badge?: string
-  iconBg: string
-  iconColor: string
 }
 
 const connectorApps: ConnectorApp[] = [
@@ -63,8 +62,6 @@ const connectorApps: ConnectorApp[] = [
     categoryLabel: '办公协作',
     desc: '通过企业微信群机器人 Webhook，将闲鱼订单付款、发货异常、客服转人工与账号风控预警实时推送到指定工作群，支持 Markdown 卡片。',
     guide: '在企业微信群中点击「设置」→「群机器人」→「添加机器人」，复制生成的 Webhook 地址粘贴到下方即可。',
-    iconBg: '#e8f4ff',
-    iconColor: '#2b79ff',
   },
   {
     type: 'feishu',
@@ -73,8 +70,6 @@ const connectorApps: ConnectorApp[] = [
     categoryLabel: '办公协作',
     desc: '通过飞书群自定义机器人，实时接收闲鱼订单动态、新买家咨询与商品降价预警，支持交互式富文本卡片排版与签名校验。',
     guide: '在飞书群「设置」→「群机器人」添加「自定义机器人」，复制 Webhook 地址；若开启了「签名校验」，请将密钥一并填入下方。',
-    iconBg: '#e6f9f5',
-    iconColor: '#00c58e',
   },
   {
     type: 'dingtalk',
@@ -83,8 +78,6 @@ const connectorApps: ConnectorApp[] = [
     categoryLabel: '办公协作',
     desc: '通过钉钉群智能助手自定义机器人，即时同步店铺新订单、库存紧缺告警与买家咨询，支持加签安全验证。',
     guide: '在钉钉群「智能群助手」添加「自定义机器人」，安全设置选「加签」，并把 SEC 开头的密钥填到下方。',
-    iconBg: '#e9f2ff',
-    iconColor: '#007fff',
   },
   {
     type: 'email',
@@ -93,28 +86,24 @@ const connectorApps: ConnectorApp[] = [
     categoryLabel: '邮箱通知',
     desc: '通过 SMTP 协议将每日交易汇总、发货失败异常与风控预警直发收件箱，支持 QQ邮箱、163 邮箱与企业域名邮箱。',
     guide: 'QQ 或 163 邮箱需登录网页端开启 POP3/SMTP 服务并生成「专属授权码」；QQ 邮箱 465 端口开启 SSL，587 端口开启 STARTTLS。',
-    iconBg: '#fef7e7',
-    iconColor: '#f59e0b',
   },
   {
     type: 'serverchan',
-    name: 'Server酱',
+    name: '微信服务号',
+    subTag: 'Server酱',
     category: 'mobile',
     categoryLabel: '微信与手机',
-    desc: '基于 Server酱 将闲鱼重要动态一对一推送到个人微信服务号，无需常驻后台即可在微信接收订单与风控提醒。',
-    guide: '在 sct.ftqq.com 微信扫码登录，复制 SendKey（Turbo 版 SCT… 或 Server酱³ sctp… 均可）粘贴到下方。',
-    iconBg: '#fff1f0',
-    iconColor: '#ff4d4f',
+    desc: '通过微信服务号模板消息推送，将闲鱼订单付款、发货异常、客服求助与账号风控实时推送到个人微信，免装单独 App，微信即刻弹窗提醒。',
+    guide: '在 sct.ftqq.com 微信扫码登录，复制 SendKey（Turbo 版 SCT… 或 Server酱³ sctp… 均可）粘贴到下方即可。',
   },
   {
     type: 'pushplus',
-    name: 'PushPlus 推送加',
+    name: '微信公众号',
+    subTag: 'PushPlus',
     category: 'mobile',
     categoryLabel: '微信与手机',
-    desc: '微信扫码即可一对一绑定，闲鱼新订单、买家未读与转人工提醒直接微信公众号弹窗，轻量省电。',
+    desc: '微信扫码关注公众号即可一对一绑定，闲鱼新订单、买家未读与转人工提醒直接微信公众号弹窗，轻量省电。',
     guide: '在 pushplus.plus 微信扫码登录，复制个人中心「一对一推送」的 Token 粘贴到下方即可。',
-    iconBg: '#eafbf3',
-    iconColor: '#10b981',
   },
   {
     type: 'bark',
@@ -123,8 +112,6 @@ const connectorApps: ConnectorApp[] = [
     categoryLabel: '微信与手机',
     desc: '专为 iPhone / iPad / Apple Watch 打造的原生秒级通知，闲鱼成交与紧急预警一键触达，支持自定义铃声与角标。',
     guide: 'iOS App Store 安装 Bark App，复制 App 内提供的服务器地址与 Device Key 填入下方即可。',
-    iconBg: '#f5f0ff',
-    iconColor: '#7c3aed',
   },
   {
     type: 'telegram',
@@ -133,8 +120,6 @@ const connectorApps: ConnectorApp[] = [
     categoryLabel: '开发与系统',
     desc: '通过 Telegram 机器人即时推送订单与操作日志，全球极速触达，支持多群组、频道与自定义反代端点。',
     guide: '通过 @BotFather 创建机器人获取 Bot Token，向机器人发送任意消息后获取 Chat ID；国内服务器可配置反代地址。',
-    iconBg: '#e8f7ff',
-    iconColor: '#0ea5e9',
   },
   {
     type: 'ntfy',
@@ -143,8 +128,6 @@ const connectorApps: ConnectorApp[] = [
     categoryLabel: '微信与手机',
     desc: '基于开源 ntfy 的跨平台即时推送协议，手机安装 App 订阅 Topic 即可接收即时通知，免注册、完全私密。',
     guide: '手机安装 ntfy App 并新建订阅一个专属 Topic，在下方填入相同的 Topic 名称即可接收通知。',
-    iconBg: '#fff4eb',
-    iconColor: '#f97316',
   },
   {
     type: 'webhook',
@@ -153,8 +136,6 @@ const connectorApps: ConnectorApp[] = [
     categoryLabel: '开发与系统',
     desc: '以标准 POST JSON 方式将所有交易与告警事件推送至你的私有自动化系统、Python 脚本或第三方 ERP。',
     guide: '填写你的服务回调 URL 与可选自定义 Header，每当事件触发时将以 POST JSON 发送通知载荷。',
-    iconBg: '#f0f3ff',
-    iconColor: '#6366f1',
   },
 ]
 
@@ -176,6 +157,7 @@ const filteredConnectors = computed(() => {
     const matchQuery =
       !q ||
       app.name.toLowerCase().includes(q) ||
+      (app.subTag && app.subTag.toLowerCase().includes(q)) ||
       app.desc.toLowerCase().includes(q) ||
       app.categoryLabel.toLowerCase().includes(q) ||
       app.type.toLowerCase().includes(q)
@@ -286,16 +268,16 @@ const edit = reactive({
 })
 
 const currentApp = computed(() => {
-  return connectorApps.find((a) => a.type === edit.type) || {
-    type: edit.type,
-    name: notifyTypeMap[edit.type] || edit.type,
-    category: 'dev' as const,
-    categoryLabel: '通用连接器',
-    desc: '自定义消息推送与通知桥接器。',
-    guide: '请按对应渠道协议填写配置参数。',
-    iconBg: '#f2f3f5',
-    iconColor: '#4e5969',
-  }
+  return (
+    connectorApps.find((a) => a.type === edit.type) || {
+      type: edit.type,
+      name: notifyTypeMap[edit.type] || edit.type,
+      category: 'dev' as const,
+      categoryLabel: '通用连接器',
+      desc: '自定义消息推送与通知桥接器。',
+      guide: '请按对应渠道协议填写配置参数。',
+    }
+  )
 })
 
 const fields = computed<FieldDef[]>(() => {
@@ -543,14 +525,6 @@ async function remove(c: Channel) {
   ElMessage.success('已删除渠道')
   await load()
 }
-
-/** 获取某个渠道对应图标的颜色和背景 */
-function getAppDesign(type: string) {
-  return connectorApps.find((a) => a.type === type) || {
-    iconBg: '#f2f3f5',
-    iconColor: '#4e5969',
-  }
-}
 </script>
 
 <template>
@@ -623,7 +597,7 @@ function getAppDesign(type: string) {
       </button>
     </div>
 
-    <!-- 3. 应用连接器市场 Grid（双列设计，与参考图完全一致） -->
+    <!-- 3. 应用连接器市场 Grid（双列真实软件图标卡片） -->
     <div v-if="activeTab === 'market'" v-loading="loading" class="market-view-container">
       <div v-if="!filteredConnectors.length" class="empty-search-box">
         <el-empty description="没有找到匹配的应用连接器">
@@ -638,87 +612,16 @@ function getAppDesign(type: string) {
           class="connector-app-card"
           @click="openAddForApp(app)"
         >
-          <!-- 左侧品牌图标 -->
-          <div class="app-icon-wrapper" :style="{ background: app.iconBg, color: app.iconColor }">
-            <!-- 微信类 / 企业微信 -->
-            <template v-if="app.type === 'wecom'">
-              <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor">
-                <path d="M8.5 4C4.36 4 1 6.91 1 10.5c0 2.05 1.1 3.88 2.81 5.06l-.72 2.22 2.62-1.33c.87.27 1.8.42 2.79.42.3 0 .6-.02.89-.05-.18-.58-.29-1.19-.29-1.82 0-3.59 3.36-6.5 7.5-6.5.3 0 .59.02.88.06C16.66 5.86 12.87 4 8.5 4zm9 6c-3.59 0-6.5 2.46-6.5 5.5s2.91 5.5 6.5 5.5c.78 0 1.52-.12 2.21-.33l2.08 1.05-.57-1.76C22.34 19.01 23 17.6 23 15.5c0-3.04-2.91-5.5-6.5-5.5z"/>
-              </svg>
-            </template>
-            <!-- 飞书 -->
-            <template v-else-if="app.type === 'feishu'">
-              <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M3 13.5L12 3l9 10.5L12 21 3 13.5z" fill="currentColor" fill-opacity="0.2"/>
-                <path d="M12 3v18M3 13.5l9-4.5 9 4.5" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </template>
-            <!-- 钉钉 -->
-            <template v-else-if="app.type === 'dingtalk'">
-              <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor">
-                <path d="M20.5 4.5L3 10.5l7 2.5 2.5 7 8-15.5z" fill-opacity="0.85"/>
-                <path d="M10 13l3.5-3.5" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/>
-              </svg>
-            </template>
-            <!-- QQ邮箱 / SMTP -->
-            <template v-else-if="app.type === 'email'">
-              <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor">
-                <path d="M3 4h18a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" fill-opacity="0.2"/>
-                <path d="M22 6l-10 7L2 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-              </svg>
-            </template>
-            <!-- Server酱 -->
-            <template v-else-if="app.type === 'serverchan'">
-              <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="2" y="3" width="20" height="7" rx="2" fill="currentColor" fill-opacity="0.15"/>
-                <rect x="2" y="14" width="20" height="7" rx="2" fill="currentColor" fill-opacity="0.15"/>
-                <circle cx="6" cy="6.5" r="1.5" fill="currentColor"/>
-                <circle cx="6" cy="17.5" r="1.5" fill="currentColor"/>
-                <path d="M14 6.5h4M14 17.5h4" stroke-linecap="round"/>
-              </svg>
-            </template>
-            <!-- PushPlus -->
-            <template v-else-if="app.type === 'pushplus'">
-              <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor">
-                <path d="M12 2C6.48 2 2 6.03 2 11c0 2.87 1.51 5.41 3.86 6.96L5 22l4.31-2.16C10.19 20.07 11.08 20.2 12 20.2c5.52 0 10-4.03 10-9.2S17.52 2 12 2z" fill-opacity="0.2"/>
-                <path d="M12 7v8M8 11h8" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
-              </svg>
-            </template>
-            <!-- Bark -->
-            <template v-else-if="app.type === 'bark'">
-              <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" fill="currentColor" fill-opacity="0.2"/>
-                <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-                <circle cx="12" cy="4" r="1" fill="currentColor"/>
-              </svg>
-            </template>
-            <!-- Telegram -->
-            <template v-else-if="app.type === 'telegram'">
-              <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor">
-                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 0 0-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.75-.55 2.92-1.27 4.86-2.11 5.83-2.52 2.78-1.16 3.35-1.36 3.73-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .34z"/>
-              </svg>
-            </template>
-            <!-- ntfy -->
-            <template v-else-if="app.type === 'ntfy'">
-              <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M11 5L6 9H2v6h4l5 4V5z" fill="currentColor" fill-opacity="0.2"/>
-                <path d="M15.54 8.46a5 5 0 0 1 0 7.07M19.07 4.93a10 10 0 0 1 0 14.14" stroke-linecap="round"/>
-              </svg>
-            </template>
-            <!-- 自定义 Webhook -->
-            <template v-else>
-              <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" stroke-linecap="round"/>
-                <polyline points="15 3 21 3 21 9"/>
-                <line x1="10" y1="14" x2="21" y2="3" stroke-linecap="round"/>
-              </svg>
-            </template>
+          <!-- 左侧真实品牌图标 -->
+          <div class="app-icon-wrapper">
+            <ConnectorIcon :type="app.type" :size="48" />
           </div>
 
           <!-- 中间文本内容 -->
           <div class="app-content-body">
             <div class="app-title-row">
               <span class="app-title">{{ app.name }}</span>
+              <span v-if="app.subTag" class="app-provider-pill">{{ app.subTag }}</span>
               <span v-if="getConnectedCount(app.type) > 0" class="connected-badge">
                 <span class="badge-dot"></span>
                 已接入 {{ getConnectedCount(app.type) }} 个
@@ -727,7 +630,7 @@ function getAppDesign(type: string) {
             <p class="app-description">{{ app.desc }}</p>
           </div>
 
-          <!-- 右侧圆形添加按钮（精确还原截图） -->
+          <!-- 右侧圆形添加按钮 -->
           <div class="card-action-side">
             <button
               class="round-plus-btn"
@@ -756,12 +659,7 @@ function getAppDesign(type: string) {
         <div v-for="c in channels" :key="c.id" class="connected-channel-card">
           <div class="ch-card-header">
             <div class="ch-info-left">
-              <div
-                class="ch-small-icon"
-                :style="{ background: getAppDesign(c.type).iconBg, color: getAppDesign(c.type).iconColor }"
-              >
-                <el-icon><Connection /></el-icon>
-              </div>
+              <ConnectorIcon :type="c.type" :size="38" />
               <div class="ch-names">
                 <div class="ch-title-text">{{ c.name }}</div>
                 <div class="ch-sub-meta">
@@ -843,19 +741,21 @@ function getAppDesign(type: string) {
     <!-- 5. 连接器配置与连通测试弹窗 (Drawer / Modal) -->
     <el-dialog
       v-model="edit.open"
-      :title="edit.id ? `编辑连接器 · ${edit.name}` : `接入连接器 · ${currentApp.name}`"
+      :title="edit.id ? `编辑连接器 · ${edit.name}` : `接入连接器 · ${currentApp.name}${currentApp.subTag ? '（' + currentApp.subTag + '）' : ''}`"
       :width="isMobile ? '95%' : '680px'"
       :close-on-click-modal="false"
       class="connector-dialog"
     >
       <div class="dialog-inner-content">
         <!-- 引导指引条 -->
-        <div class="guide-banner" :style="{ borderColor: currentApp.iconBg }">
-          <div class="guide-icon" :style="{ background: currentApp.iconBg, color: currentApp.iconColor }">
-            <el-icon><InfoFilled /></el-icon>
-          </div>
+        <div class="guide-banner">
+          <ConnectorIcon :type="edit.type" :size="36" />
           <div class="guide-text">
-            <div class="guide-app-title">{{ currentApp.name }} 接入配置指引</div>
+            <div class="guide-app-title">
+              {{ currentApp.name }}
+              <span v-if="currentApp.subTag" class="app-provider-pill">{{ currentApp.subTag }}</span>
+              接入指引
+            </div>
             <div class="guide-detail">{{ currentApp.guide }}</div>
           </div>
         </div>
@@ -1218,7 +1118,7 @@ function getAppDesign(type: string) {
   border-color: var(--xh-border);
 }
 
-/* ================= 3. 连接器卡片网格 (双列与圆加号设计) ================= */
+/* ================= 3. 连接器卡片网格 ================= */
 .connector-market-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1255,11 +1155,10 @@ function getAppDesign(type: string) {
   flex-shrink: 0;
   width: 48px;
   height: 48px;
-  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: transform 0.2s;
+  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .connector-app-card:hover .app-icon-wrapper {
@@ -1271,7 +1170,7 @@ function getAppDesign(type: string) {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
 }
 
 .app-title-row {
@@ -1284,6 +1183,16 @@ function getAppDesign(type: string) {
   font-size: 15px;
   font-weight: 600;
   color: var(--xh-text);
+}
+
+.app-provider-pill {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 1px 7px;
+  border-radius: 4px;
+  background: var(--xh-fill-strong);
+  color: var(--xh-text-2);
+  border: 1px solid var(--xh-border);
 }
 
 .connected-badge {
@@ -1385,16 +1294,6 @@ function getAppDesign(type: string) {
   display: flex;
   align-items: center;
   gap: 12px;
-}
-
-.ch-small-icon {
-  width: 38px;
-  height: 38px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 20px;
 }
 
 .ch-names {
@@ -1584,31 +1483,27 @@ function getAppDesign(type: string) {
 /* ================= 5. 配置弹窗样式 ================= */
 .guide-banner {
   display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 12px 14px;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
   background: var(--xh-fill);
   border: 1px solid var(--xh-border);
-  border-radius: 8px;
+  border-radius: 10px;
   margin-bottom: 20px;
 }
 
-.guide-icon {
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 16px;
-  flex-shrink: 0;
+.guide-text {
+  flex: 1;
 }
 
 .guide-app-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-weight: 600;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--xh-text);
-  margin-bottom: 2px;
+  margin-bottom: 3px;
 }
 
 .guide-detail {
