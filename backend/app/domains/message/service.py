@@ -19,6 +19,7 @@ from app.domains.goods.models import MyItem
 from app.domains.message.agent import ReplyContext, compose_reply
 from app.domains.message.models import ChatMessage, Conversation, MessageSource, ReplyRule, ReplySuggestion
 from app.goofish.dto import ImEvent, ImEventType, SystemNotice
+from app.goofish.errors import RiskBlockedError
 from app.intelligence.bargain import BargainAction, BargainState, decide
 from app.intelligence.guardrails import detect_injection
 from app.intelligence.intent import Intent, classify_intent
@@ -520,7 +521,77 @@ async def im_send(account_id: int, cid: str, peer_id: str, text: str) -> None:
         raise ConnectionError(str(e)) from e
 
 
+# ---------------------------------------------------------------- 出口风控与敏感词过滤
+_SENSITIVE_PATTERNS = [
+    # 手机号 (11位数字，允许 +86，空格，破折号)
+    (re.compile(r"(?:(?:\+?86[- ]?)?1[3-9]\d{9})|(?:1[3-9]\d{1}[- ]\d{4}[- ]\d{4})"), "疑似手机号码"),
+    # 典型微信/QQ/站外交易导流关键字
+    (
+        re.compile(
+            r"(?:加[微vV]|[vV微]\s*信|[vV][xX]|微\s*x|vx\s*号|v\s*号|加我[vV微]|私[聊信]|线下交易|加企鹅|[qQ][qQ]\s*号|走淘宝|走拼多多|走京东)",
+            re.IGNORECASE,
+        ),
+        "站外导流敏感词（微信/QQ/站外交易）",
+    ),
+    # 变体引导：例如 "V: abc1234" 或 "微信：xxx"
+    (
+        re.compile(r"(?:[vV]|微信|vx)\s*[:：]\s*[a-zA-Z0-9_-]{5,25}", re.IGNORECASE),
+        "微信号码/联系方式导流",
+    ),
+]
+
+
+def check_sensitive_content(text: str) -> tuple[bool, str]:
+    """检测外发消息中是否包含可能导致闲鱼封号的风控敏感词/联系方式。返回 (is_sensitive, reason)"""
+    if not text:
+        return False, ""
+    for pattern, reason in _SENSITIVE_PATTERNS:
+        if pattern.search(text):
+            return True, reason
+    return False, ""
+
+
 async def send_text(conv_id: int, text: str, *, source: str, meta: dict[str, Any] | None = None) -> ChatMessage:
+    is_sensitive, reason = check_sensitive_content(text)
+    if is_sensitive:
+        # 如果是自动化回复（AI、关键词、默认回复）：拦截外发，转人工接管并发布系统提示
+        if source in (MessageSource.AUTO_AI, MessageSource.AUTO_KEYWORD, MessageSource.AUTO_DEFAULT):
+            logger.warning("拦截自动化外发敏感消息 conv={}: reason={} text={}", conv_id, reason, text[:100])
+            async with session_factory()() as s:
+                conv = await s.get(Conversation, conv_id)
+                if conv:
+                    account_id = conv.account_id
+                    conv.takeover_until = datetime.now(UTC) + timedelta(minutes=120)
+                    intercept_msg = (
+                        f"🛡️ [风控拦截] 系统拦截了拟自动发送的内容（{reason}），已暂停自动回复并转交人工："
+                        f"\n「{text}」"
+                    )
+                    msg = await save_message(
+                        s,
+                        conv,
+                        direction="out",
+                        source=MessageSource.SYSTEM,
+                        text=intercept_msg,
+                        meta={"intercepted": True, "original_source": source, "reason": reason},
+                    )
+                    await s.commit()
+                    await hub.publish(
+                        "message",
+                        {
+                            "conversation_id": conv_id,
+                            "account_id": account_id,
+                            "text": intercept_msg,
+                            "id": msg.id,
+                            "source": MessageSource.SYSTEM,
+                        },
+                        account_id=account_id,
+                    )
+                    return msg
+            raise RiskBlockedError(f"敏感词拦截：{reason}", state="sensitive_blocked")
+        elif source == MessageSource.WEB_MANUAL:
+            if not (meta and meta.get("force")):
+                raise RiskBlockedError(f"消息触发闲鱼导流风控（{reason}），请修改话术以防封号", state="sensitive_blocked")
+
     async with session_factory()() as s:
         conv = await s.get(Conversation, conv_id)
         if conv is None or not conv.peer_id:

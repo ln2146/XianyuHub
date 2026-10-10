@@ -10,7 +10,7 @@ from app.core.db import session_factory
 from app.core.events import Topics, bus
 from app.domains.goods.models import MyItem
 from app.domains.message import service
-from app.domains.message.models import ChatMessage, Conversation, ReplySuggestion
+from app.domains.message.models import ChatMessage, Conversation, MessageSource, ReplySuggestion
 from app.goofish.dto import ImEvent, ImEventType, SystemNotice
 from app.intelligence.llm import LLMGateway, LLMResult, set_llm
 from app.workers.im_gateway import ImGatewayManager, set_im_manager
@@ -292,3 +292,33 @@ async def test_conversation_unread_count(admin_client, im):
     await admin_client.post(f"/api/v1/messages/conversations/{conv_id}/read")
     r = await admin_client.get("/api/v1/messages/conversations/unread-count")
     assert r.json()["total"] == 0
+
+
+async def test_outbound_sensitive_message_interceptor(admin_client, im):
+    account_id, fake = im
+    await receive(account_id, chat("你好"))
+    conv_id = (await admin_client.get("/api/v1/messages/conversations")).json()[0]["id"]
+
+    # 1. 自动化消息（AI/关键词/默认）包含微信/手机号会被拦截并转人工接管
+    msg = await service.send_text(
+        conv_id,
+        "加我微信 13800138000 详谈吧",
+        source=MessageSource.AUTO_AI,
+    )
+    assert msg.source == MessageSource.SYSTEM
+    assert "风控拦截" in msg.text
+    assert len(fake.sent) == 0  # 没有真正发送给闲鱼
+
+    # 验证该会话已进入人工接管
+    async with session_factory()() as s:
+        conv = await s.get(Conversation, conv_id)
+        assert service.in_takeover(conv)
+
+    # 2. Web 管理台手动发送包含敏感词默认会被阻断提示（HTTP 423）
+    r = await admin_client.post(
+        f"/api/v1/messages/conversations/{conv_id}/send",
+        json={"text": "你可以加我VX：test12345"},
+    )
+    assert r.status_code == 423
+    assert "导流风控" in r.text
+    assert len(fake.sent) == 0
