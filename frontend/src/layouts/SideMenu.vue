@@ -35,7 +35,7 @@ const activeMenu = computed(() => {
     class="side-menu"
     :default-active="activeMenu"
     :collapse="collapsed"
-    :default-openeds="['messages', 'goods', 'orders', 'settings']"
+    :default-openeds="['goods', 'orders']"
     router
   >
     <!-- 核心业务区 -->

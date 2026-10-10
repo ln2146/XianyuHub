@@ -21,7 +21,37 @@ const collapsed = ref(false)
 const drawerOpen = ref(false)
 
 const active = computed(() => route.path)
-const title = computed(() => route.meta.title || '')
+
+const breadcrumb = computed(() => {
+  const p = route.path
+  if (p === '/dashboard') return [{ label: '工作台' }, { label: '总览' }]
+  if (p.startsWith('/radar')) {
+    const sub = p.includes('smart') ? '智能搜索' : p.includes('search') ? '实时搜货' : '价格监控'
+    return [{ label: '选品雷达' }, { label: sub }]
+  }
+  if (p.startsWith('/goods')) {
+    const sub = p.includes('publish') ? '发布商品' : '商品管理'
+    return [{ label: '商品中心' }, { label: sub }]
+  }
+  if (p.startsWith('/orders')) {
+    const sub = p.includes('cards') ? '自动发货' : '订单管理'
+    return [{ label: '订单发货' }, { label: sub }]
+  }
+  if (p.startsWith('/messages')) {
+    const sub = p.includes('inbox') ? '收件箱' : '回复规则'
+    return [{ label: '消息中心' }, { label: sub }]
+  }
+  if (['/accounts', '/llm', '/notify', '/system'].some((x) => p.startsWith(x))) {
+    const nameMap: Record<string, string> = {
+      '/accounts': '账号配置',
+      '/llm': '模型配置',
+      '/notify': '通知设置',
+      '/system': '系统设置',
+    }
+    return [{ label: '系统配置' }, { label: nameMap[p] || (route.meta.title as string) || '' }]
+  }
+  return [{ label: (route.meta.title as string) || '页面' }]
+})
 
 watch(
   () => route.path,
@@ -78,7 +108,12 @@ function onCommand(cmd: string) {
           <el-button text class="fold-btn" @click="isMobile ? (drawerOpen = true) : (collapsed = !collapsed)">
             <el-icon :size="18"><Expand v-if="isMobile || collapsed" /><Fold v-else /></el-icon>
           </el-button>
-          <span class="page-title">{{ title }}</span>
+          <nav class="header-breadcrumb" aria-label="位置导航">
+            <template v-for="(item, idx) in breadcrumb" :key="idx">
+              <span v-if="idx > 0" class="crumb-sep">/</span>
+              <span class="crumb-text" :class="{ 'is-last': idx === breadcrumb.length - 1 }">{{ item.label }}</span>
+            </template>
+          </nav>
         </div>
         <div class="header-right">
           <el-tooltip :content="realtime.connected ? '实时推送已连接' : '实时推送未连接，正在重试'">
@@ -176,9 +211,24 @@ function onCommand(cmd: string) {
   gap: 8px;
   min-width: 0;
 }
-.page-title {
+.header-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  user-select: none;
+}
+.crumb-text {
+  color: var(--xh-muted);
+  transition: color 0.15s ease;
+}
+.crumb-text.is-last {
+  color: var(--xh-text);
   font-weight: 600;
-  font-size: 15px;
+}
+.crumb-sep {
+  color: var(--xh-disabled);
+  font-size: 11px;
 }
 .user {
   display: flex;
