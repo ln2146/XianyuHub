@@ -247,8 +247,8 @@ async def list_conversations(
     response: Response,
     account_id: int | None = None,
     q: str | None = None,
-    limit: int = Query(50, le=200),
-    offset: int = 0,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
 ) -> list[ConversationOut]:
     ids = await accessible_account_ids(session, user)
     stmt = select(Conversation).order_by(Conversation.last_message_at.desc())

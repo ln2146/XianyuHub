@@ -8,6 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 DEV_SECRET = "dev-secret-change-me-please-use-a-long-random-string"
+DEV_ENVS = {"development", "dev", "local", "test", "testing"}
 
 
 class Settings(BaseSettings):
@@ -65,11 +66,12 @@ class Settings(BaseSettings):
 
     @property
     def is_production(self) -> bool:
-        return self.app_env == "production"
+        # 只有明确写成开发 / 测试的才算非生产：写错（prod、Production、staging…）一律按生产处理，强制安全密钥
+        return self.app_env.strip().lower() not in DEV_ENVS
 
     @property
     def is_development(self) -> bool:
-        return self.app_env != "production"
+        return not self.is_production
 
 
 @lru_cache

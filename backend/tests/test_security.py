@@ -160,3 +160,24 @@ async def test_price_history_and_ai_insight_are_per_user(admin_client):
         await s.commit()
     r = await admin_client.get("/api/v1/buyer/items/880001/prices", headers=h)
     assert r.status_code == 200 and r.json()[0]["price"] == 100
+
+
+async def test_readyz_checks_the_database(client):
+    r = await client.get("/readyz")
+    assert r.status_code == 200 and r.json()["checks"]["database"] == "ok"
+    assert (await client.get("/healthz")).json() == {"status": "ok"}
+
+
+async def test_negative_pagination_is_rejected(admin_client):
+    for path in ("/api/v1/orders", "/api/v1/messages/conversations", "/api/v1/buyer/results", "/api/v1/audit-logs"):
+        assert (await admin_client.get(f"{path}?offset=-1")).status_code == 422, path
+        assert (await admin_client.get(f"{path}?limit=0")).status_code == 422, path
+
+
+def test_any_non_dev_app_env_counts_as_production():
+    from app.core.config import Settings
+
+    for env in ("production", "Production", "prod", "staging", " PRODUCTION "):
+        assert Settings(app_env=env).is_production, env
+    for env in ("development", "dev", "Local", "test"):
+        assert not Settings(app_env=env).is_production, env

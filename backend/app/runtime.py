@@ -29,6 +29,10 @@ def get_runtime() -> AppRuntime:
     return _runtime
 
 
+def get_runtime_or_none() -> AppRuntime | None:
+    return _runtime
+
+
 async def init_runtime(transport: httpx.AsyncBaseTransport | None = None) -> AppRuntime:
     global _runtime
     from app.domains.account.store import DbSessionStore

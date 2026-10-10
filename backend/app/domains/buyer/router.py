@@ -270,8 +270,8 @@ async def list_results(
     mark: str | None = None,
     q: str | None = None,
     sort: str = Query("newest", pattern="^(newest|price_asc|deal)$"),
-    limit: int = Query(50, le=200),
-    offset: int = 0,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     response: Response = None,  # type: ignore[assignment]  # 直接调用（导出 CSV）时可不传
 ) -> list[ResultOut]:
     stmt = (

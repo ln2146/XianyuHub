@@ -169,8 +169,8 @@ async def list_audit_logs(
     response: Response,
     action: str | None = None,
     account_id: int | None = None,
-    limit: int = Query(100, le=500),
-    offset: int = 0,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
 ) -> list[AuditLog]:
     stmt = select(AuditLog).order_by(AuditLog.id.desc())
     if action:

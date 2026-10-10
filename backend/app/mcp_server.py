@@ -74,7 +74,7 @@ async def radar_results(
     task_id: int | None = None, verdict: str | None = None, limit: int = 20
 ) -> list[dict[str, Any]]:
     """查看选品雷达的判定结果。verdict 可选 recommend / conditional / reject / all，默认只看推荐与有条件推荐。"""
-    rows = await client().get("/buyer/results", task_id=task_id, verdict=verdict, limit=min(limit, 50))
+    rows = await client().get("/buyer/results", task_id=task_id, verdict=verdict, limit=max(1, min(limit, 50)))
     return [
         {
             "title": r["item"]["title"],
@@ -119,7 +119,7 @@ async def draft_monitor_task(description: str) -> dict[str, Any]:
 @mcp.tool(annotations=READ_ONLY)
 async def inbox(limit: int = 20) -> list[dict[str, Any]]:
     """列出最近的买家会话（含未读数、是否人工接管中）。"""
-    rows = await client().get("/messages/conversations", limit=min(limit, 50))
+    rows = await client().get("/messages/conversations", limit=max(1, min(limit, 50)))
     return [
         {
             "conversation_id": c["id"],
@@ -152,7 +152,7 @@ async def preview_reply(conversation_id: int, buyer_text: str) -> dict[str, Any]
 @mcp.tool(annotations=READ_ONLY)
 async def orders(status: str | None = None, limit: int = 20) -> list[dict[str, Any]]:
     """查询订单。status 可选 paid / delivered / deliver_failed / manual / risk_hold 等。"""
-    rows = await client().get("/orders", status=status, limit=min(limit, 50))
+    rows = await client().get("/orders", status=status, limit=max(1, min(limit, 50)))
     return [
         {
             "id": o["id"],
