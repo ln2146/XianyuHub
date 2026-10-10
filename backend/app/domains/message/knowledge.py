@@ -5,8 +5,8 @@ from pathlib import PurePath
 
 from app.intelligence.retrieval import select_knowledge
 
-MAX_FILE_BYTES = 5 * 1024 * 1024
-MAX_DOC_CHARS = 200_000  # 单份资料保存的最大字数（超出部分截断）
+MAX_FILE_BYTES = 50 * 1024 * 1024
+MAX_DOC_CHARS = 1_000_000  # 单份资料保存的最大字数（超出部分截断）；回复时只取相关段落，不受总长影响
 DOCS_IN_PROMPT_CHARS = 1500  # 每次回复从资料里最多带入的字数
 SUPPORTED = (".txt", ".md", ".csv", ".pdf", ".docx")
 
@@ -27,7 +27,7 @@ def _decode(data: bytes) -> str:
 def extract_text(filename: str, data: bytes) -> str:
     """支持 txt / md / csv / pdf / docx；扫描版 PDF（图片）提取不到文字时报错。"""
     if len(data) > MAX_FILE_BYTES:
-        raise UnsupportedFile("文件超过 5MB，请拆分后再上传")
+        raise UnsupportedFile("文件超过 50MB，请拆分后再上传")
     ext = PurePath(filename).suffix.lower()
     if ext in (".txt", ".md", ".csv"):
         text = _decode(data)

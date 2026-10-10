@@ -13,7 +13,7 @@
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
 ![Status](https://img.shields.io/badge/status-alpha-orange)
 
-[快速开始](#快速开始) · [功能一览](#功能一览) · [使用指南](docs/guide.md) · [部署与配置](docs/deployment.md) · [常见问题](#常见问题)
+[快速开始](#快速开始) · [功能一览](#功能一览) · [使用指南](docs/guide.md) · [部署与配置](docs/deployment.md) · [常见问题](#常见问题) · [交流群](#交流群)
 
 <img src="docs/images/dashboard.png" alt="鱼塘管家总览" width="900" />
 
@@ -139,6 +139,12 @@ docker compose up -d --build
 暂时不能。目前只支持虚拟商品的“无需物流”发货；选择快递、填写运单号还在路线图上。
 
 </details>
+
+## 交流群
+
+使用中遇到问题、有功能建议，或者想和其他卖家交流经验，欢迎加入 QQ 群 **1129230819**。
+
+<img src="docs/images/qq-group.jpg" alt="鱼塘管家 QQ 交流群：1129230819" width="260" />
 
 ## 文档
 

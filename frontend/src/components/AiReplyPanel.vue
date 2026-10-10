@@ -183,7 +183,7 @@ onMounted(loadDocs)
             <el-button size="small" :icon="Upload">上传资料</el-button>
           </el-upload>
         </div>
-        <div class="muted smaller">支持 txt / md / csv / pdf / docx，单个不超过 5MB；扫描版 PDF 需要先转成文字。</div>
+        <div class="muted smaller">支持 txt / md / csv / pdf / docx，单个不超过 50MB；扫描版 PDF 需要先转成文字。</div>
         <div v-loading="docsLoading" class="docs">
           <div v-if="!visibleDocs.length" class="muted small empty">还没有资料</div>
           <div v-for="d in visibleDocs" :key="d.id" class="doc" :class="{ off: !d.enabled }">

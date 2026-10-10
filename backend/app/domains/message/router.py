@@ -557,7 +557,7 @@ async def upload_doc(
     file: UploadFile = File(...),
     account_id: int | None = Form(default=None),
 ) -> DocOut:
-    """上传给 AI 参考的资料（txt / md / csv / pdf / docx，≤ 5MB），保存提取出的文字。"""
+    """上传给 AI 参考的资料（txt / md / csv / pdf / docx，≤ 50MB），保存提取出的文字。"""
     if account_id is not None:
         await get_account_for(session, user, account_id)
     data = await file.read()
