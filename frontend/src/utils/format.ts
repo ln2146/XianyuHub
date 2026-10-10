@@ -51,7 +51,7 @@ export const accountStatusMap: Record<string, { label: string; type: TagType }> 
   active: { label: '正常', type: 'success' },
   cooldown: { label: '暂停保护中', type: 'warning' },
   circuit_open: { label: '被平台限制', type: 'danger' },
-  need_login: { label: '需重新登录', type: 'info' },
+  need_login: { label: '需重新登录', type: 'danger' },
   disabled: { label: '已停用', type: 'info' },
 }
 

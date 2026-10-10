@@ -165,10 +165,23 @@ const tokenPercent = computed(() => {
   return b > 0 ? Math.min(100, Math.round((tokenUsed.value / b) * 100)) : 0
 })
 
-const autoReplyOn = computed(() => !!data.value?.accounts.some((a) => a.auto_reply))
-const autoDeliveryOn = computed(() => !!data.value?.accounts.some((a) => a.auto_delivery))
+// 开关开着但账号掉线 / 受限时其实不在工作：不能显示绿色的「已开启」
+type DashAccount = NonNullable<typeof data.value>['accounts'][number]
+const working = (a: DashAccount) => a.status === 'active' && a.im_connected
+function switchState(on: (a: DashAccount) => boolean) {
+  const list = data.value?.accounts.filter(on) || []
+  if (!list.length) return { cls: 'off', text: '未开启' }
+  const ok = list.filter(working).length
+  if (ok === list.length) return { cls: 'online', text: '已开启' }
+  return { cls: 'warn', text: ok ? `${list.length - ok} 个账号未生效` : '未生效（账号离线）' }
+}
+const autoReplyState = computed(() => switchState((a) => a.auto_reply))
+const autoDeliveryState = computed(() => switchState((a) => a.auto_delivery))
+const autoReplyOn = computed(() => autoReplyState.value.cls === 'online')
+const autoDeliveryOn = computed(() => autoDeliveryState.value.cls === 'online')
+// 受限、掉登录、消息断线都算需要处理（已停用的不算）
 const restrictedCount = computed(
-  () => data.value?.accounts.filter((a) => ['cooldown', 'circuit_open', 'need_login'].includes(a.status)).length || 0,
+  () => data.value?.accounts.filter((a) => a.status !== 'disabled' && !working(a)).length || 0,
 )
 const imOnlineCount = computed(() => data.value?.accounts.filter((a) => a.im_connected).length || 0)
 const autoManagedCount = computed(
@@ -469,7 +482,7 @@ function fmtJobNextRun(v: string | null | undefined): string {
                   <div class="telemetry-card" @click="router.push('/messages/rules')">
                     <div class="tc-top">
                       <span class="tc-label">自动回复</span>
-                      <span class="tc-status" :class="autoReplyOn ? 'online' : 'off'">{{ autoReplyOn ? '已开启' : '未开启' }}</span>
+                      <span class="tc-status" :class="autoReplyState.cls">{{ autoReplyState.text }}</span>
                     </div>
                     <div class="tc-val">{{ data?.today.messages_auto || 0 }} <span class="tc-unit">条</span></div>
                     <div class="tc-desc">
@@ -480,7 +493,7 @@ function fmtJobNextRun(v: string | null | undefined): string {
                   <div class="telemetry-card" @click="router.push('/orders/cards')">
                     <div class="tc-top">
                       <span class="tc-label">自动发货</span>
-                      <span class="tc-status" :class="autoDeliveryOn ? 'online' : 'off'">{{ autoDeliveryOn ? '已开启' : '未开启' }}</span>
+                      <span class="tc-status" :class="autoDeliveryState.cls">{{ autoDeliveryState.text }}</span>
                     </div>
                     <div class="tc-val">{{ data?.today.deliveries || 0 }} <span class="tc-unit">笔</span></div>
                     <div class="tc-desc">
@@ -490,12 +503,12 @@ function fmtJobNextRun(v: string | null | undefined): string {
 
                   <div class="telemetry-card" @click="router.push('/accounts')">
                     <div class="tc-top">
-                      <span class="tc-label">账号风控</span>
-                      <span class="tc-status" :class="restrictedCount ? 'warn' : 'online'">{{ restrictedCount ? '有账号受限' : '全部正常' }}</span>
+                      <span class="tc-label">账号状态</span>
+                      <span class="tc-status" :class="restrictedCount ? 'warn' : 'online'">{{ restrictedCount ? '有账号需处理' : '全部正常' }}</span>
                     </div>
-                    <div class="tc-val">{{ restrictedCount }} <span class="tc-unit">个账号受限</span></div>
+                    <div class="tc-val">{{ restrictedCount }} <span class="tc-unit">个账号需处理</span></div>
                     <div class="tc-desc">
-                      今日风控拦截 {{ data?.risk_events.length || 0 }} 条
+                      近 7 天风控记录 {{ data?.risk_events.length || 0 }} 条
                     </div>
                   </div>
                 </div>
@@ -785,7 +798,7 @@ function fmtJobNextRun(v: string | null | undefined): string {
                         <span class="daemon-name">自动发货守护</span>
                         <span class="daemon-status-pill" :class="autoDeliveryOn ? 'running' : 'stopped'">
                           <span class="dot" />
-                          {{ autoDeliveryOn ? '全天候待命' : '未开启' }}
+                          {{ autoDeliveryOn ? '全天候待命' : autoDeliveryState.text }}
                         </span>
                       </div>
                     </div>
@@ -800,7 +813,7 @@ function fmtJobNextRun(v: string | null | undefined): string {
                         <span class="daemon-name">智能回复规则引擎</span>
                         <span class="daemon-status-pill" :class="autoReplyOn ? 'running' : 'stopped'">
                           <span class="dot" />
-                          {{ autoReplyOn ? '实时应答就绪' : '未开启' }}
+                          {{ autoReplyOn ? '实时应答就绪' : autoReplyState.text }}
                         </span>
                       </div>
                     </div>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted } from 'vue'
 import {
   Aim,
   Bell,
@@ -19,6 +19,7 @@ import {
   User,
 } from '@element-plus/icons-vue'
 
+import { useAccountsStore } from '@/stores/accounts'
 import { usePrefsStore } from '@/stores/prefs'
 import { useRealtimeStore } from '@/stores/realtime'
 
@@ -26,6 +27,16 @@ const props = defineProps<{ active: string; collapsed: boolean }>()
 const prefs = usePrefsStore()
 const realtime = useRealtimeStore()
 const unreadCount = computed(() => realtime.totalUnread)
+
+// 有账号掉登录 / 被限制 / 消息断线时在「账号配置」上标红点：否则卖家要等发现没自动回复才知道
+const accounts = useAccountsStore()
+const accountAlerts = computed(() => accounts.attention.length)
+let healthTimer: number | undefined
+onMounted(() => {
+  accounts.refreshHealth()
+  healthTimer = window.setInterval(() => accounts.refreshHealth(), 60_000)
+})
+onBeforeUnmount(() => window.clearInterval(healthTimer))
 
 const activeMenu = computed(() => {
   if (props.active.startsWith('/radar')) return '/radar/smart'
@@ -113,11 +124,19 @@ const activeMenu = computed(() => {
     <el-sub-menu index="settings">
       <template #title>
         <el-icon class="menu-icon-primary"><Setting /></el-icon>
-        <span>系统配置</span>
+        <span class="sub-menu-title-row">
+          <span>系统配置</span>
+          <span v-if="accountAlerts > 0" class="menu-dot-badge" />
+        </span>
       </template>
       <el-menu-item index="/accounts">
         <el-icon class="sub-icon"><User /></el-icon>
-        <template #title><span>账号配置</span></template>
+        <template #title>
+          <div class="menu-item-row" :title="accountAlerts ? `${accountAlerts} 个账号需要处理` : undefined">
+            <span>账号配置</span>
+            <el-badge v-if="accountAlerts > 0" :value="accountAlerts" type="danger" class="unread-badge" />
+          </div>
+        </template>
       </el-menu-item>
       <el-menu-item index="/llm">
         <el-icon class="sub-icon"><MagicStick /></el-icon>

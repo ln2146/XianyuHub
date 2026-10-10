@@ -20,12 +20,14 @@ import {
 import BuyerRiskPanel from '@/components/BuyerRiskPanel.vue'
 import ConversationContextSidebar from '@/components/ConversationContextSidebar.vue'
 import JsonBlock from '@/components/JsonBlock.vue'
+import { useRouter } from 'vue-router'
 import { useAccountsStore } from '@/stores/accounts'
 import { useRealtimeStore, type RealtimeEvent } from '@/stores/realtime'
 import { useMobile } from '@/composables/useMobile'
 import { copyText, fmtRelative, fmtTime, itemUrl, sourceMap } from '@/utils/format'
 
 const accounts = useAccountsStore()
+const router = useRouter()
 const realtime = useRealtimeStore()
 const isMobile = useMobile()
 
@@ -38,6 +40,9 @@ const CONV_PAGE = 50
 const filter = reactive({ account_id: undefined as number | undefined, q: '' })
 const currentId = ref<number | null>(null)
 const current = computed(() => convs.value.find((c) => c.id === currentId.value) || null)
+const currentProblem = computed(() =>
+  current.value ? accounts.problemOf(accounts.list.find((x) => x.id === current.value?.account_id)) : null,
+)
 
 // 商品与订单上下文侧边栏控制
 const showContextSidebar = ref(!isMobile.value)
@@ -232,7 +237,12 @@ async function applyTakeover(minutes: number) {
     const idx = convs.value.findIndex((c) => c.id === updated.id)
     if (idx >= 0) convs.value[idx] = updated
     takeoverOpen.value = false
-    ElMessage.success(minutes ? `已接管 ${minutes} 分钟，期间不会自动回复` : '已恢复自动回复')
+    if (minutes) {
+      ElMessage.success(`已接管 ${minutes} 分钟，期间不会自动回复`)
+    } else {
+      const acc = accounts.list.find((a) => a.id === updated.account_id)
+      ElMessage.success(acc?.settings.auto_reply ? '已结束接管，恢复自动回复' : '已结束接管（该账号未开启自动回复）')
+    }
   } catch {
     /* 拦截器已提示 */
   }
@@ -297,7 +307,7 @@ async function onRealtime(ev: RealtimeEvent) {
 
 let unsubscribe: (() => void) | undefined
 onMounted(() => {
-  accounts.load().catch(() => undefined)
+  accounts.refreshHealth()
   loadConvs()
   unsubscribe = realtime.subscribe(onRealtime)
 })
@@ -407,7 +417,7 @@ const showThread = computed(() => !isMobile.value || !!currentId.value)
               {{ showContextSidebar && !isMobile ? '收起看板' : '商品与订单' }}
             </el-button>
             <el-button v-if="current.in_takeover" size="small" type="success" plain @click="applyTakeover(0)">
-              恢复自动回复
+              结束接管
             </el-button>
             <el-popover v-else v-model:visible="takeoverOpen" trigger="click" :width="240">
               <template #reference>
@@ -435,6 +445,19 @@ const showThread = computed(() => !isMobile.value || !!currentId.value)
             </el-dropdown>
           </div>
         </header>
+
+        <!-- 账号掉登录 / 被限制 / 消息断线：收不到也发不出，先告诉卖家去处理 -->
+        <el-alert
+          v-if="currentProblem"
+          type="error"
+          show-icon
+          :closable="false"
+          class="acc-alert"
+          :title="`接待账号「${accounts.nameOf(current.account_id)}」${currentProblem}`"
+        >
+          <span class="small">期间收不到买家新消息，自动回复和发送都会失败。</span>
+          <el-button link type="primary" size="small" @click="router.push('/accounts')">去处理</el-button>
+        </el-alert>
 
         <div ref="threadEl" v-loading="msgLoading" class="thread">
           <div v-if="hasOlder" class="older"><el-button link size="small" @click="loadOlder">加载更早的消息</el-button></div>
@@ -564,6 +587,10 @@ const showThread = computed(() => !isMobile.value || !!currentId.value)
 </template>
 
 <style scoped>
+.acc-alert {
+  margin: var(--xh-space-2) var(--xh-space-3) 0;
+  width: auto;
+}
 .inbox {
   display: flex;
   height: calc(100vh - 56px - 40px);
