@@ -1,9 +1,10 @@
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 
 from app.core.crypto import get_vault
 from app.core.deps import CurrentUser, SessionDep
@@ -290,12 +291,16 @@ async def close_hold(order_pk: int, user: CurrentUser, session: SessionDep) -> d
 
 @router.post("/orders/{order_pk}/resolve-manual")
 async def resolve_manual(
-    order_pk: int, user: CurrentUser, session: SessionDep, action: str = "delivered"
+    order_pk: int, user: CurrentUser, session: SessionDep, action: Literal["delivered", "closed"] = "delivered"
 ) -> dict[str, str]:
     """人工处理异常待办订单：标记为已发货 / 已人工完成或关闭。"""
     order = await _own_order(session, user, order_pk)
     target = OrderState.CLOSED if action == "closed" else OrderState.DELIVERED
-    await service.transition(session, order, target, reason=f"人工标记处理（{user.username}）")
+    if not await service.transition(session, order, target, reason=f"人工标记处理（{user.username}）"):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"订单当前为「{ORDER_STATE_LABELS.get(order.status, order.status)}」，不能这样标记",
+        )
     await session.commit()
     return {"status": order.status}
 
@@ -365,8 +370,12 @@ async def import_cards(pool_id: int, body: ImportIn, user: CurrentUser, session:
             dup += 1
             continue
         existing.add(fp)
-        session.add(CardItem(pool_id=pool.id, content_enc=vault.encrypt(line), fingerprint=fp))
-        added += 1
+        try:
+            async with session.begin_nested():  # 同时有另一次导入写入了同一张卡：按重复计，不中断整批
+                session.add(CardItem(pool_id=pool.id, content_enc=vault.encrypt(line), fingerprint=fp))
+            added += 1
+        except IntegrityError:
+            dup += 1
     await session.commit()
     await record_audit(
         "cards.import",

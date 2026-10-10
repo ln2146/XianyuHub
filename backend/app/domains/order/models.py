@@ -142,6 +142,8 @@ class CardPool(IdMixin, TimestampMixin, Base):
 
 class CardItem(IdMixin, Base):
     __tablename__ = "card_items"
+    # 同一库里同一张卡只能有一条：并发导入时由数据库兜底去重
+    __table_args__ = (UniqueConstraint("pool_id", "fingerprint", name="uq_card_items_pool_fingerprint"),)
 
     pool_id: Mapped[int] = mapped_column(ForeignKey("card_pools.id", ondelete="CASCADE"), index=True)
     content_enc: Mapped[str] = mapped_column(Text)

@@ -9,7 +9,7 @@ from pathlib import Path
 
 from loguru import logger
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from app.core.config import get_settings
 from app.core.db import session_factory
@@ -19,7 +19,7 @@ from app.domains.account.models import XyAccount
 from app.domains.goods.models import DraftStatus, ItemStatus, MyItem, PublishDraftRecord
 from app.domains.system.audit import record_audit
 from app.goofish.dto import SearchQuery
-from app.goofish.errors import GoofishError, RiskBlockedError, RiskControlError
+from app.goofish.errors import GoofishError, NetworkError, RiskBlockedError, RiskControlError
 from app.goofish.gateway import MULTI_INVENTORY_HINT
 from app.goofish.publish import PublishDraft, ShippingMode
 from app.intelligence.llm import ImageInput, LLMGateway, Tier
@@ -221,16 +221,30 @@ async def ai_copy(llm: LLMGateway, image_ids: list[str], hint: str) -> CopyOut:
 
 
 # ---------------------------------------------------------------- 发布
+UNCERTAIN_PUBLISH_HINT = (
+    "发布请求已发出但没有收到闲鱼的结果，可能已经上架：请先到闲鱼 App「我发布的」核对，确认没有再重试"
+)
+
+
 async def publish_draft(draft_id: int, user_id: int | None = None) -> str:
     gateway = get_runtime().gateway
     async with session_factory()() as s:
+        # 原子领取：只有把状态从「未发布」改成「发布中」成功的那一方继续，
+        # 定时任务与手动发布、或多个进程同时处理同一草稿时不会重复上架
+        claimed = await s.execute(
+            update(PublishDraftRecord)
+            .where(
+                PublishDraftRecord.id == draft_id,
+                PublishDraftRecord.status.not_in([DraftStatus.PUBLISHING, DraftStatus.PUBLISHED]),
+            )
+            .values(status=DraftStatus.PUBLISHING)
+        )
+        await s.commit()
         d = await s.get(PublishDraftRecord, draft_id)
         if d is None:
             raise ValueError("草稿不存在")
-        if d.status in (DraftStatus.PUBLISHING, DraftStatus.PUBLISHED):
+        if claimed.rowcount != 1:
             raise ValueError("草稿已发布或正在发布")
-        d.status = DraftStatus.PUBLISHING
-        await s.commit()
         snapshot = {
             c: getattr(d, c)
             for c in (
@@ -255,6 +269,7 @@ async def publish_draft(draft_id: int, user_id: int | None = None) -> str:
             acc = await s.get(XyAccount, snapshot["account_id"])
             location = (acc.settings or {}).get("publish_location") if acc else None
     account_id = snapshot["account_id"]
+    request_sent = False
     try:
         if snapshot["quantity"] > 1:
             # 先确认账号能否发多库存，免得上传完图片才被闲鱼拒绝
@@ -276,12 +291,16 @@ async def publish_draft(draft_id: int, user_id: int | None = None) -> str:
             post_fee=snapshot["post_fee"],
             self_pickup=snapshot["self_pickup"],
         )
+        request_sent = True
         item_id = await gateway.publish_item(account_id, payload, location)
     except Exception as e:
+        # 发布请求已发出却没拿到结果（网络中断、超时等）：闲鱼那边可能已经上架，提示先核对，别直接重试
+        uncertain = request_sent and (isinstance(e, NetworkError) or not isinstance(e, GoofishError | ValueError))
+        error = (f"{UNCERTAIN_PUBLISH_HINT}（{e or type(e).__name__}）" if uncertain else str(e))[:500]
         async with session_factory()() as s:
             d = await s.get(PublishDraftRecord, draft_id)
             if d:
-                d.status, d.error = DraftStatus.FAILED, str(e)[:500]
+                d.status, d.error = DraftStatus.FAILED, error
                 await s.commit()
         await record_audit(
             "goods.publish",
