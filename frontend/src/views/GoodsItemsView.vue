@@ -18,7 +18,7 @@ import StatusTag from '@/components/StatusTag.vue'
 import { useAccountsStore } from '@/stores/accounts'
 import { useAuthStore } from '@/stores/auth'
 import { useMobile } from '@/composables/useMobile'
-import { fmtMoney, fmtRelative, fmtTime, goodsStatusMap, itemUrl } from '@/utils/format'
+import { fmtMoney, fmtRelative, fmtTime, goodsStatusMap, itemUrl, parseDate } from '@/utils/format'
 
 const router = useRouter()
 const accounts = useAccountsStore()
@@ -309,7 +309,9 @@ async function queryMarket() {
 // ---------------------------------------------------------------- 商品数据：想要 / 浏览 / 在架天数
 function daysListed(row: MyItem) {
   if (!row.publish_time) return null
-  return Math.max(0, Math.floor((Date.now() - new Date(row.publish_time).getTime()) / 86_400_000))
+  const d = parseDate(row.publish_time)
+  if (!d) return null
+  return Math.max(0, Math.floor((Date.now() - d.getTime()) / 86_400_000))
 }
 
 /** 冷门 / 热门提示：只在数据足够时给出，不做无依据的判断 */

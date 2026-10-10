@@ -27,7 +27,7 @@ import { getDashboard, type Dashboard, type DashboardAccount } from '@/api/dashb
 import { updateAccount } from '@/api/account'
 import { ElMessage } from 'element-plus'
 import StatusTag from '@/components/StatusTag.vue'
-import { NEEDS_ACTION_STATUSES, accountStatusMap, fmtMoney, fmtTime } from '@/utils/format'
+import { NEEDS_ACTION_STATUSES, accountStatusMap, fmtMoney, fmtTime, parseDate } from '@/utils/format'
 import { usePrefsStore } from '@/stores/prefs'
 
 const router = useRouter()
@@ -223,8 +223,8 @@ function getJobMeta(id: string): JobMeta {
 
 function fmtJobNextRun(v: string | null | undefined): string {
   if (!v) return '就绪中'
-  const d = new Date(v)
-  if (Number.isNaN(d.getTime())) return v
+  const d = parseDate(v)
+  if (!d) return v
   const p = (n: number) => String(n).padStart(2, '0')
   const now = new Date()
   const isToday = d.toDateString() === now.toDateString()

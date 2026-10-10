@@ -34,7 +34,7 @@ import MarketPanel from '@/components/MarketPanel.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import { useAccountsStore } from '@/stores/accounts'
 import { useMobile } from '@/composables/useMobile'
-import { draftStatusMap, fmtMoney, fmtTime, itemUrl } from '@/utils/format'
+import { draftStatusMap, fmtMoney, fmtTime, itemUrl, parseDate } from '@/utils/format'
 import { createBinding, listPools, type PoolOut } from '@/api/order'
 
 const accounts = useAccountsStore()
@@ -158,7 +158,7 @@ function fillFromDraft(d: DraftOut) {
     knowledge: d.knowledge,
     is_virtual: d.is_virtual,
     location: d.location,
-    scheduled_at: d.scheduled_at ? new Date(d.scheduled_at) : null,
+    scheduled_at: d.scheduled_at ? parseDate(d.scheduled_at) : null,
   })
   editingId.value = d.id
   aiMeta.value = d.ai_meta

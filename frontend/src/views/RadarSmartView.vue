@@ -45,7 +45,7 @@ import ListPager from '@/components/ListPager.vue'
 import RadarNav from '@/components/RadarNav.vue'
 import SmartTaskDialog from '@/components/SmartTaskDialog.vue'
 import { useKeepScroll } from '@/composables/useKeepScroll'
-import { askSellerOnGoofish, copyText, fmtMoney, fmtRelative, fmtTime, itemUrl, markMap, verdictMap } from '@/utils/format'
+import { askSellerOnGoofish, copyText, fmtMoney, fmtRelative, fmtTime, itemUrl, markMap, parseDate, verdictMap } from '@/utils/format'
 
 defineOptions({ name: 'RadarSmartView' })
 useKeepScroll()
@@ -74,11 +74,14 @@ async function loadTasks(silent = false) {
   }
 }
 
-// 后端时间不带时区后缀时按 UTC 解析
-const parseUtc = (v: string) => new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(v) ? v : `${v}Z`).getTime()
-const retryDue = (t: TaskOut) => !!t.retry_at && parseUtc(t.retry_at) <= Date.now()
+// 后端时间统一用 parseDate 解析为 UTC
+const retryDue = (t: TaskOut) => {
+  const d = parseDate(t.retry_at)
+  return !!d && d.getTime() <= Date.now()
+}
 function retryText(t: TaskOut) {
-  const d = new Date(parseUtc(t.retry_at || ''))
+  const d = parseDate(t.retry_at)
+  if (!d) return ''
   const p = (n: number) => String(n).padStart(2, '0')
   return retryDue(t) ? '正在重新尝试' : `${p(d.getHours())}:${p(d.getMinutes())} 自动重试`
 }
