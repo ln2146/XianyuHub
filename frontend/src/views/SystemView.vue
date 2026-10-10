@@ -3,7 +3,7 @@ import { onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import axios from 'axios'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
-import { Delete, Plus, Refresh, Search } from '@element-plus/icons-vue'
+import { Delete, Plus, Refresh, Search, Setting } from '@element-plus/icons-vue'
 import {
   changePassword,
   createUser,
@@ -225,9 +225,19 @@ onMounted(() => {
 <template>
   <div class="page">
     <div class="page-head">
-      <div>
-        <h2>系统设置</h2>
-        <div class="sub">当前用户：{{ auth.user?.username }}（{{ roleMap[auth.user?.role || ''] || auth.user?.role }}）</div>
+      <div class="title-wrap">
+        <div class="title-row">
+          <el-icon class="title-icon"><Setting /></el-icon>
+          <h2>系统设置</h2>
+        </div>
+        <span class="page-subtitle">成员权限管理、敏感操作审计日志、闲鱼接口协议自检与账号密码维护</span>
+      </div>
+
+      <div class="user-pill">
+        <span class="user-pill-label">当前登录：</span>
+        <el-tag size="default" :type="auth.isAdmin ? 'danger' : 'info'" effect="light" round>
+          {{ auth.user?.username }}（{{ roleMap[auth.user?.role || ''] || auth.user?.role }}）
+        </el-tag>
       </div>
     </div>
 
@@ -384,6 +394,60 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--xh-space-3) var(--xh-space-4);
+  margin-bottom: var(--xh-space-4);
+}
+
+.title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--xh-space-1);
+}
+
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--xh-space-2);
+}
+
+.title-row h2 {
+  margin: 0;
+  font-size: var(--xh-fs-xl);
+  font-weight: 600;
+  color: var(--xh-text);
+}
+
+.title-icon {
+  font-size: var(--xh-fs-xl);
+  color: var(--xh-primary);
+}
+
+.page-subtitle {
+  font-size: var(--xh-fs-sm);
+  color: var(--xh-muted);
+}
+
+.user-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  background: var(--xh-card-bg);
+  border: 1px solid var(--xh-border);
+  border-radius: var(--xh-radius-full, 9999px);
+  box-shadow: var(--xh-shadow-sm);
+}
+
+.user-pill-label {
+  font-size: var(--xh-fs-xs);
+  color: var(--xh-muted);
+}
+
 .bar {
   display: flex;
   flex-wrap: wrap;
