@@ -13,7 +13,7 @@ from app.domains.goods import service
 from app.domains.goods.ai_listing import Strategy, generate_listing
 from app.domains.goods.models import DraftStatus, MyItem, PublishDraftRecord
 from app.domains.system.audit import record_audit
-from app.goofish.errors import GoofishError, RiskBlockedError
+from app.goofish.errors import GoofishError, RiskBlockedError, VerificationRequiredError
 from app.goofish.publish import ItemLocation, ShippingMode
 from app.intelligence.llm import LLMError, LLMUnavailable, get_llm
 from app.runtime import get_runtime
@@ -429,6 +429,11 @@ async def publish(draft_id: int, user: CurrentUser, session: SessionDep) -> dict
         item_id = await service.publish_draft(draft_id, user.id)
     except ValueError as e:
         raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
+    except VerificationRequiredError as e:
+        # 428：页面据此弹出认证二维码，认证后重新发布
+        raise HTTPException(
+            status.HTTP_428_PRECONDITION_REQUIRED, str(e), headers={"X-Verify-Url": e.verify_url}
+        ) from e
     except GoofishError as e:
         raise goofish_http_error(e) from e
     return {"item_id": item_id, "published_at": datetime.now(UTC)}

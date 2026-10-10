@@ -25,6 +25,7 @@ import {
   type PriceStrategy,
   type ShippingMode,
 } from '@/api/goods'
+import IdentityVerifyDialog from '@/components/IdentityVerifyDialog.vue'
 import ImageUploader from '@/components/ImageUploader.vue'
 import LocationPicker from '@/components/LocationPicker.vue'
 import MarketPanel from '@/components/MarketPanel.vue'
@@ -314,13 +315,29 @@ async function confirmAndPublish() {
   publishing.value = true
   try {
     const d = await persist(body)
-    const r = await publishDraft(d.id)
+    if (await doPublish(d.id, body.account_id, form.delivery_pool_id)) resetAll()
+  } catch {
+    /* 拦截器已提示；草稿已保存，可稍后在右侧列表重试 */
+  } finally {
+    publishing.value = false
+    await loadDrafts()
+  }
+}
+
+// ---------------------------------------------------------------- 发布（含身份认证）
+// 闲鱼要求先完成身份认证时（HTTP 428）弹出认证二维码，认证后用同一份草稿重新发布
+const verify = reactive({ open: false, url: '', draftId: 0, accountId: 0, poolId: null as number | null, retrying: false })
+
+/** 发布草稿；成功返回 true。需要身份认证时打开认证弹窗并返回 false，其他错误由拦截器提示 */
+async function doPublish(draftId: number, accountId: number, poolId: number | null): Promise<boolean> {
+  try {
+    const r = await publishDraft(draftId)
     ElMessage.success(`发布成功，商品 ID ${r.item_id}`)
-    if (form.delivery_pool_id && r.item_id) {
+    if (poolId && r.item_id) {
       try {
         await createBinding({
-          pool_id: form.delivery_pool_id,
-          account_id: body.account_id,
+          pool_id: poolId,
+          account_id: accountId,
           item_id: r.item_id,
           spec_value: null,
           template: '您购买的内容如下：\n{card}\n祝您使用愉快！',
@@ -332,11 +349,28 @@ async function confirmAndPublish() {
         /* 仅辅助绑定，失败可在商品管理中补绑 */
       }
     }
-    resetAll()
-  } catch {
-    /* 拦截器已提示；草稿已保存，可稍后在右侧列表重试 */
+    return true
+  } catch (e: unknown) {
+    const resp = (e as { response?: { status?: number; headers?: Record<string, string> } }).response
+    if (resp?.status === 428) {
+      Object.assign(verify, { open: true, url: resp.headers?.['x-verify-url'] || '', draftId, accountId, poolId })
+    }
+    return false
+  }
+}
+
+async function retryAfterVerify() {
+  verify.retrying = true
+  try {
+    const ok = await doPublish(verify.draftId, verify.accountId, verify.poolId)
+    if (ok) {
+      verify.open = false
+      if (editingId.value === verify.draftId) resetAll()
+    } else if (verify.open) {
+      ElMessage.warning('闲鱼还没确认认证完成，请在 App 里完成后再点一次')
+    }
   } finally {
-    publishing.value = false
+    verify.retrying = false
     await loadDrafts()
   }
 }
@@ -377,10 +411,7 @@ async function publishFromList(d: DraftOut) {
   })
   busy[`pub-${d.id}`] = true
   try {
-    const r = await publishDraft(d.id)
-    ElMessage.success(`发布成功，商品 ID ${r.item_id}`)
-  } catch {
-    /* 拦截器已提示 */
+    await doPublish(d.id, d.account_id, null)
   } finally {
     busy[`pub-${d.id}`] = false
     await loadDrafts()
@@ -796,6 +827,12 @@ onBeforeUnmount(() => window.clearInterval(timer))
         </div>
       </el-col>
     </el-row>
+    <IdentityVerifyDialog
+      v-model="verify.open"
+      :url="verify.url"
+      :loading="verify.retrying"
+      @done="retryAfterVerify"
+    />
     <LocationPicker
       v-model="locationOpen"
       :account-id="form.account_id"

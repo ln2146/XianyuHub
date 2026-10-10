@@ -34,6 +34,14 @@ class BizError(GoofishError):
     """业务失败（商品不存在、状态不允许等），直接返回业务层。"""
 
 
+class VerificationRequiredError(BizError):
+    """闲鱼要求本人在 App 里完成身份认证（实名 / 刷脸）后才能继续，verify_url 为手机扫码打开的认证页。"""
+
+    def __init__(self, message: str, *, verify_url: str, **kw) -> None:
+        super().__init__(message, **kw)
+        self.verify_url = verify_url
+
+
 class NetworkError(GoofishError):
     """网络层失败（超时、连接错误、非 JSON 响应）。"""
 

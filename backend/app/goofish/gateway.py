@@ -6,12 +6,19 @@
 
 from collections.abc import Awaitable, Callable
 from typing import Any, Protocol
+from urllib.parse import quote
 
 import httpx
 from loguru import logger
 
 from app.goofish.dto import ItemDetail, SearchPage, SearchQuery, SellerProfile
-from app.goofish.errors import BizError, ChannelUnavailableError, NetworkError, RiskControlError
+from app.goofish.errors import (
+    BizError,
+    ChannelUnavailableError,
+    NetworkError,
+    RiskControlError,
+    VerificationRequiredError,
+)
 from app.goofish.guard.guard import ANON, RiskGuard
 from app.goofish.guard.policy import Action
 from app.goofish.parsers.common import dig
@@ -52,6 +59,11 @@ def account_key(account_id: int | None) -> str:
 
 # 网页版发布页的 spm：所在地接口据此返回附近地点
 PUBLISH_SPM = "a21ybx.publish.0.0"
+# 发布前身份认证：与网页版发布页弹出的二维码相同，手机扫码后在闲鱼 App 里打开认证页
+IDENTITY_VERIFY_URL = (
+    "https://pages.goofish.com/sharexy?loadingVisible=false&showNavBar=true&bfs=idlepc.publish"
+    "&url=" + quote("fleamarket://identity_auth?flutter=true", safe="")
+)
 
 
 class GoofishGateway:
@@ -269,9 +281,10 @@ class GoofishGateway:
             data = await self._call(account_id, Action.PUBLISH, "mtop.idle.pc.idleitem.publish", payload)
         except BizError as e:
             if "VERIFY_INFO" in str(e) or "未通过认证" in str(e):
-                # 闲鱼要求发布前完成身份认证（实名 / 刷脸），只能在 App 里做
-                raise BizError(
-                    "账号还没通过闲鱼的发布认证：请在闲鱼 App 里点「卖闲置」发布一次，按提示完成实名或刷脸认证后再试",
+                # 闲鱼要求发布前完成身份认证（实名 / 刷脸），只能本人在 App 里做
+                raise VerificationRequiredError(
+                    "闲鱼要求先完成身份认证才能发布：用闲鱼 App 扫码完成实名或刷脸认证后再发布",
+                    verify_url=IDENTITY_VERIFY_URL,
                     ret=e.ret,
                     api=e.api,
                 ) from e

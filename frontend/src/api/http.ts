@@ -66,7 +66,8 @@ http.interceptors.response.use(
         const back = encodeURIComponent(location.pathname + location.search)
         location.href = `/login?redirect=${back}`
       }
-    } else if (!(err.config as { silent?: boolean } | undefined)?.silent) {
+    } else if (status !== 428 && !(err.config as { silent?: boolean } | undefined)?.silent) {
+      // 428 = 闲鱼要求先完成身份认证，由页面弹出认证二维码，不弹通用错误
       ElMessage.error(errorMessage(err))
     }
     return Promise.reject(err)

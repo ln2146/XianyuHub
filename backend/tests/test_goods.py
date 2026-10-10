@@ -187,7 +187,13 @@ async def test_pick_item_location_and_reuse_it(admin_client):
         )
     )
     r = await admin_client.post(f"/api/v1/goods/drafts/{d3['id']}/publish")
-    assert r.status_code == 502 and "刷脸认证" in r.json()["detail"] and "FAIL_BIZ" not in r.json()["detail"]
+    assert r.status_code == 428 and "身份认证" in r.json()["detail"] and "FAIL_BIZ" not in r.json()["detail"]
+    # 认证二维码与网页版发布页相同：经 sharexy 中转后在闲鱼 App 打开认证页
+    verify = r.headers["x-verify-url"]
+    assert verify.startswith("https://pages.goofish.com/sharexy?") and "fleamarket%3A%2F%2Fidentity_auth" in verify
+    # 失败的草稿认证后可以直接重新发布
+    publish.mock(return_value=ok({"itemId": "880004"}))
+    assert (await admin_client.post(f"/api/v1/goods/drafts/{d3['id']}/publish")).json()["item_id"] == "880004"
 
 
 @respx.mock
