@@ -231,3 +231,28 @@ async def test_delete_account_stops_im_and_removes_its_rules_and_bindings(admin_
     rules = (await admin_client.get("/api/v1/messages/rules")).json()
     assert [r["name"] for r in rules] == ["全部账号"]  # 只删这个账号专属的
     assert (await admin_client.get("/api/v1/cards/bindings")).json() == []
+
+
+@respx.mock
+async def test_relogin_auto_resolves_past_risk_events(admin_client):
+    mock_probe()
+    acc = (await admin_client.post("/api/v1/accounts/import", json={"cookies": COOKIES})).json()
+    # 模拟发生登录失效，记录了一条未解除的 RiskEvent
+    async with session_factory()() as s:
+        s.add(RiskEvent(account_id=acc["id"], guard_key=f"acc:{acc['id']}", state="need_login", reason="登录态失效"))
+        await s.commit()
+
+    # 查 risk-events：此时 resolved_at 仍是 None
+    events = (await admin_client.get(f"/api/v1/accounts/{acc['id']}/risk-events")).json()
+    assert len(events) == 1 and events[0]["resolved_at"] is None
+
+    # 用户重新导入 Cookie / 重新扫码登录
+    await admin_client.post("/api/v1/accounts/import", json={"cookies": COOKIES, "account_id": acc["id"]})
+
+    # 验证：重新登录成功后，历史未解决事件已自动标记解除
+    events = (await admin_client.get(f"/api/v1/accounts/{acc['id']}/risk-events")).json()
+    assert len(events) == 1 and events[0]["resolved_at"] is not None
+
+    # 验证：系统总览接口中也同步显示 resolved 为 True
+    dash = (await admin_client.get("/api/v1/dashboard")).json()
+    assert all(r["resolved"] for r in dash["risk_events"])

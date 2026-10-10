@@ -611,19 +611,36 @@ function fmtJobNextRun(v: string | null | undefined): string {
                       >
                         <div class="timeline-row">
                           <span class="acc-badge">{{ accountName(r.account_id) }}</span>
-                          <StatusTag :value="r.state" :map="accountStatusMap" />
-                          <el-tag v-if="r.resolved" size="small" type="success" effect="plain" class="ml-s">已自愈解除</el-tag>
+                          <el-tag
+                            :type="r.resolved ? 'info' : (accountStatusMap[r.state]?.type || 'warning')"
+                            size="small"
+                            :effect="r.resolved ? 'plain' : 'light'"
+                          >
+                            {{ accountStatusMap[r.state]?.label || r.state }}
+                          </el-tag>
+                          <el-tag v-if="r.resolved" size="small" type="success" effect="plain" class="ml-s">
+                            {{ r.state === 'need_login' ? '已恢复正常' : '已自愈解除' }}
+                          </el-tag>
                         </div>
                         <div class="timeline-reason">{{ r.reason || '短时访问频次过高或接口临时限流' }}</div>
-                        <el-link
-                          v-if="r.punish_url && !r.resolved"
-                          :href="r.punish_url"
-                          target="_blank"
-                          type="danger"
-                          class="small mt-xs inline-block"
-                        >
-                          打开闲鱼验证页面手动解除 &gt;
-                        </el-link>
+                        <div v-if="!r.resolved" class="timeline-actions mt-xs">
+                          <el-link
+                            v-if="r.punish_url"
+                            :href="r.punish_url"
+                            target="_blank"
+                            type="danger"
+                            class="small inline-block mr-s"
+                          >
+                            打开闲鱼验证页面手动解除 &gt;
+                          </el-link>
+                          <router-link
+                            v-if="r.state === 'need_login'"
+                            to="/accounts"
+                            class="small inline-block text-primary"
+                          >
+                            去账号管理重新登录 &gt;
+                          </router-link>
+                        </div>
                       </el-timeline-item>
                     </el-timeline>
                   </div>

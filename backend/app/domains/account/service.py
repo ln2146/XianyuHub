@@ -88,6 +88,13 @@ async def on_guard_state_change(key: str, rt: Runtime, reason: str) -> None:
             s.add(
                 RiskEvent(account_id=account_id, guard_key=key, state=rt.state, reason=reason, punish_url=rt.punish_url)
             )
+        elif rt.state == AccountState.ACTIVE and account_id is not None:
+            unresolved = await s.execute(
+                select(RiskEvent).where(RiskEvent.account_id == account_id, RiskEvent.resolved_at.is_(None))
+            )
+            now = datetime.now(UTC)
+            for ev in unresolved.scalars():
+                ev.resolved_at = now
         await s.commit()
 
     await bus.publish(Topics.ACCOUNT_STATUS_CHANGED, {"account_id": account_id, "state": rt.state, "reason": reason})
@@ -167,6 +174,14 @@ async def upsert_account(
     acc.last_error = None
     acc.punish_url = None
     await session.commit()
+    # 重新登录 / 导入成功，自动将该账号历史所有未解除的风控/失效事件标记为已解除
+    unresolved = await session.execute(
+        select(RiskEvent).where(RiskEvent.account_id == acc.id, RiskEvent.resolved_at.is_(None))
+    )
+    now = datetime.now(UTC)
+    for ev in unresolved.scalars():
+        ev.resolved_at = now
+    await session.commit()
     await DbSessionStore().save_cookies(acc.id, cookies)
     rt = get_runtime()
     await rt.gateway.invalidate(acc.id)
@@ -200,6 +215,17 @@ async def probe_account(account_id: int) -> bool:
                 if avatar:
                     acc.avatar = avatar
                 sync_runtime_to_model(acc, rt.guard.runtime(account_key(account_id)))
+                # 探活通过证明当前登录态正常，自动解决未解除的 need_login 事件
+                unresolved = await s.execute(
+                    select(RiskEvent).where(
+                        RiskEvent.account_id == account_id,
+                        RiskEvent.resolved_at.is_(None),
+                        RiskEvent.state == AccountState.NEED_LOGIN,
+                    )
+                )
+                now = datetime.now(UTC)
+                for ev in unresolved.scalars():
+                    ev.resolved_at = now
                 await s.commit()
         return True
     except SessionExpiredError:
@@ -213,6 +239,18 @@ async def probe_account(account_id: int) -> bool:
             await rt.gateway.invalidate(account_id)
             await rt.guard.set_state(account_key(account_id), AccountState.ACTIVE, "hasLogin 续期成功")
             logger.info("账号 {} 登录态续期成功", account_id)
+            async with session_factory()() as s:
+                unresolved = await s.execute(
+                    select(RiskEvent).where(
+                        RiskEvent.account_id == account_id,
+                        RiskEvent.resolved_at.is_(None),
+                        RiskEvent.state == AccountState.NEED_LOGIN,
+                    )
+                )
+                now = datetime.now(UTC)
+                for ev in unresolved.scalars():
+                    ev.resolved_at = now
+                await s.commit()
             return True
         return False
     except GoofishError as e:

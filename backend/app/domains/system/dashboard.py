@@ -13,6 +13,7 @@ from app.domains.buyer.models import MonitorTask, TaskResult
 from app.domains.message.models import ChatMessage
 from app.domains.order.models import Order, OrderState
 from app.goofish.gateway import account_key
+from app.goofish.guard.guard import AccountState
 from app.intelligence.llm import get_llm
 from app.runtime import get_runtime
 from app.workers import scheduler
@@ -82,6 +83,18 @@ async def dashboard(user: CurrentUser, session: SessionDep) -> dict[str, Any]:
         .order_by(RiskEvent.id.desc())
         .limit(20)
     )
+    raw_risks = list(risk_rows.scalars())
+
+    # 状态对齐：如果关联账号当前在 Guard 中处于 ACTIVE 正常态（如已扫码重新登录/已自愈），
+    # 则历史产生的 need_login 或已过期的风控事件在业务事实上已恢复解决，自动完成数据对齐与持久化自愈
+    active_acc_ids = {a.id for a in accounts if guard.runtime(account_key(a.id)).state == AccountState.ACTIVE}
+    healed = False
+    for r in raw_risks:
+        if r.resolved_at is None and r.account_id in active_acc_ids:
+            r.resolved_at = datetime.now(UTC)
+            healed = True
+    if healed:
+        await session.commit()
 
     return {
         "accounts": [
@@ -117,7 +130,7 @@ async def dashboard(user: CurrentUser, session: SessionDep) -> dict[str, Any]:
                 "created_at": r.created_at,
                 "resolved": r.resolved_at is not None,
             }
-            for r in risk_rows.scalars()
+            for r in raw_risks
         ],
         "system": {
             "llm": get_llm().status(),
