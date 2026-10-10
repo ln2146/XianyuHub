@@ -41,7 +41,8 @@ def policies() -> dict[Action, ActionPolicy]:
     base = {
         Action.SEARCH: ActionPolicy(rate=s.guard_search_per_min, burst=1.0, requires_login=False),
         Action.DETAIL: ActionPolicy(rate=s.guard_detail_per_min, burst=2, requires_login=False),
-        Action.SELLER_PROFILE: ActionPolicy(rate=3, requires_login=False),
+        # 卖家主页一次要调 4 个接口：允许前 2 个连发（像打开主页时同时加载），长期速率仍是每分钟 3 次
+        Action.SELLER_PROFILE: ActionPolicy(rate=3, burst=2, requires_login=False),
         Action.MY_ITEMS: ActionPolicy(rate=2),
         Action.USER_PROBE: ActionPolicy(rate=6),
         Action.IM_TOKEN: ActionPolicy(rate=4),
