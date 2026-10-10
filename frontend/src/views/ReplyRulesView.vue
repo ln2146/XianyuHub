@@ -3,9 +3,12 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox, type UploadRequestOptions } from 'element-plus'
 import {
+  ChatDotRound,
   Check,
+  CircleClose,
   Delete,
   Document,
+  Lightning,
   MagicStick,
   Plus,
   Refresh,
@@ -496,7 +499,7 @@ onMounted(() => {
             </div>
 
             <div class="ctrl-group ctrl-ai">
-              <span class="ctrl-label">AI 智能回复</span>
+              <span class="ctrl-label">AI回复</span>
               <el-segmented
                 :model-value="a.settings?.ai_mode ?? 'off'"
                 :options="aiModeOptions"
@@ -700,50 +703,74 @@ onMounted(() => {
           </div>
         </el-tab-pane>
 
-        <!-- 标签页 2: AI 设定与知识库 -->
+        <!-- 标签页 2: AI 回复 -->
         <el-tab-pane name="ai">
           <template #label>
             <div class="tab-label-inner">
               <el-icon><MagicStick /></el-icon>
-              <span>AI 人设与知识库</span>
+              <span>AI回复</span>
             </div>
           </template>
 
           <div class="tab-body">
-            <!-- AI 回复状态与模式切换条 -->
+            <!-- AI 回复状态与模式高识别度按钮组 -->
             <div class="feature-status-banner ai-feature-banner">
-              <div class="banner-left">
+              <div class="ai-banner-header">
                 <div class="status-indicator" :class="{ active: currentAccount?.settings?.ai_mode !== 'off' && (currentAccount?.settings?.auto_reply || currentAccount?.settings?.ai_mode === 'suggest') }">
                   <span class="status-dot" />
-                  <span class="status-title">AI 智能回复功能：</span>
+                  <span class="status-title">AI 回复运行模式：</span>
                 </div>
-                <el-segmented
-                  :model-value="currentAccount?.settings?.ai_mode ?? 'off'"
-                  :options="[
-                    { label: '关闭 AI 回复', value: 'off' },
-                    { label: '建议模式（人工在收件箱确认）', value: 'suggest' },
-                    { label: '全自动发送（关键词未命中直接答复）', value: 'auto' },
-                  ]"
-                  size="default"
-                  :disabled="!currentAccount || busyAccount[`ai-${currentAccount.id}`]"
-                  @change="(v: string | number | boolean) => currentAccount && setAiMode(currentAccount, v as 'off' | 'suggest' | 'auto')"
-                />
+                <span v-if="!currentAccount?.settings?.auto_reply && currentAccount?.settings?.ai_mode === 'auto'" class="desc-warning">
+                  <el-icon><WarningFilled /></el-icon> 提示：自动回复总开关已关，全自动发送需开启总开关
+                  <el-button link type="primary" size="small" @click="currentAccount && toggleAccountAutoReply(currentAccount, true)">立即开启总开关</el-button>
+                </span>
               </div>
 
-              <div class="banner-desc-row">
-                <span v-if="!currentAccount?.settings?.auto_reply && currentAccount?.settings?.ai_mode === 'auto'" class="desc-warning">
-                  <el-icon><WarningFilled /></el-icon> 提示：该账号自动回复总开关已关，AI 自动发送不会执行
-                  <el-button link type="primary" size="small" @click="currentAccount && toggleAccountAutoReply(currentAccount, true)">开启总开关</el-button>
-                </span>
-                <span v-else-if="currentAccount?.settings?.ai_mode === 'auto'" class="desc-success">
-                  已开启全自动发送 · 当买家消息未命中关键词规则时，AI 自动结合下方的店铺人设与知识库资料直接回复买家
-                </span>
-                <span v-else-if="currentAccount?.settings?.ai_mode === 'suggest'" class="desc-info">
-                  建议模式 · AI 不会直接向买家发送消息，而是在「收件箱」聊天窗口生成建议卡片，由您一键采纳后发送
-                </span>
-                <span v-else class="desc-muted">
-                  已关闭 · 仅由关键词规则回复，不启用大模型生成
-                </span>
+              <!-- 3 个高识别度的独立模式按钮卡片 -->
+              <div class="ai-mode-button-group">
+                <!-- 按钮 1: 关闭 -->
+                <div
+                  class="ai-mode-btn mode-off"
+                  :class="{ active: currentAccount?.settings?.ai_mode === 'off' }"
+                  @click="currentAccount && setAiMode(currentAccount, 'off')"
+                >
+                  <div class="btn-top-row">
+                    <span class="btn-radio-indicator"><span class="radio-inner" /></span>
+                    <el-icon class="btn-icon"><CircleClose /></el-icon>
+                    <span class="btn-title">关闭 AI 回复</span>
+                  </div>
+                  <div class="btn-desc">仅按关键词规则回复，不调用 AI 大模型</div>
+                </div>
+
+                <!-- 按钮 2: 建议模式 -->
+                <div
+                  class="ai-mode-btn mode-suggest"
+                  :class="{ active: currentAccount?.settings?.ai_mode === 'suggest' }"
+                  @click="currentAccount && setAiMode(currentAccount, 'suggest')"
+                >
+                  <div class="btn-top-row">
+                    <span class="btn-radio-indicator"><span class="radio-inner" /></span>
+                    <el-icon class="btn-icon text-primary"><ChatDotRound /></el-icon>
+                    <span class="btn-title">建议模式</span>
+                    <span class="btn-tag tag-suggest">人工把关</span>
+                  </div>
+                  <div class="btn-desc">收件箱生成建议卡片，人工确认后再一键发送</div>
+                </div>
+
+                <!-- 按钮 3: 全自动发送 -->
+                <div
+                  class="ai-mode-btn mode-auto"
+                  :class="{ active: currentAccount?.settings?.ai_mode === 'auto' }"
+                  @click="currentAccount && setAiMode(currentAccount, 'auto')"
+                >
+                  <div class="btn-top-row">
+                    <span class="btn-radio-indicator"><span class="radio-inner" /></span>
+                    <el-icon class="btn-icon text-success"><Lightning /></el-icon>
+                    <span class="btn-title">全自动发送</span>
+                    <span class="btn-tag tag-auto">智能托管</span>
+                  </div>
+                  <div class="btn-desc">关键词未命中时，AI 结合人设与知识库直接回复</div>
+                </div>
               </div>
             </div>
 
@@ -1177,80 +1204,175 @@ onMounted(() => {
 .ai-feature-banner {
   flex-direction: column;
   align-items: stretch;
-  gap: 10px;
+  gap: 12px;
+  background: var(--xh-fill);
+  border: 1px solid var(--xh-border);
+  border-radius: var(--xh-radius-md);
+  padding: 14px 16px;
 }
 
-.banner-left {
+.ai-banner-header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* 3 个高识别度的独立模式按钮卡片 */
+.ai-mode-button-group {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
   gap: 12px;
 }
 
-.banner-right {
+@media (max-width: 900px) {
+  .ai-mode-button-group {
+    grid-template-columns: 1fr;
+  }
+}
+
+.ai-mode-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  background: #ffffff;
+  border: 2px solid var(--xh-border);
+  border-radius: var(--xh-radius-md);
+  cursor: pointer;
+  transition: all 0.18s ease;
+  user-select: none;
+}
+
+.ai-mode-btn:hover {
+  border-color: var(--xh-primary-border);
+  box-shadow: var(--xh-shadow-1);
+  transform: translateY(-1px);
+}
+
+.btn-top-row {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.status-indicator {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.status-dot {
-  width: 9px;
-  height: 9px;
+.btn-radio-indicator {
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
-  background: var(--xh-disabled);
-  transition: all 0.2s ease;
+  border: 2px solid var(--xh-border-strong);
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.18s ease;
 }
 
-.status-indicator.active .status-dot {
-  background: var(--xh-success);
-  box-shadow: 0 0 0 3px rgba(30, 158, 106, 0.2);
+.radio-inner {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: transparent;
+  transition: all 0.18s ease;
 }
 
-.status-title {
+.btn-icon {
+  font-size: 16px;
+  color: var(--xh-muted);
+  flex-shrink: 0;
+}
+
+.btn-title {
   font-size: var(--xh-fs-sm);
   font-weight: 600;
   color: var(--xh-text);
 }
 
-.banner-desc,
-.banner-desc-row {
-  font-size: var(--xh-fs-xs);
-  color: var(--xh-muted);
-  line-height: 1.5;
-}
-
-.banner-desc-row {
-  padding-top: 4px;
-  border-top: 1px dashed var(--xh-border);
-}
-
-.desc-success {
-  color: var(--xh-success);
+.btn-tag {
+  font-size: 10px;
   font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-left: auto;
 }
 
-.desc-info {
-  color: var(--xh-primary);
-  font-weight: 500;
+.tag-suggest {
+  color: #2563eb;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
 }
 
-.desc-warning {
-  color: var(--xh-warning-text);
-  font-weight: 500;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+.tag-auto {
+  color: var(--xh-primary-dark-2);
+  background: var(--xh-primary-soft);
+  border: 1px solid var(--xh-primary-border);
 }
 
-.desc-muted {
+.btn-desc {
+  font-size: 11px;
   color: var(--xh-muted);
-  font-weight: 500;
+  line-height: 1.45;
+  padding-left: 24px;
+}
+
+/* 激活状态样式 */
+.mode-off.active {
+  border-color: #64748b;
+  background: #f8fafc;
+  box-shadow: 0 0 0 1px #64748b;
+}
+
+.mode-off.active .btn-radio-indicator {
+  border-color: #64748b;
+  background: #64748b;
+}
+
+.mode-off.active .radio-inner {
+  background: #ffffff;
+}
+
+.mode-off.active .btn-icon {
+  color: #64748b;
+}
+
+.mode-suggest.active {
+  border-color: #2563eb;
+  background: #f0f7ff;
+  box-shadow: 0 0 0 1px #2563eb, 0 2px 8px rgba(37, 99, 235, 0.12);
+}
+
+.mode-suggest.active .btn-radio-indicator {
+  border-color: #2563eb;
+  background: #2563eb;
+}
+
+.mode-suggest.active .radio-inner {
+  background: #ffffff;
+}
+
+.mode-suggest.active .btn-title {
+  color: #1d4ed8;
+}
+
+.mode-auto.active {
+  border-color: var(--xh-primary);
+  background: var(--xh-primary-soft);
+  box-shadow: 0 0 0 1px var(--xh-primary), 0 2px 8px rgba(30, 158, 106, 0.15);
+}
+
+.mode-auto.active .btn-radio-indicator {
+  border-color: var(--xh-primary);
+  background: var(--xh-primary);
+}
+
+.mode-auto.active .radio-inner {
+  background: #ffffff;
+}
+
+.mode-auto.active .btn-title {
+  color: var(--xh-primary-dark-2);
 }
 
 /* 工具条 */
