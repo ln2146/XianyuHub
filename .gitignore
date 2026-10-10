@@ -43,3 +43,6 @@ frontend/dist/
 CLAUDE.md
 AGENTS.md
 GEMINI.md
+
+# 内部设计文档（调研、规划、架构、UI 规范等，仅本地保留）
+docs/design/

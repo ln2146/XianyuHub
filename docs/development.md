@@ -74,9 +74,4 @@ pnpm build                                         # 类型检查 + 构建
 - 新增闲鱼接口时，同时提交：网关方法、解析器、脱敏后的响应样本（`tests/fixtures/`）和解析测试
 - 写操作必须选择对应的 `Action`（决定限流与互斥），并写入审计日志
 - AI 输出必须定义 Pydantic 模型；涉及价格或发货的决策必须由规则层给出
-- 前端遵循 [`docs/design/ui-guidelines.md`](design/ui-guidelines.md)
 - 提交前确认没有包含任何真实 Cookie、Token、手机号、账号 ID 或卡密
-
-## 设计文档
-
-项目启动前的调研与设计文档在 [`docs/design/`](design/)：开源项目调研、产品功能规划、系统架构、核心业务流程、风险合规与实施路线。
