@@ -89,6 +89,31 @@ def test_few_reviews_and_listing_mismatch_lower_score():
     assert any("成交记录与铺货规模不符" in r for r in c.risks) and c.score < b.score
 
 
+def test_buyer_left_no_review_is_not_a_bad_rating():
+    # 评价接口对“交易后未评价”返回 rate=-1 + 系统文案，不能算差评
+    silent = "ta在交易成功后未做出评价内容"
+    assert SellerRating(rate=-1, content=silent).rate is None
+    base = dict(item_area="上海", zhima="信用极好", reg_days=2000, now=NOW)
+    p = SellerProfile(
+        seller_id="1",
+        ip_location="上海",
+        ratings=[rating(1, 2 * i + 1) for i in range(33)] + [rating(-1, 3, silent) for _ in range(3)],
+    )
+    a = analyze_seller(p, **base)
+    d = a.ratings
+    assert d.as_seller == 36 and d.rated == 33 and d.negative == 0 and d.positive_rate == 1
+    assert not d.negatives and not any("好评率" in r for r in a.risks)
+    assert any("好评率 100%" in h for h in a.highlights)
+    assert p.seller_positive_rate == 1
+
+    # 全部未评价：不判断好评率（不能当成 0%）
+    only_silent = SellerProfile(
+        seller_id="2", ip_location="上海", ratings=[rating(-1, i + 1, silent) for i in range(8)]
+    )
+    b = analyze_seller(only_silent, **base)
+    assert b.ratings.positive_rate is None and not any("好评率" in r for r in b.risks)
+
+
 def test_burst_uses_total_reviews_and_flags_revived_templated_accounts():
     week = [rating(1, 1 + i * 0.5, "好评9666666👍") for i in range(8)]
     # 高销量卖家：样本只有最新 8 条，但总评价 500 条，不算刷评

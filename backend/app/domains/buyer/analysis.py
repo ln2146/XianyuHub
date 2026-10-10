@@ -197,6 +197,7 @@ class RatingEntry(BaseModel):
 class RatingDynamics(BaseModel):
     sampled: int = 0
     as_seller: int = 0  # 来自买家的评价（作为卖家收到的）
+    rated: int = 0  # 其中买家给出了评分的（交易后未评价的不计入好评率）
     positive: int = 0
     neutral: int = 0
     negative: int = 0
@@ -243,6 +244,7 @@ def rating_dynamics(
     d = RatingDynamics(sampled=len(ratings), as_seller=len(seller_side))
     if not seller_side:
         return d
+    d.rated = sum(1 for r in seller_side if r.rate is not None)
     d.positive = sum(1 for r in seller_side if r.rate == 1)
     d.neutral = sum(1 for r in seller_side if r.rate == 0)
     d.negative = sum(1 for r in seller_side if r.rate is not None and r.rate < 0)
@@ -463,16 +465,18 @@ def analyze_seller(
         score -= 5
         risk.append(f"累计商品 {profile.item_cnt} 件但卖家评价仅 {d.as_seller} 条，成交记录与铺货规模不符")
     if d.as_seller:
-        rate = d.positive_rate or 0
-        if d.as_seller >= 5 and rate < 0.9:
+        rate = d.positive_rate
+        if rate is None:
+            pass  # 买家都没有评分，无从判断好评率
+        elif d.rated >= 5 and rate < 0.9:
             score -= 15
-            risk.append(f"卖家好评率仅 {rate:.0%}（样本 {d.as_seller} 条）")
-        elif d.as_seller >= 5 and rate < 0.95:
+            risk.append(f"卖家好评率仅 {rate:.0%}（样本 {d.rated} 条）")
+        elif d.rated >= 5 and rate < 0.95:
             score -= 5
-            risk.append(f"卖家好评率 {rate:.0%}，略低")
-        elif d.as_seller >= 10 and rate >= 0.98 and not d.burst:  # 集中刷出来的好评不加分
+            risk.append(f"卖家好评率 {rate:.0%}，略低（样本 {d.rated} 条）")
+        elif d.rated >= 10 and rate >= 0.98 and not d.burst:  # 集中刷出来的好评不加分
             score += 6
-            hi.append(f"卖家好评率 {rate:.0%}（样本 {d.as_seller} 条）")
+            hi.append(f"卖家好评率 {rate:.0%}（样本 {d.rated} 条）")
         if d.trend == "down":
             score -= 10
             risk.append(

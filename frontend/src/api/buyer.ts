@@ -387,6 +387,8 @@ export interface RatingEntry {
 export interface RatingDynamics {
   sampled: number
   as_seller: number
+  /** 其中买家给了评分的（交易后未评价的不计入好评率） */
+  rated: number
   positive: number
   neutral: number
   negative: number

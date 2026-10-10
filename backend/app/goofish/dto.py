@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class TagIcon(BaseModel):
@@ -91,13 +91,28 @@ class SearchPage(BaseModel):
     has_more: bool
 
 
+# 对方交易后没有评价时，评价接口返回 rate=-1 和这句系统文案，并不是差评
+NO_REVIEW_MARK = "未做出评价"
+
+
 class SellerRating(BaseModel):
     rate_id: str | None = None
     content: str = ""
-    rate: int | None = None  # 1 好评 0 中评 -1 差评
+    rate: int | None = None  # 1 好评 0 中评 -1 差评；None = 对方未评价
     role: str = ""  # 来自买家 / 来自卖家
     rater_nick: str = ""
     created_at: str = ""
+
+    @model_validator(mode="after")
+    def _no_review(self) -> "SellerRating":
+        # 解析时与读取旧缓存时都要识别，所以放在模型上
+        if NO_REVIEW_MARK in self.content:
+            self.rate, self.content = None, ""
+        return self
+
+    @property
+    def reviewed(self) -> bool:
+        return self.rate is not None
 
 
 class SellerProfile(BaseModel):
@@ -115,7 +130,7 @@ class SellerProfile(BaseModel):
 
     @property
     def seller_positive_rate(self) -> float | None:
-        rs = [r for r in self.ratings if "买家" in r.role]  # 来自买家的评价 = 作为卖家收到的评价
+        rs = [r for r in self.ratings if "买家" in r.role and r.reviewed]  # 来自买家的评价 = 作为卖家收到的评价
         if not rs:
             return None
         return sum(1 for r in rs if r.rate == 1) / len(rs)

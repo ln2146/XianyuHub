@@ -404,7 +404,9 @@ function rateTag(rate: number | null): { label: string; type: TagType } {
                 </div>
                 <div class="metric">
                   <div class="m-label">分析样本</div>
-                  <div class="m-val">{{ seller.data.ratings.as_seller }} 条</div>
+                  <div class="m-val">
+                    {{ seller.data.ratings.as_seller }} 条<span v-if="seller.data.ratings.as_seller > seller.data.ratings.rated" class="m-sub">（{{ seller.data.ratings.as_seller - seller.data.ratings.rated }} 条买家未评价）</span>
+                  </div>
                 </div>
               </div>
               <div v-if="seller.data.ratings.burst_note" class="small warn-line">
@@ -581,6 +583,11 @@ function rateTag(rate: number | null): { label: string; type: TagType } {
   font-weight: 600;
   color: var(--xh-text, #1f2329);
   margin-top: 2px;
+}
+.m-sub {
+  font-size: var(--xh-fs-xs);
+  font-weight: 400;
+  color: var(--xh-muted);
 }
 .m-val.good {
   color: #1e9e6a;
