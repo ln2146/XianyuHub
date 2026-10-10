@@ -6,6 +6,7 @@ import secrets
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from urllib.parse import unquote
 
 from fastapi import HTTPException, status
 from loguru import logger
@@ -150,12 +151,16 @@ async def upsert_account(
     unb = cookies.get("unb")
     if not unb or not is_logged_in(cookies):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Cookie 不完整：需要包含 unb、cookie2、_m_h5_tk")
+    raw_nick = cookies.get("tracknick", "")
+    nick = unquote(raw_nick).strip() if raw_nick else ""
     acc = (await session.execute(select(XyAccount).where(XyAccount.unb == unb))).scalar_one_or_none()
     if acc is None:
-        acc = XyAccount(owner_id=owner.id, unb=unb, nickname=cookies.get("tracknick", ""), device_id=gen_device_id(unb))
+        acc = XyAccount(owner_id=owner.id, unb=unb, nickname=nick, device_id=gen_device_id(unb))
         session.add(acc)
     elif acc.owner_id != owner.id and owner.role != Role.ADMIN:
         raise HTTPException(status.HTTP_409_CONFLICT, "该闲鱼账号已被其他用户添加")
+    elif not acc.nickname and nick:
+        acc.nickname = nick
     if proxy is not None:
         acc.proxy_enc = get_vault().encrypt(proxy) if proxy else None
     acc.status = AccountState.ACTIVE
@@ -191,6 +196,9 @@ async def probe_account(account_id: int) -> bool:
                 nick = data.get("nick") or data.get("displayName") or data.get("userNick")
                 if nick:
                     acc.nickname = nick
+                avatar = data.get("avatar") or data.get("userIcon") or data.get("portrait") or data.get("headUrl")
+                if avatar:
+                    acc.avatar = avatar
                 sync_runtime_to_model(acc, rt.guard.runtime(account_key(account_id)))
                 await s.commit()
         return True
@@ -281,6 +289,7 @@ class QrLoginManager:
                 acc = await upsert_account(s, user, result.cookies, entry.proxy)
                 entry.account_id = acc.id
             await entry.client.aclose()
+            asyncio.create_task(probe_account(acc.id))
         return entry
 
 

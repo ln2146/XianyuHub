@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime
 from typing import Any
 
@@ -110,9 +111,12 @@ async def import_cookies(body: ImportIn, user: CurrentUser, session: SessionDep)
     if proxy is None and body.account_id:
         proxy = await DbSessionStore().get_proxy(body.account_id)
     acc = await service.upsert_account(session, user, cookies, proxy)
-    if body.verify and not await service.probe_account(acc.id):
-        rt = get_runtime().guard.runtime(account_key(acc.id))
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Cookie 校验失败：{rt.last_error or '登录态无效'}")
+    if body.verify:
+        if not await service.probe_account(acc.id):
+            rt = get_runtime().guard.runtime(account_key(acc.id))
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Cookie 校验失败：{rt.last_error or '登录态无效'}")
+    else:
+        asyncio.create_task(service.probe_account(acc.id))
     await session.refresh(acc)
     return to_out(acc)
 

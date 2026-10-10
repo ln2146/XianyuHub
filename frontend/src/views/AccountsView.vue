@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Delete, Plus, Refresh, Upload } from '@element-plus/icons-vue'
+import { Delete, Edit, Plus, Refresh, Upload } from '@element-plus/icons-vue'
 import QRCode from 'qrcode'
 import {
   addGrant,
@@ -77,6 +77,29 @@ function probe(a: Account) {
     else ElMessage.warning(`登录检查未通过，当前状态：${accountStatusMap[r.status]?.label || r.status}`)
     await load()
   })
+}
+
+async function quickEditRemark(a: Account) {
+  try {
+    const { value } = await ElMessageBox.prompt('请输入账号备注名称（方便区分多店铺/矩阵）：', '修改账号备注', {
+      confirmButtonText: '保存',
+      cancelButtonText: '取消',
+      inputValue: a.remark || '',
+      inputPlaceholder: '例如：数码专营店 / 主账号',
+      inputValidator: (val) => {
+        if (val && val.length > 128) return '备注长度不能超过 128 个字符'
+        return true
+      },
+    })
+    const remark = (value ?? '').trim()
+    await updateAccount(a.id, { remark })
+    ElMessage.success('备注已更新')
+    await store.load(true)
+  } catch (err: any) {
+    if (err !== 'cancel' && err !== 'close') {
+      ElMessage.error(err?.message || '更新失败')
+    }
+  }
 }
 
 async function resolve(a: Account) {
@@ -563,14 +586,21 @@ onBeforeUnmount(() => {
     <el-card shadow="never">
       <div class="table-wrap">
         <el-table v-loading="loading" :data="store.list" empty-text="还没有账号，点击右上角「扫码登录」添加">
-          <el-table-column label="账号" min-width="200">
+          <el-table-column label="账号" min-width="220">
             <template #default="{ row }">
               <div class="acc">
                 <el-avatar :size="36" :src="row.avatar || undefined">{{ (row.nickname || row.unb).slice(0, 1) }}</el-avatar>
                 <div class="acc-info">
                   <div class="acc-name">{{ row.nickname || row.unb }}</div>
-                  <div class="muted small">
-                    {{ row.remark || '账号 ID ' + row.unb }}
+                  <div class="acc-remark-row">
+                    <span
+                      class="remark-clickable"
+                      :title="row.remark ? '点击修改备注' : '点击添加备注'"
+                      @click="quickEditRemark(row as Account)"
+                    >
+                      <span class="remark-text">{{ row.remark || '点击添加备注' }}</span>
+                      <el-icon class="remark-edit-icon"><Edit /></el-icon>
+                    </span>
                     <el-tag v-if="row.has_proxy" size="small" effect="plain" class="ml">代理</el-tag>
                   </div>
                 </div>
@@ -986,6 +1016,41 @@ onBeforeUnmount(() => {
 }
 .acc-name {
   font-weight: 600;
+}
+.acc-remark-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+.remark-clickable {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+  color: var(--xh-text-muted);
+  border-radius: 4px;
+  padding: 1px 4px;
+  margin-left: -4px;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+.remark-clickable:hover {
+  color: var(--el-color-primary);
+  background-color: var(--el-color-primary-light-9);
+}
+.remark-text {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.remark-edit-icon {
+  font-size: 11px;
+  opacity: 0.6;
+}
+.remark-clickable:hover .remark-edit-icon {
+  opacity: 1;
 }
 .ml {
   margin-left: 4px;
