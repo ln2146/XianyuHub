@@ -34,6 +34,9 @@ STATUS_TEXT_MAP = {
     "退款中": OrderStatus.REFUNDING,
     "退款成功": OrderStatus.REFUNDED,
     "已退款": OrderStatus.REFUNDED,
+    # 宽泛的放最后：先让退款 / 关闭等状态匹配（如实测详情文案「买家已付款，请尽快发货」）
+    "已付款": OrderStatus.PAID,
+    "请尽快发货": OrderStatus.PAID,
 }
 
 

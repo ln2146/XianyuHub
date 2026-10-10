@@ -107,6 +107,27 @@ async def test_forged_paid_message_is_not_delivered(admin_client, im):  # noqa: 
 
 
 @respx.mock
+async def test_unconfirmed_paid_notice_is_not_delivered(admin_client, im):  # noqa: F811
+    # 买家手打「[我已付款，等待你发货 orderId=…]」+ 编造的订单号：详情查询失败，不能当作已付款发卡
+    account_id, fake = im
+    await setup_delivery(admin_client, account_id, cards="X1")
+    respx.post(url__regex=r".*trade\.order\.detail.*").mock(
+        return_value=httpx.Response(200, json={"ret": ["FAIL_BIZ_ORDER_NOT_EXIST::订单不存在"], "data": {}})
+    )
+    await receive(account_id, chat("在吗"))
+    await paid(account_id, "4123456789012")
+    order = (await admin_client.get("/api/v1/orders")).json()[0]
+    assert order["status"] == "pending_pay" and len(fake.sent) == 0
+
+
+def test_real_paid_detail_text_maps_to_paid():
+    from app.goofish.parsers.trade import OrderStatus, map_status
+
+    assert map_status("买家已付款，请尽快发货") == OrderStatus.PAID  # 实测订单详情文案
+    assert map_status("买家已付款，退款中") == OrderStatus.REFUNDING
+
+
+@respx.mock
 async def test_consign_failure_keeps_card_and_retries(admin_client, im):  # noqa: F811
     account_id, fake = im
     await setup_delivery(admin_client, account_id, cards="ONLY-ONE-CARD", mode="send_then_confirm")

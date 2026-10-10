@@ -165,7 +165,9 @@ async def on_order_event(payload: dict[str, Any]) -> None:
         await maybe_rate(order_pk)
 
 
-async def handle_paid(order_pk: int) -> None:
+async def handle_paid(order_pk: int, *, confirmed: bool = False) -> None:
+    """confirmed=True 表示已从闲鱼订单列表确认已付款（订单同步）。
+    来自聊天里的付款通知时不可信（买家可以手打一段伪造的通知），必须由订单详情确认已付款才发货。"""
     """付款：用订单详情接口二次校验（防止伪造的聊天文案触发发货），然后按设置自动发货。"""
     async with session_factory()() as s:
         order = await s.get(Order, order_pk)
@@ -187,6 +189,15 @@ async def handle_paid(order_pk: int) -> None:
                     await transition(s, order, local)
                 await s.commit()
                 return
+        if not confirmed and (remote is None or remote.status != OrderStatus.PAID):
+            # 没从闲鱼确认已付款：不发货，交给订单同步核实（真付款的订单下一轮同步会补发）
+            logger.warning(
+                "付款通知未经闲鱼确认，暂不发货 order={} remote={}",
+                order_id,
+                remote.status_text if remote else "查询失败",
+            )
+            await s.commit()
+            return
         if order.status == OrderState.PENDING_PAY:
             await transition(s, order, OrderState.PAID)
         if order.paid_at is None:
@@ -581,7 +592,7 @@ async def sync_orders(account_id: int, pages: int = 2) -> dict[str, int]:
         if not more:
             break
     for order_pk in to_handle:
-        await handle_paid(order_pk)
+        await handle_paid(order_pk, confirmed=True)
     return {"created": created, "paid": paid}
 
 
