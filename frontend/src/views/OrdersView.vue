@@ -20,6 +20,7 @@ import {
   type PoolOut,
 } from '@/api/order'
 import BuyerRiskPanel from '@/components/BuyerRiskPanel.vue'
+import ShipDialog from '@/components/ShipDialog.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import ListPager from '@/components/ListPager.vue'
 import { useAccountsStore } from '@/stores/accounts'
@@ -212,6 +213,12 @@ const deliveryModeLabel: Record<string, string> = {
 }
 
 const canDeliver = (o: Order) => ['paid', 'risk_hold', 'deliver_failed', 'manual'].includes(o.status)
+
+// 实物订单：网页端不能填运单号，给出收货信息与扫码去闲鱼 App 发货
+const ship = reactive({ open: false, order: null as Order | null })
+function openShip(o: Order) {
+  Object.assign(ship, { open: true, order: o })
+}
 /** 因为商品没有关联发货内容而卡住的订单（与后端 NO_BINDING_REASON 对应） */
 const needsLink = (o: Order) => canDeliver(o) && !!o.fail_reason?.includes('还没有关联发货内容')
 /** 缺库存/缺卡密拦截的订单 */
@@ -449,7 +456,8 @@ async function openDetail(o: Order) {
 
           <el-table-column label="订单状态" width="140">
             <template #default="{ row }">
-              <StatusTag :value="row.status" :map="orderStatusMap" />
+              <el-tag v-if="row.self_ship" size="small" type="warning" effect="light">待你发货</el-tag>
+              <StatusTag v-else :value="row.status" :map="orderStatusMap" />
               <el-tooltip v-if="row.fail_reason" :content="row.fail_reason">
                 <div class="smaller err ellipsis mt-xs fail-reason-row">
                   <el-icon><WarningFilled /></el-icon>
@@ -470,8 +478,9 @@ async function openDetail(o: Order) {
             <template #default="{ row }">
               <div class="compact-ops">
                 <!-- 动态最迫切主操作 -->
+                <el-button v-if="row.self_ship" size="small" type="primary" @click="openShip(row as Order)">去发货</el-button>
                 <el-button
-                  v-if="isOutOfStock(row as Order)"
+                  v-else-if="isOutOfStock(row as Order)"
                   size="small"
                   type="warning"
                   plain
@@ -579,8 +588,10 @@ async function openDetail(o: Order) {
           <el-descriptions :column="1" border size="small">
             <el-descriptions-item label="订单号"><span class="mono">{{ detail.order.order_id }}</span></el-descriptions-item>
             <el-descriptions-item label="状态">
-              <StatusTag :value="detail.order.status" :map="orderStatusMap" />
+              <el-tag v-if="detail.order.self_ship" size="small" type="warning" effect="light">待你发货</el-tag>
+              <StatusTag v-else :value="detail.order.status" :map="orderStatusMap" />
               <span v-if="detail.order.remote_status" class="muted small ml">闲鱼：{{ detail.order.remote_status }}</span>
+              <el-button v-if="detail.order.self_ship" size="small" type="primary" link class="ml" @click="openShip(detail.order)">去发货</el-button>
             </el-descriptions-item>
             <el-descriptions-item label="账号">{{ accounts.nameOf(detail.order.account_id) }}</el-descriptions-item>
             <el-descriptions-item label="商品">
@@ -637,6 +648,8 @@ async function openDetail(o: Order) {
         </template>
       </div>
     </el-drawer>
+
+    <ShipDialog v-model="ship.open" :order="ship.order" @refreshed="load(page)" />
 
     <!-- 就地快捷关联发货弹窗 -->
     <el-dialog

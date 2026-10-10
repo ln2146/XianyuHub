@@ -33,6 +33,17 @@ export interface Order {
   fail_reason: string | null
   retry_count: number
   created_at: string
+  /** 实物订单：需要卖家自己在闲鱼 App 发货 */
+  self_ship?: boolean
+}
+
+/** 实物订单的收货信息与手机端「去发货」页（实时查询，不在本地保存） */
+export interface ShippingInfo {
+  name: string
+  phone: string
+  address: string
+  deliver_url: string
+  status_text: string
 }
 
 export interface DeliveryRecord {
@@ -203,3 +214,6 @@ export const buyerRiskInsight = (body: BuyerRiskTarget) =>
   http
     .post<{ analysis: BuyerAnalysis; ai: BuyerInsight }>('/buyer-risk/insight', body, { timeout: 180_000 })
     .then((r) => r.data)
+
+export const getShipping = (orderPk: number) =>
+  http.get<ShippingInfo>(`/orders/${orderPk}/shipping`, { timeout: 60_000 }).then((r) => r.data)

@@ -39,6 +39,7 @@ frontend/dist/
 .windsurf/
 .codex/
 .gemini/
+.zcode/
 .playwright-mcp/
 CLAUDE.md
 AGENTS.md
