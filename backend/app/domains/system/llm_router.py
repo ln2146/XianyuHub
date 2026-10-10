@@ -16,7 +16,7 @@ from app.core.deps import AdminUser, CurrentUser, SessionDep
 from app.domains.system import llm as llm_service
 from app.domains.system.audit import record_audit
 from app.domains.system.models import LlmProvider
-from app.intelligence.llm import LLMError, LlmConfig, get_config, get_llm
+from app.intelligence.llm import LlmConfig, LLMError, get_config, get_llm
 
 router = APIRouter(prefix="/llm", tags=["llm"])
 
@@ -373,7 +373,7 @@ async def delete_provider(provider_id: int, admin: AdminUser, session: SessionDe
     was_active = row.is_active
     bindings = await llm_service.get_tier_bindings(session)
     rebind = False
-    for tier, item in bindings.items():
+    for item in bindings.values():
         if item.get("provider_id") == provider_id:
             item["provider_id"] = None
             item["model"] = ""
