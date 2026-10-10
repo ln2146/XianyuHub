@@ -29,6 +29,7 @@ import StatusTag from '@/components/StatusTag.vue'
 import { useAccountsStore } from '@/stores/accounts'
 import { useMobile } from '@/composables/useMobile'
 import { draftStatusMap, fmtMoney, fmtTime, itemUrl } from '@/utils/format'
+import { createBinding, listPools, type PoolOut } from '@/api/order'
 
 const accounts = useAccountsStore()
 const isMobile = useMobile()
@@ -53,6 +54,7 @@ interface FormState {
   knowledge: string
   is_virtual: boolean
   scheduled_at: Date | null
+  delivery_pool_id: number | null
 }
 
 const emptyForm = (): FormState => ({
@@ -70,6 +72,7 @@ const emptyForm = (): FormState => ({
   knowledge: '',
   is_virtual: false,
   scheduled_at: null,
+  delivery_pool_id: null,
 })
 
 const form = reactive<FormState>(emptyForm())
@@ -79,6 +82,7 @@ const confirmed = reactive<Record<number, boolean>>({})
 const saving = ref(false)
 const publishing = ref(false)
 const uploading = ref(0)
+const pools = ref<PoolOut[]>([])
 
 const gen = reactive({ hint: '', strategy: 'market' as PriceStrategy, loading: false, elapsed: 0 })
 let timer: number | undefined
@@ -278,6 +282,22 @@ async function confirmAndPublish() {
     const d = await persist(body)
     const r = await publishDraft(d.id)
     ElMessage.success(`发布成功，商品 ID ${r.item_id}`)
+    if (form.delivery_pool_id && r.item_id) {
+      try {
+        await createBinding({
+          pool_id: form.delivery_pool_id,
+          account_id: body.account_id,
+          item_id: r.item_id,
+          spec_value: null,
+          template: '您购买的内容如下：\n{card}\n祝您使用愉快！',
+          delay_seconds: 0,
+          max_per_buyer: 1,
+        })
+        ElMessage.success('已自动关联发货内容库')
+      } catch {
+        /* 仅辅助绑定，失败可在商品管理中补绑 */
+      }
+    }
     resetAll()
   } catch {
     /* 拦截器已提示；草稿已保存，可稍后在右侧列表重试 */
@@ -362,6 +382,7 @@ const draftFilterOptions = computed(() => {
 
 onMounted(async () => {
   loadDrafts()
+  listPools().then((p) => { pools.value = p }).catch(() => undefined)
   await accounts.load().catch(() => undefined)
   if (!form.account_id) form.account_id = accounts.list[0]?.id ?? null
 
@@ -482,17 +503,22 @@ onBeforeUnmount(() => window.clearInterval(timer))
             <div v-else class="gen-note">
               {{ form.image_ids.length ? `已选 ${form.image_ids.length} 张图片，通常 30~60 秒完成，生成后可逐项核对` : '先上传至少一张商品图片' }}
             </div>
-            <el-button
-              type="primary"
-              size="large"
-              class="gen-btn"
-              :icon="MagicStick"
-              :loading="gen.loading"
-              :disabled="!form.image_ids.length || uploading > 0"
-              @click="generate(false)"
-            >
-              {{ gen.loading ? `生成中 ${gen.elapsed}s` : uploading > 0 ? '图片上传中…' : 'AI 生成商品信息' }}
-            </el-button>
+            <div class="gen-btn-group">
+              <el-button v-if="form.image_ids.length || gen.hint" size="large" :disabled="gen.loading" @click="resetAll">
+                清空重置
+              </el-button>
+              <el-button
+                type="primary"
+                size="large"
+                class="gen-btn"
+                :icon="MagicStick"
+                :loading="gen.loading"
+                :disabled="!form.image_ids.length || uploading > 0"
+                @click="generate(false)"
+              >
+                {{ gen.loading ? `生成中 ${gen.elapsed}s` : uploading > 0 ? '图片上传中…' : 'AI 生成商品信息' }}
+              </el-button>
+            </div>
           </div>
         </el-card>
 
@@ -595,6 +621,21 @@ onBeforeUnmount(() => window.clearInterval(timer))
             <el-form-item label="虚拟商品">
               <el-switch v-model="form.is_virtual" />
             </el-form-item>
+            <el-form-item label="自动发货">
+              <el-select
+                v-model="form.delivery_pool_id"
+                clearable
+                placeholder="买家付款后自动发货内容（可选，如网盘资料/激活码）"
+                class="w360"
+              >
+                <el-option
+                  v-for="p in pools"
+                  :key="p.id"
+                  :value="p.id"
+                  :label="`${p.name} · ${p.kind === 'text' ? '固定文案/网盘' : p.kind === 'pool' ? '卡密库存' : '接口取货'}`"
+                />
+              </el-select>
+            </el-form-item>
             <el-form-item label="定时发布">
               <el-date-picker v-model="form.scheduled_at" type="datetime" placeholder="留空表示立即发布" :disabled-date="(d: Date) => d.getTime() < Date.now() - 86400000" />
             </el-form-item>
@@ -610,6 +651,7 @@ onBeforeUnmount(() => window.clearInterval(timer))
                 {{ form.scheduled_at ? '确认并定时发布' : '确认并发布' }}
               </el-button>
               <el-button :loading="saving" :disabled="gen.loading" @click="saveDraft">保存草稿</el-button>
+              <el-button :disabled="publishing || saving" @click="resetAll">清空重置</el-button>
               <el-button v-if="mode === 'manual' && !editingId" link type="primary" @click="mode = 'ai'">改用 AI 生成</el-button>
             </el-form-item>
           </el-form>
@@ -901,6 +943,12 @@ onBeforeUnmount(() => window.clearInterval(timer))
 .gen-note {
   font-size: 12px;
   color: var(--xh-muted);
+}
+.gen-btn-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
 }
 .gen-btn {
   min-width: 180px;
