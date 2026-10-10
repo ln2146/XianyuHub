@@ -425,6 +425,8 @@ async def send(conv_id: int, body: SendIn, user: CurrentUser, session: SessionDe
         raise HTTPException(status.HTTP_423_LOCKED, f"发送受限：{e}") from e
     except (ConnectionError, ValueError) as e:
         raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
+    conv.unread = 0
+    await session.commit()
     await service.set_takeover(conv.id, acc.get_settings().takeover_minutes)
     return msg
 
@@ -457,12 +459,13 @@ async def handle_suggestion(sug_id: int, action: str, user: CurrentUser, session
     sug = await session.get(ReplySuggestion, sug_id)
     if sug is None or action not in ("send", "discard"):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "建议不存在")
-    await _own_conv(session, user, sug.conversation_id)
+    conv = await _own_conv(session, user, sug.conversation_id)
     if action == "send":
         try:
             await service.send_text(
                 sug.conversation_id, sug.text, source=MessageSource.AUTO_AI, meta={"approved_by": user.id}
             )
+            conv.unread = 0
         except (ConnectionError, ValueError, RiskBlockedError) as e:
             raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
     sug.status = "sent" if action == "send" else "discarded"

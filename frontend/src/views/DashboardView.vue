@@ -75,6 +75,14 @@ async function toggleAccountDelivery(row: DashboardAccount, val: boolean) {
   }
 }
 
+function goPendingOrders() {
+  if ((data.value?.pending_manual_orders || 0) > 0) {
+    router.push({ path: '/orders/list', query: { status: 'manual,risk_hold,deliver_failed' } })
+  } else {
+    router.push('/orders/list')
+  }
+}
+
 let unsubscribe: (() => void) | undefined
 let debounce: number | undefined
 onMounted(() => {
@@ -495,7 +503,7 @@ function fmtJobNextRun(v: string | null | undefined): string {
                     </div>
                   </div>
 
-                  <div class="telemetry-card" @click="router.push('/orders/cards')">
+                  <div class="telemetry-card" @click="goPendingOrders">
                     <div class="tc-top">
                       <span class="tc-label">自动发货</span>
                       <span class="tc-status" :class="autoDeliveryState.cls">{{ autoDeliveryState.text }}</span>
@@ -534,7 +542,7 @@ function fmtJobNextRun(v: string | null | undefined): string {
             <div class="right-stack-col">
               <!-- 上部：待办订单与履约中心 -->
               <div class="panel-box orders-pending-panel" :class="{ 'has-alarm': (data?.pending_manual_orders || 0) > 0 }">
-                <div class="pending-panel-inner" @click="router.push('/orders/list')">
+                <div class="pending-panel-inner" @click="goPendingOrders">
                   <div class="pending-left">
                     <div class="pending-icon-wrap" :class="(data?.pending_manual_orders || 0) > 0 ? 'alarm' : 'calm'">
                       <el-icon :size="24"><component :is="(data?.pending_manual_orders || 0) > 0 ? Warning : CircleCheck" /></el-icon>
