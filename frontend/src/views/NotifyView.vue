@@ -534,17 +534,14 @@ async function remove(c: Channel) {
 
 <template>
   <div class="page">
-    <!-- 1. 规范页面头部：标题 + 规范分段页签 + 标准工具栏（完全对齐全局 UI 规范） -->
+    <!-- 1. 规范页面头部：标题 + 规范分段页签（居中） + 标准工具栏 -->
     <div class="page-head">
-      <div class="title-wrap">
-        <div class="title-row">
-          <el-icon class="title-icon"><Bell /></el-icon>
-          <h2>通知设置</h2>
-        </div>
-        <span class="page-subtitle">连接企业微信、飞书、钉钉、QQ邮箱与个人微信，即时推送订单与风控告警</span>
+      <div class="title-row">
+        <el-icon class="title-icon"><Bell /></el-icon>
+        <h2>通知设置</h2>
       </div>
 
-      <!-- 分段页签切换（遵循 RadarNav 规范设计，主色为鱼塘管家绿） -->
+      <!-- 分段页签切换（居中对齐） -->
       <nav class="tabs" aria-label="通知视图">
         <button
           type="button"
@@ -914,24 +911,18 @@ async function remove(c: Channel) {
 <style scoped>
 /* ================= 1. 规范页面头部与分段页签 ================= */
 .page-head {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: var(--xh-space-3) var(--xh-space-4);
+  gap: var(--xh-space-3);
   margin-bottom: var(--xh-space-4);
-}
-
-.title-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: var(--xh-space-1);
 }
 
 .title-row {
   display: flex;
   align-items: center;
   gap: var(--xh-space-2);
+  justify-self: start;
 }
 
 .title-row h2 {
@@ -939,6 +930,7 @@ async function remove(c: Channel) {
   font-size: var(--xh-fs-xl);
   font-weight: 600;
   color: var(--xh-text);
+  white-space: nowrap;
 }
 
 .title-icon {
@@ -946,13 +938,9 @@ async function remove(c: Channel) {
   color: var(--xh-primary);
 }
 
-.page-subtitle {
-  font-size: var(--xh-fs-sm);
-  color: var(--xh-muted);
-}
-
-/* 分段页签（遵循 RadarNav 规范设计，主色为鱼塘管家绿） */
+/* 分段页签（遵循 RadarNav 规范设计，主色为鱼塘管家绿，居中排列） */
 .tabs {
+  justify-self: center;
   display: inline-flex;
   gap: 2px;
   padding: 3px;
@@ -1004,6 +992,7 @@ async function remove(c: Channel) {
 }
 
 .toolbar {
+  justify-self: end;
   display: flex;
   align-items: center;
   gap: var(--xh-space-2);
@@ -1011,6 +1000,19 @@ async function remove(c: Channel) {
 
 .toolbar :deep(.el-button + .el-button) {
   margin-left: 0;
+}
+
+@media (max-width: 800px) {
+  .page-head {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+  }
+  .tabs {
+    order: 3;
+    width: 100%;
+    justify-content: center;
+  }
 }
 
 /* ================= 2. 筛选条 ================= */
