@@ -259,3 +259,22 @@ async def test_conversation_context(admin_client, im):
     tags = [q["tag"] for q in ctx["quick_replies"]]
     assert "折中诚意" in tags or "坚守底价" in tags
 
+
+@respx.mock
+async def test_new_buyer_message_notified_once(admin_client, im):
+    account_id, _fake = im
+    hook = respx.post("https://hook.example.com/nm").mock(return_value=httpx.Response(200))
+    await admin_client.post(
+        "/api/v1/notify/channels",
+        json={
+            "name": "h",
+            "type": "webhook",
+            "config": {"url": "https://hook.example.com/nm"},
+            "events": ["new_message"],
+        },
+    )
+    await receive(account_id, chat("在吗"))
+    assert hook.call_count == 1 and "新买家咨询" in hook.calls[0].request.content.decode()
+    # 同一会话的后续消息不再提醒
+    await receive(account_id, chat("还在吗"))
+    assert hook.call_count == 1

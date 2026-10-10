@@ -17,7 +17,15 @@ from app.domains.goods.models import MyItem
 from app.domains.message import service
 from app.domains.message.evidence import build_evidence
 from app.domains.message.models import ChatMessage, Conversation, MessageSource, ReplyRule, ReplySuggestion
-from app.domains.order.models import CardBinding, CardItem, CardPool, DeliveryRecord, ORDER_STATE_LABELS, Order, OrderState
+from app.domains.order.models import (
+    ORDER_STATE_LABELS,
+    CardBinding,
+    CardItem,
+    CardPool,
+    DeliveryRecord,
+    Order,
+    OrderState,
+)
 from app.domains.system.models import User
 from app.goofish.errors import RiskBlockedError
 from app.workers.im_gateway import im_status_snapshot
@@ -105,7 +113,9 @@ def generate_quick_replies(
     has_paid_order = any(o.status in (OrderState.PAID, OrderState.DELIVERING) for o in orders)
     if has_paid_order:
         replies.append(QuickReplyItem(tag="确认发货", text="已收到您的订单，正在为您打包/下发发货内容，请稍候~"))
-        replies.append(QuickReplyItem(tag="核对地址", text="亲，已核对您的收货信息，无误今天就给您安排发出，感谢支持！"))
+        replies.append(
+            QuickReplyItem(tag="核对地址", text="亲，已核对您的收货信息，无误今天就给您安排发出，感谢支持！")
+        )
 
     # 2. 商品及议价拉扯话术
     if item and item.price is not None:
@@ -117,18 +127,33 @@ def generate_quick_replies(
         if f is not None and f < p:
             mid = round((p + f) / 2)
             replies.append(
-                QuickReplyItem(tag="折中诚意", text=f"看您诚心要，各退一步 {mid} 元包顺丰给您，今天就能发走，您看可以的话我改价~")
+                QuickReplyItem(
+                    tag="折中诚意", text=f"看您诚心要，各退一步 {mid} 元包顺丰给您，今天就能发走，您看可以的话我改价~"
+                )
             )
             replies.append(
-                QuickReplyItem(tag="坚守底价", text=f"朋友，{f} 元真是我这边的底线成本价了，亏本出闲置，不能再少了，爽快拍下直接发~")
+                QuickReplyItem(
+                    tag="坚守底价",
+                    text=f"朋友，{f} 元真是我这边的底线成本价了，亏本出闲置，不能再少了，爽快拍下直接发~",
+                )
             )
         elif f is not None:
-            replies.append(QuickReplyItem(tag="底价声明", text=f"您好，标价 {p} 元已经是最低实价，成色很好不议价啦，诚心要今天可发~"))
+            replies.append(
+                QuickReplyItem(
+                    tag="底价声明", text=f"您好，标价 {p} 元已经是最低实价，成色很好不议价啦，诚心要今天可发~"
+                )
+            )
         else:
-            replies.append(QuickReplyItem(tag="小刀试探", text="亲，小刀可以接受，大刀勿扰哈，诚心要的话您报个心理价，合适就给您出~"))
+            replies.append(
+                QuickReplyItem(
+                    tag="小刀试探", text="亲，小刀可以接受，大刀勿扰哈，诚心要的话您报个心理价，合适就给您出~"
+                )
+            )
 
         replies.append(
-            QuickReplyItem(tag="催促促单", text="宝贝还有多位朋友在咨询，先拍先得哦！今天 17:00 前拍下可赶上今天第一批发出~")
+            QuickReplyItem(
+                tag="催促促单", text="宝贝还有多位朋友在咨询，先拍先得哦！今天 17:00 前拍下可赶上今天第一批发出~"
+            )
         )
     else:
         replies.append(QuickReplyItem(tag="礼貌在", text="在的亲，有什么想了解的随时问我~"))
@@ -238,9 +263,7 @@ async def conversation_context(conv_id: int, user: CurrentUser, session: Session
         select(Order)
         .where(
             Order.account_id == conv.account_id,
-            or_(Order.cid == conv.cid, Order.buyer_id == conv.peer_id)
-            if conv.peer_id
-            else Order.cid == conv.cid,
+            or_(Order.cid == conv.cid, Order.buyer_id == conv.peer_id) if conv.peer_id else Order.cid == conv.cid,
         )
         .order_by(Order.created_at.desc())
     )
@@ -280,18 +303,18 @@ async def conversation_context(conv_id: int, user: CurrentUser, session: Session
 
     if item_id:
         my_item = (
-            await session.execute(
-                select(MyItem).where(MyItem.account_id == conv.account_id, MyItem.item_id == item_id)
-            )
+            await session.execute(select(MyItem).where(MyItem.account_id == conv.account_id, MyItem.item_id == item_id))
         ).scalar_one_or_none()
 
         if my_item:
             binding = (
                 await session.execute(
-                    select(CardBinding).where(
+                    select(CardBinding)
+                    .where(
                         CardBinding.item_id == item_id,
                         or_(CardBinding.account_id == conv.account_id, CardBinding.account_id.is_(None)),
-                    ).limit(1)
+                    )
+                    .limit(1)
                 )
             ).scalar_one_or_none()
             binding_info = None
