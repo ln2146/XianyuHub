@@ -617,14 +617,11 @@ function fmtJobNextRun(v: string | null | undefined): string {
                         <div class="timeline-row">
                           <span class="acc-badge">{{ accountName(r.account_id) }}</span>
                           <el-tag
-                            :type="r.resolved ? 'info' : (accountStatusMap[r.state]?.type || 'warning')"
+                            :type="r.resolved ? 'success' : (accountStatusMap[r.state]?.type || 'danger')"
                             size="small"
-                            :effect="r.resolved ? 'plain' : 'light'"
+                            effect="light"
                           >
-                            {{ accountStatusMap[r.state]?.label || r.state }}
-                          </el-tag>
-                          <el-tag v-if="r.resolved" size="small" type="success" effect="plain" class="ml-s">
-                            {{ r.state === 'need_login' ? '已恢复正常' : '已自愈解除' }}
+                            {{ r.resolved ? (r.state === 'need_login' ? '已恢复正常' : '已自愈解除') : (accountStatusMap[r.state]?.label || r.state) }}
                           </el-tag>
                         </div>
                         <div class="timeline-reason">{{ r.reason || '短时访问频次过高或接口临时限流' }}</div>
@@ -1681,24 +1678,32 @@ function fmtJobNextRun(v: string | null | undefined): string {
 .risk-timeline-container {
   flex: 1;
   overflow-y: auto;
-  padding-right: 4px;
+  padding-right: 6px;
 }
 .compact-timeline {
   padding-left: 4px;
 }
+.compact-timeline :deep(.el-timeline-item__content) {
+  overflow: visible;
+  line-height: normal;
+}
 .timeline-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  flex-wrap: wrap;
+  gap: 8px;
+  line-height: 1.4;
 }
 .acc-badge {
   font-weight: 600;
   font-size: 12px;
+  color: var(--el-text-color-primary, #1e293b);
+  flex-shrink: 0;
 }
 .timeline-reason {
   font-size: 11.5px;
   color: #64748b;
-  margin-top: 2px;
+  margin-top: 3px;
 }
 
 
