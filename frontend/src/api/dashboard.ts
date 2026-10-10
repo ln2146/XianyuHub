@@ -2,7 +2,10 @@ import { http } from './http'
 
 export interface DashboardAccount {
   id: number
+  unb?: string
   nickname: string
+  remark?: string | null
+  avatar?: string | null
   status: string
   health: number
   im_connected: boolean

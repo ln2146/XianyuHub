@@ -402,25 +402,30 @@ function fmtJobNextRun(v: string | null | undefined): string {
                 </div>
               </div>
 
-              <!-- 账号列表：自适应紧凑高度，多账号时支持内滚 -->
+              <!-- 账号列表：自适应紧凑排版 -->
               <div class="account-table-container">
                 <el-table
                   :data="data?.accounts || []"
                   size="small"
                   empty-text="还没有添加闲鱼账号，请前往账号配置添加"
                   class="modern-account-table"
-                  max-height="160"
+                  max-height="240"
                 >
-                  <el-table-column label="账号昵称" min-width="160">
+                  <el-table-column label="账号" min-width="170">
                     <template #default="{ row }">
                       <div class="account-profile">
                         <div class="avatar-bubble">
-                          <span>{{ (row.remark || row.nickname || '闲')[0] }}</span>
-                          <span class="status-dot-pulse" :class="row.im_connected ? 'online' : 'offline'" />
+                          <img v-if="row.avatar" :src="row.avatar" alt="" referrerpolicy="no-referrer" />
+                          <span v-else>{{ (row.remark || row.nickname || '闲')[0] }}</span>
+                          <span
+                            class="status-dot-pulse"
+                            :class="row.im_connected ? 'online' : 'offline'"
+                            :title="row.im_connected ? '长连接在线' : '长连接离线'"
+                          />
                         </div>
                         <div class="account-texts">
                           <div class="acc-nick">{{ row.remark || row.nickname || '闲鱼卖家' }}</div>
-                          <div class="acc-id mono">{{ row.nickname }}</div>
+                          <div class="acc-id mono">{{ row.unb ? `ID: ${row.unb}` : (row.remark ? row.nickname : '') }}</div>
                         </div>
                       </div>
                     </template>
@@ -1391,7 +1396,15 @@ function fmtJobNextRun(v: string | null | undefined): string {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 15px;
+  font-size: 14px;
+  flex-shrink: 0;
+  overflow: visible;
+}
+.avatar-bubble img {
+  width: 100%;
+  height: 100%;
+  border-radius: 6px;
+  object-fit: cover;
 }
 .status-dot-pulse {
   position: absolute;

@@ -100,7 +100,10 @@ async def dashboard(user: CurrentUser, session: SessionDep) -> dict[str, Any]:
         "accounts": [
             {
                 "id": a.id,
+                "unb": a.unb,
                 "nickname": a.nickname or a.unb,
+                "remark": a.remark,
+                "avatar": a.avatar,
                 "status": guard.runtime(account_key(a.id)).state,
                 "health": guard.runtime(account_key(a.id)).health,
                 "im_connected": bool(im and (im.get(str(a.id)) or {}).get("connected")),
