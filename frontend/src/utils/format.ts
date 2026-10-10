@@ -2,21 +2,39 @@ import { ElMessage } from 'element-plus'
 
 type TagType = 'success' | 'warning' | 'danger' | 'info' | 'primary'
 
+/** 安全解析日期：确保后端返回的 UTC ISO 串能被正确解析为本地时间，即使缺少 Z 时区后缀 */
+export function parseDate(v: string | number | Date | null | undefined): Date | null {
+  if (!v) return null
+  if (v instanceof Date) return Number.isNaN(v.getTime()) ? null : v
+  if (typeof v === 'number') return new Date(v)
+  let s = String(v).trim()
+  if (!s) return null
+  // 如果字符串没有时区后缀（没有 Z 也没有 +08:00 / -05:00），且符合日期格式
+  // 后端一律按 UTC 存储，因此补上 Z，避免被浏览器当成本地时间解析导致 8 小时时差
+  if (!s.endsWith('Z') && !/[+-]\d{2}(?::?\d{2})?$/.test(s)) {
+    s = s.replace(' ', 'T') + 'Z'
+  }
+  const d = new Date(s)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
 /** 时间格式化：后端返回 ISO（UTC），显示为本地时间 */
-export function fmtTime(v: string | null | undefined, withSeconds = false): string {
+export function fmtTime(v: string | number | Date | null | undefined, withSeconds = false): string {
   if (!v) return '-'
-  const d = new Date(v)
-  if (Number.isNaN(d.getTime())) return v
+  const d = parseDate(v)
+  if (!d) return String(v)
   const p = (n: number) => String(n).padStart(2, '0')
   const base = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
   return withSeconds ? `${base}:${p(d.getSeconds())}` : base
 }
 
 /** 相对时间：刚刚 / 5 分钟前 / 3 小时前 / 日期 */
-export function fmtRelative(v: string | null | undefined): string {
+export function fmtRelative(v: string | number | Date | null | undefined): string {
   if (!v) return ''
-  const d = new Date(v)
+  const d = parseDate(v)
+  if (!d) return ''
   const diff = (Date.now() - d.getTime()) / 1000
+  if (diff < 0 && diff > -60) return '刚刚'
   if (diff < 60) return '刚刚'
   if (diff < 3600) return `${Math.floor(diff / 60)} 分钟前`
   if (diff < 86400) return `${Math.floor(diff / 3600)} 小时前`
