@@ -383,7 +383,7 @@ onBeforeUnmount(() => window.clearInterval(timer))
 </script>
 
 <template>
-  <div class="page">
+  <div class="page publish-page">
     <div class="page-head">
       <div>
         <h2>商品中心 · 发布</h2>
@@ -403,10 +403,10 @@ onBeforeUnmount(() => window.clearInterval(timer))
       </div>
     </div>
 
-    <el-row :gutter="12">
-      <el-col :xs="24" :lg="14">
+    <el-row :gutter="12" class="publish-row">
+      <el-col :xs="24" :lg="14" class="publish-left-col">
         <!-- 第一步：上传图片，AI 生成 -->
-        <el-card v-if="mode === 'ai'" shadow="never" class="ai-card">
+        <el-card v-if="mode === 'ai'" shadow="never" class="ai-card publish-card">
           <template #header>
             <div class="card-head">
               <div>
@@ -414,7 +414,7 @@ onBeforeUnmount(() => window.clearInterval(timer))
               </div>
             </div>
           </template>
-          <el-form label-width="90px" :label-position="isMobile ? 'top' : 'right'">
+          <el-form label-width="90px" :label-position="isMobile ? 'top' : 'right'" class="publish-form">
             <el-form-item label="发布账号" required>
               <el-select v-model="form.account_id" placeholder="选择账号" class="w240">
                 <el-option v-for="a in accounts.list" :key="a.id" :value="a.id" :label="a.remark || a.nickname || a.unb" />
@@ -497,7 +497,7 @@ onBeforeUnmount(() => window.clearInterval(timer))
         </el-card>
 
         <!-- 第二步：确认页（AI 草稿）/ 手动填写 -->
-        <el-card v-else shadow="never">
+        <el-card v-else shadow="never" class="review-card publish-card">
           <template #header>
             <div class="card-head">
               <span>
@@ -527,7 +527,7 @@ onBeforeUnmount(() => window.clearInterval(timer))
             </div>
           </template>
 
-          <el-form label-width="90px" :label-position="isMobile ? 'top' : 'right'">
+          <el-form label-width="90px" :label-position="isMobile ? 'top' : 'right'" class="publish-form">
             <el-form-item label="发布账号" required>
               <el-select v-model="form.account_id" placeholder="选择账号" class="w240">
                 <el-option v-for="a in accounts.list" :key="a.id" :value="a.id" :label="a.remark || a.nickname || a.unb" />
@@ -605,7 +605,7 @@ onBeforeUnmount(() => window.clearInterval(timer))
               </el-collapse-item>
             </el-collapse>
 
-            <el-form-item>
+            <el-form-item class="publish-form-actions">
               <el-button type="primary" :loading="publishing" :disabled="gen.loading" @click="confirmAndPublish">
                 {{ form.scheduled_at ? '确认并定时发布' : '确认并发布' }}
               </el-button>
@@ -616,7 +616,7 @@ onBeforeUnmount(() => window.clearInterval(timer))
         </el-card>
       </el-col>
 
-      <el-col :xs="24" :lg="10">
+      <el-col :xs="24" :lg="10" class="publish-right-col">
         <div class="publish-sidebar-wrap">
           <!-- 草稿与发布记录卡片 -->
           <el-card shadow="never" class="drafts">
@@ -892,7 +892,7 @@ onBeforeUnmount(() => window.clearInterval(timer))
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin: 4px -20px -20px;
+  margin: auto -20px -20px;
   padding: 14px 20px;
   border-top: 1px solid var(--xh-border);
   background: #fafbfc;
@@ -948,8 +948,54 @@ onBeforeUnmount(() => window.clearInterval(timer))
   background: currentColor;
 }
 
+/* ---------- 页面整体与卡片高度撑满 ---------- */
+.publish-page {
+  min-height: calc(100vh - 56px - 40px);
+  display: flex;
+  flex-direction: column;
+}
+.publish-row {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+}
+@media (min-width: 992px) {
+  .publish-left-col,
+  .publish-right-col {
+    display: flex;
+    flex-direction: column;
+  }
+}
+.publish-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  border-radius: 10px;
+  border-color: var(--xh-border);
+}
+.publish-card :deep(.el-card__body) {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.publish-form {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.publish-form-actions {
+  margin-top: auto;
+  padding-top: 16px;
+}
+.ai-card :deep(.zone .el-upload-dragger) {
+  padding: 38px 16px;
+}
+
 /* ---------- 草稿与侧边栏 ---------- */
 .publish-sidebar-wrap {
+  flex: 1;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -957,15 +1003,32 @@ onBeforeUnmount(() => window.clearInterval(timer))
   top: 0;
 }
 .drafts {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
   border-radius: 10px;
   border-color: var(--xh-border);
+}
+.drafts :deep(.el-card__body) {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.drafts :deep(.el-empty) {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
 }
 .d-filter {
   margin-top: 10px;
 }
 .draft-list {
-  min-height: 60px;
-  max-height: 260px;
+  flex: 1;
+  min-height: 120px;
+  max-height: 480px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -973,6 +1036,7 @@ onBeforeUnmount(() => window.clearInterval(timer))
   padding-right: 2px;
 }
 .publish-guide-card {
+  flex-shrink: 0;
   border-radius: 10px;
   border-color: var(--xh-border);
   background: #fbfcfe;
