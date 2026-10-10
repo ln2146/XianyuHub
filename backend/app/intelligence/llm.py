@@ -480,7 +480,6 @@ class LLMGateway:
             raise LLMError("模型拒绝回答该请求")
         return result
 
-
     async def complete_json(
         self,
         tier: Tier,

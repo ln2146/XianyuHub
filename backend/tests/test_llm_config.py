@@ -377,4 +377,3 @@ async def test_tier_configuration_and_multi_provider_routing(admin_client):
     vision_reply = await gw.complete_text(Tier.VISION, "系统提示", [Message("user", "看图")])
     assert vision_reply == "你好，我是通义万相视觉"
     assert ali_mock.called
-

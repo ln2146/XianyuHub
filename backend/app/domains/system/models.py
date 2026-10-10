@@ -86,4 +86,3 @@ class LlmTierBinding(IdMixin, TimestampMixin, Base):
     tier: Mapped[str] = mapped_column(String(32), unique=True, index=True)  # chat / vision / fast
     provider_id: Mapped[int | None] = mapped_column(ForeignKey("llm_providers.id", ondelete="SET NULL"), nullable=True)
     model: Mapped[str] = mapped_column(String(128), default="")
-

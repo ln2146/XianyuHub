@@ -61,7 +61,6 @@ async def test_probe_unsaved_channel(admin_client):
     assert r.json()["ok"] is True
 
 
-
 @respx.mock
 async def test_webhook_failure_recorded(admin_client):
     respx.post("https://hook.example.com/x").mock(return_value=httpx.Response(500, text="boom"))

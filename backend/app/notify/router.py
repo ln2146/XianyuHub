@@ -172,4 +172,3 @@ async def test_unsaved_channel(body: ProbeIn, user: CurrentUser) -> dict[str, An
         return {"ok": True, "error": None}
     except Exception as e:  # noqa: BLE001
         return {"ok": False, "error": str(e)[:500]}
-

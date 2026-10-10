@@ -225,7 +225,6 @@ PRESETS: list[dict[str, Any]] = [
 ]
 
 
-
 SEED_ACTION = "llm.provider.seed"  # 审计记录同时作为“已经初始化过”的标记
 
 
@@ -301,10 +300,14 @@ async def load_active_config() -> LlmConfig | None:
             prov_ids = [b.provider_id for b in bindings if b.provider_id]
             if prov_ids:
                 p_rows = (
-                    await session.execute(
-                        select(LlmProvider).where(LlmProvider.id.in_(prov_ids), LlmProvider.enabled.is_(True))
+                    (
+                        await session.execute(
+                            select(LlmProvider).where(LlmProvider.id.in_(prov_ids), LlmProvider.enabled.is_(True))
+                        )
                     )
-                ).scalars().all()
+                    .scalars()
+                    .all()
+                )
                 prov_map = {p.id: p for p in p_rows}
                 for b in bindings:
                     if b.provider_id and b.provider_id in prov_map:
@@ -373,9 +376,7 @@ async def activate(session: AsyncSession, row: LlmProvider) -> None:
     for tier in ("chat", "vision", "fast"):
         model = getattr(row, f"model_{tier}", "")
         if model:
-            b = (
-                await session.execute(select(LlmTierBinding).where(LlmTierBinding.tier == tier))
-            ).scalar_one_or_none()
+            b = (await session.execute(select(LlmTierBinding).where(LlmTierBinding.tier == tier))).scalar_one_or_none()
             if b is None:
                 b = LlmTierBinding(tier=tier, provider_id=row.id, model=model)
                 session.add(b)

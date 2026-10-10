@@ -231,7 +231,11 @@ async def update_tiers(body: TierConfigIn, admin: AdminUser, session: SessionDep
 
 @router.get("/providers", response_model=list[ProviderOut])
 async def list_providers(_: AdminUser, session: SessionDep) -> list[ProviderOut]:
-    rows = (await session.execute(select(LlmProvider).order_by(LlmProvider.is_active.desc(), LlmProvider.id))).scalars().all()
+    rows = (
+        (await session.execute(select(LlmProvider).order_by(LlmProvider.is_active.desc(), LlmProvider.id)))
+        .scalars()
+        .all()
+    )
     bindings = await llm_service.get_tier_bindings(session)
     tier_map: dict[int, list[str]] = {}
     for tier_name, item in bindings.items():
