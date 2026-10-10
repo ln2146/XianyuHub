@@ -376,7 +376,11 @@ async function remove(p: LlmProvider) {
     />
 
     <template v-if="auth.isAdmin">
-      <el-empty v-if="!loading && !providers.length" description="还没有配置接入，添加一套即可启用 AI 能力" />
+      <div v-if="!loading && !providers.length" class="empty-state-card">
+        <el-empty description="尚未配置大模型接入，配置后可启用智能客服问答、闲鱼好货质检与转手文案生成">
+          <el-button type="primary" :icon="Plus" @click="openCreate">立即添加大模型接入</el-button>
+        </el-empty>
+      </div>
       <div v-loading="loading" class="grid">
         <el-card v-for="p in providers" :key="p.id" shadow="never" class="prov" :class="{ active: p.is_active }">
           <div class="prov-head">
@@ -534,6 +538,14 @@ async function remove(p: LlmProvider) {
 .prov.active {
   border-color: var(--el-color-success);
 }
+.empty-state-card {
+  background: var(--xh-card);
+  border: 1px solid var(--xh-border);
+  border-radius: var(--xh-radius-lg);
+  padding: var(--xh-space-8) var(--xh-space-4);
+  display: flex;
+  justify-content: center;
+}
 .prov-head {
   display: flex;
   justify-content: space-between;
@@ -541,12 +553,14 @@ async function remove(p: LlmProvider) {
 }
 .prov-name {
   font-weight: 600;
-  font-size: 15px;
+  font-size: var(--xh-fs-md);
   margin-bottom: 4px;
+  color: var(--xh-text);
 }
 .prov-body {
-  background: #f7f8fa;
-  border-radius: 6px;
+  background: var(--xh-fill);
+  border-radius: var(--xh-radius-sm);
+  border: 1px solid var(--xh-border);
   padding: 8px;
   display: flex;
   flex-direction: column;

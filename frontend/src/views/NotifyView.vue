@@ -243,7 +243,11 @@ async function remove(c: Channel) {
       </div>
     </div>
 
-    <el-empty v-if="!loading && !channels.length" description="暂无通知渠道" />
+    <div v-if="!loading && !channels.length" class="empty-state-card">
+      <el-empty description="尚未配置任何通知渠道，下单、待发货及账号风控等消息将无法即时推送到手机">
+        <el-button type="primary" :icon="Plus" @click="openCreate">立即添加第一个通知渠道</el-button>
+      </el-empty>
+    </div>
     <div v-loading="loading" class="grid">
       <el-card v-for="c in channels" :key="c.id" shadow="never" class="ch">
         <div class="ch-head">
@@ -344,6 +348,14 @@ async function remove(c: Channel) {
   gap: 10px;
   height: 100%;
 }
+.empty-state-card {
+  background: var(--xh-card);
+  border: 1px solid var(--xh-border);
+  border-radius: var(--xh-radius-lg);
+  padding: var(--xh-space-8) var(--xh-space-4);
+  display: flex;
+  justify-content: center;
+}
 .ch-head {
   display: flex;
   justify-content: space-between;
@@ -351,8 +363,9 @@ async function remove(c: Channel) {
 }
 .ch-name {
   font-weight: 600;
-  font-size: 15px;
+  font-size: var(--xh-fs-md);
   margin-bottom: 4px;
+  color: var(--xh-text);
 }
 .ch-events {
   display: flex;
@@ -361,8 +374,9 @@ async function remove(c: Channel) {
   align-items: center;
 }
 .ch-cfg {
-  background: #f7f8fa;
-  border-radius: 6px;
+  background: var(--xh-fill);
+  border-radius: var(--xh-radius-sm);
+  border: 1px solid var(--xh-border);
   padding: 8px;
 }
 .ch-err {

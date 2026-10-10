@@ -536,9 +536,9 @@ const showThread = computed(() => !isMobile.value || !!currentId.value)
   display: flex;
   height: calc(100vh - 56px - 40px);
   min-height: 420px;
-  background: #fff;
+  background: var(--xh-card);
   border: 1px solid var(--xh-border);
-  border-radius: 10px;
+  border-radius: var(--xh-radius-md);
   overflow: hidden;
 }
 .list-pane {
@@ -570,17 +570,18 @@ const showThread = computed(() => !isMobile.value || !!currentId.value)
   gap: 10px;
   padding: 10px 12px;
   cursor: pointer;
-  border-bottom: 1px solid #f2f3f5;
+  border-bottom: 1px solid var(--xh-border);
 }
 .conv:hover {
-  background: #f7f8fa;
+  background: var(--xh-fill);
 }
 .conv.active {
-  background: var(--el-color-primary-light-9);
+  background: var(--xh-primary-soft);
 }
 .conv-avatar {
-  background: #c6e9d9;
+  background: var(--xh-primary-soft);
   color: var(--xh-primary);
+  border: 1px solid var(--xh-primary-border);
   font-weight: 600;
 }
 .conv-main {
@@ -598,19 +599,19 @@ const showThread = computed(() => !isMobile.value || !!currentId.value)
   font-weight: 600;
 }
 .conv-time {
-  font-size: 11px;
+  font-size: var(--xh-fs-xs);
   color: var(--xh-muted);
   flex-shrink: 0;
 }
 .conv-last {
-  font-size: 12px;
-  color: #606266;
+  font-size: var(--xh-fs-xs);
+  color: var(--xh-text-2);
 }
 .tk {
   flex-shrink: 0;
 }
 .conv-acc {
-  font-size: 11px;
+  font-size: var(--xh-fs-xs);
 }
 .thread-pane {
   flex: 1;
@@ -666,7 +667,7 @@ const showThread = computed(() => !isMobile.value || !!currentId.value)
   flex: 1;
   overflow-y: auto;
   padding: 14px;
-  background: #f7f8fa;
+  background: var(--xh-fill);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -676,10 +677,10 @@ const showThread = computed(() => !isMobile.value || !!currentId.value)
 }
 .sys-msg {
   align-self: center;
-  font-size: 12px;
+  font-size: var(--xh-fs-xs);
   color: var(--xh-muted);
-  background: #eceef1;
-  border-radius: 10px;
+  background: var(--xh-fill-strong);
+  border-radius: var(--xh-radius-md);
   padding: 4px 10px;
   max-width: 85%;
   text-align: center;
