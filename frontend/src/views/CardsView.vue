@@ -479,7 +479,7 @@ const accountModal = reactive({
   <div class="page">
     <div class="page-head">
       <div>
-        <h2>订单发货 · 自动发货</h2>
+        <h2>自动发货</h2>
       </div>
       <el-button :icon="Refresh" @click="refreshAll">刷新</el-button>
     </div>

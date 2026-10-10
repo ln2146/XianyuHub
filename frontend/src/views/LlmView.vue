@@ -327,7 +327,7 @@ async function remove(p: LlmProvider) {
   <div class="page">
     <div class="page-head">
       <div>
-        <h2>模型接入</h2>
+        <h2>模型配置</h2>
       </div>
       <div class="toolbar">
         <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>

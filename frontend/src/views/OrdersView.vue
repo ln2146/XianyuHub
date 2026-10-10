@@ -264,7 +264,7 @@ async function openDetail(o: Order) {
   <div class="page">
     <div class="page-head">
       <div>
-        <h2>订单发货 · 订单管理</h2>
+        <h2>订单管理</h2>
       </div>
       <div class="toolbar">
         <el-button :icon="Refresh" :loading="loading" round @click="load(page)">刷新列表</el-button>

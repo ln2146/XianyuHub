@@ -407,7 +407,7 @@ onBeforeUnmount(() => window.clearInterval(timer))
   <div class="page publish-page">
     <div class="page-head">
       <div>
-        <h2>商品中心 · 发布</h2>
+        <h2>发布商品</h2>
         <ol v-if="mode !== 'manual'" class="stepper">
           <li v-for="(s, i) in steps" :key="s" :class="{ done: i < stepActive, active: i === stepActive }">
             <span class="dot">
