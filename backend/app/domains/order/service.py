@@ -38,7 +38,7 @@ from app.goofish.dto import SystemNotice
 from app.goofish.errors import GoofishError
 from app.goofish.parsers.trade import OrderStatus, RemoteOrder
 from app.notify.senders import Notification
-from app.notify.service import NotifyEvents, notify
+from app.notify.service import NotifyEvents, notify_background
 from app.runtime import get_runtime
 
 RETRY_DELAYS = [60, 120, 300, 600]  # 秒
@@ -537,13 +537,16 @@ async def check_stock(pool_id: int) -> None:
         ).scalar_one()
         owner_id, name, threshold = pool.owner_id, pool.name, pool.low_stock_threshold
     if left <= threshold:
-        await notify(
+        # 低库存时每单发货都会走到这里，同一发货内容 1 小时内只提醒一次
+        notify_background(
             owner_id,
             Notification(
                 event=NotifyEvents.STOCK_LOW,
                 title=f"📦 发货内容「{name}」卡密库存不足",
                 content=f"剩余 {left} 张，请及时补充。",
             ),
+            dedupe_key=f"stock_low:{pool_id}",
+            cooldown=3600,
         )
 
 
@@ -612,4 +615,5 @@ async def _notify_owner(account_id: int, event: str, title: str, content: str) -
     async with session_factory()() as s:
         acc = await s.get(XyAccount, account_id)
         owner_id = acc.owner_id if acc else None
-    await notify(owner_id, Notification(event=event, title=title, content=content))
+    # 后台发送：付款后紧接着就要自动发货，不能等慢渠道超时
+    notify_background(owner_id, Notification(event=event, title=title, content=content))

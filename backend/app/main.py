@@ -14,6 +14,7 @@ from app.core.logging import setup_logging
 from app.domains.message.router import ws_router
 from app.domains.system import llm as llm_service
 from app.domains.system.service import ensure_admin
+from app.notify import service as notify_service
 
 
 @asynccontextmanager
@@ -32,6 +33,7 @@ async def lifespan(app: FastAPI):
     yield
     await bus.drain()
     await bootstrap.shutdown()
+    await notify_service.drain()
     await dispose_engine()
 
 

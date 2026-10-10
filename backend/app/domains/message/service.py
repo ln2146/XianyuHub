@@ -25,7 +25,8 @@ from app.intelligence.intent import Intent, classify_intent
 from app.intelligence.llm import get_llm
 from app.intelligence.retrieval import select_knowledge
 from app.notify.senders import Notification
-from app.notify.service import NotifyEvents, notify
+from app.notify.service import NotifyEvents, notify, notify_background
+from app.notify.service import drain as drain_notifications
 from app.workers.im_gateway import get_im_manager
 
 _pending: dict[tuple[int, str], asyncio.Task] = {}
@@ -42,9 +43,10 @@ def _spawn(coro) -> asyncio.Task:  # noqa: ANN001
 
 
 async def drain() -> None:
-    """等待所有挂起的回复任务（测试 / 优雅退出）。"""
+    """等待所有挂起的回复任务及其后台通知（测试 / 优雅退出）。"""
     while _tasks:
         await asyncio.gather(*list(_tasks), return_exceptions=True)
+    await drain_notifications()
 
 
 def _aware(dt: datetime | None) -> datetime | None:
@@ -155,6 +157,8 @@ async def handle_event(account_id: int, ev: ImEvent) -> None:
             return
         settings = acc.get_settings()
         conv = await _get_conversation(s, account_id, ev.cid)
+        # 新会话还没有任何消息：用来判断「新买家第一次来咨询」
+        first_contact = conv.last_message_at is None
         from_me = ev.sender_id == acc.unb
         if ev.item_id:
             conv.item_id = ev.item_id
@@ -187,6 +191,8 @@ async def handle_event(account_id: int, ev: ImEvent) -> None:
         conv_id = conv.id
         peer_id = conv.peer_id
         item_id = conv.item_id
+        owner_id, nickname = acc.owner_id, acc.nickname or acc.unb
+        peer_name = conv.peer_name or conv.peer_id
 
     if not echo:
         await hub.publish(
@@ -214,6 +220,15 @@ async def handle_event(account_id: int, ev: ImEvent) -> None:
         return
 
     await bus.publish(Topics.CHAT_MESSAGE_RECEIVED, {"account_id": account_id, "conversation_id": conv_id})
+    if first_contact:
+        notify_background(
+            owner_id,
+            Notification(
+                event=NotifyEvents.NEW_MESSAGE,
+                title=f"💬 新买家咨询（{nickname}）",
+                content=f"买家：{peer_name}\n消息：{ev.text[:200]}",
+            ),
+        )
     _schedule_reply(account_id, ev.cid, conv_id, settings.merge_window_seconds)
 
 

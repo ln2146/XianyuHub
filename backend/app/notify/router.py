@@ -11,7 +11,7 @@ from app.notify.service import NotifyEvents, decode_config, encode_config, send_
 
 router = APIRouter(prefix="/notify", tags=["notify"])
 
-_SECRET_KEYS = {"webhook_url", "bot_token", "device_key", "token", "password", "url"}
+_SECRET_KEYS = {"webhook_url", "bot_token", "device_key", "token", "password", "url", "sendkey", "secret", "topic"}
 
 
 def _masked(cfg: dict[str, Any]) -> dict[str, Any]:

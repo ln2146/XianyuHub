@@ -37,6 +37,8 @@ const fieldMeta: Record<string, { label: string; placeholder?: string; secret?: 
   host: { label: 'SMTP 服务器', placeholder: 'smtp.qq.com' },
   port: { label: '端口' },
   ssl: { label: '使用 SSL' },
+  starttls: { label: 'STARTTLS' },
+  secret: { label: '签名密钥', placeholder: '机器人安全设置里的加签 / 签名校验密钥', secret: true },
   username: { label: '发件邮箱', placeholder: 'you@example.com' },
   password: { label: '密码 / 授权码', secret: true },
   to: { label: '收件邮箱', placeholder: 'to@example.com' },
@@ -47,13 +49,13 @@ const typeHelp: Record<string, string> = {
   serverchan: '推送到个人微信：在 sct.ftqq.com 用微信扫码登录，复制 SendKey（Turbo 版 SCT… 和 Server酱³ sctp… 都可以）',
   pushplus: '推送到个人微信：在 pushplus.plus 微信扫码登录，复制「一对一推送」的 Token',
   wecom: '企业微信群 → 添加群机器人 → 复制 Webhook 地址',
-  feishu: '飞书群 → 设置 → 群机器人 → 自定义机器人',
-  dingtalk: '钉钉群 → 智能群助手 → 自定义机器人（安全设置建议用关键词「鱼塘」）',
+  feishu: '飞书群 → 设置 → 群机器人 → 自定义机器人；开启了「签名校验」就把密钥填到下方',
+  dingtalk: '钉钉群 → 智能群助手 → 自定义机器人；安全设置选「加签」并把 SEC 开头的密钥填到下方（选「自定义关键词」则需包含通知标题里的字）',
   telegram: '通过 @BotFather 创建机器人获取 Token，向机器人发消息后获取 Chat ID',
   bark: 'iOS 安装 Bark App，复制推送地址中的服务器与 Key',
   ntfy: '手机安装 ntfy App 并订阅同名 topic',
   webhook: '以 POST JSON 推送 {event, title, content, url…} 到你的服务',
-  email: 'QQ / 163 邮箱需使用 SMTP 授权码而非登录密码',
+  email: 'QQ / 163 邮箱需使用 SMTP 授权码而非登录密码；465 端口开启 SSL，587 端口关闭 SSL 并保持 STARTTLS 开启',
 }
 
 async function load() {

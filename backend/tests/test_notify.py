@@ -87,3 +87,88 @@ async def test_wechat_personal_senders():
         plus.mock(return_value=httpx.Response(200, json={"code": 903, "msg": "无效的用户token"}))
         with pytest.raises(SendError):
             await send_pushplus(http, {"token": "bad"}, n)
+
+
+@respx.mock
+async def test_signed_bots_and_ntfy_json():
+    import base64
+    import hashlib
+    import hmac
+    import urllib.parse
+
+    from app.notify.senders import dingtalk_signed_url, feishu_sign, send_dingtalk, send_feishu, send_ntfy
+
+    # 签名算法与官方文档示例一致
+    digest = hmac.new(b"SECxx", b"1700000000000\nSECxx", hashlib.sha256).digest()
+    expected = urllib.parse.quote_plus(base64.b64encode(digest).decode())
+    assert dingtalk_signed_url("https://oapi.dingtalk.com/robot/send?access_token=t", "SECxx", 1700000000000) == (
+        f"https://oapi.dingtalk.com/robot/send?access_token=t&timestamp=1700000000000&sign={expected}"
+    )
+    key = b"1700000000\nfs"
+    assert feishu_sign("fs", 1700000000) == base64.b64encode(hmac.new(key, b"", hashlib.sha256).digest()).decode()
+
+    n = Notification(event="x", title="中文标题", content="正文", url="https://u")
+    ding = respx.post(url__startswith="https://oapi.dingtalk.com/robot/send").mock(
+        return_value=httpx.Response(200, json={"errcode": 0})
+    )
+    fei = respx.post("https://open.feishu.cn/hook/x").mock(return_value=httpx.Response(200, json={"code": 0}))
+    ntfy = respx.post("https://ntfy.sh").mock(return_value=httpx.Response(200))
+    async with httpx.AsyncClient() as http:
+        await send_dingtalk(
+            http, {"webhook_url": "https://oapi.dingtalk.com/robot/send?access_token=t", "secret": "S"}, n
+        )
+        await send_feishu(http, {"webhook_url": "https://open.feishu.cn/hook/x", "secret": "S"}, n)
+        await send_ntfy(http, {"topic": "fish"}, n)
+    assert "sign=" in str(ding.calls[0].request.url)
+    assert {"timestamp", "sign"} <= set(json.loads(fei.calls[0].request.content))
+    body = json.loads(ntfy.calls[0].request.content)
+    assert body == {"topic": "fish", "title": "中文标题", "message": "正文", "tags": ["fish"], "click": "https://u"}
+
+
+@respx.mock
+async def test_retry_dedupe_and_mask(admin_client, monkeypatch):
+    from app.notify import service as notify_service
+
+    monkeypatch.setattr(notify_service, "RETRY_DELAY_SECONDS", 0)
+    route = respx.post("https://hook.example.com/r").mock(
+        side_effect=[httpx.Response(502), httpx.Response(200), httpx.Response(200)]
+    )
+    await admin_client.post(
+        "/api/v1/notify/channels",
+        json={"name": "h", "type": "webhook", "config": {"url": "https://hook.example.com/r"}},
+    )
+    n = Notification(event=NotifyEvents.ACCOUNT_RISK, title="风控", content="x")
+    # 第一次 502 后自动重试成功
+    assert await notify(None, n, dedupe_key="k") == 1 and route.call_count == 2
+    # 冷却期内同一 key 不再发送
+    assert await notify(None, n, dedupe_key="k") == 0 and route.call_count == 2
+    # 4xx 是配置问题，不重试
+    route.side_effect = [httpx.Response(404)]
+    assert await notify(None, n) == 0 and route.call_count == 3
+
+    r = await admin_client.post(
+        "/api/v1/notify/channels",
+        json={"name": "sc", "type": "serverchan", "config": {"sendkey": "SCT1234567890abcdef"}},
+    )
+    assert "SCT1234567890abcdef" not in json.dumps(r.json())
+
+
+async def test_ownerless_events_only_reach_admins(admin_client):
+    from app.core.db import session_factory
+    from app.core.security import hash_password
+    from app.domains.system.models import Role, User
+    from app.notify.models import NotificationChannel
+    from app.notify.service import encode_config
+
+    async with session_factory()() as s:
+        member = User(username="m", password_hash=hash_password("x" * 12), role=Role.MEMBER)
+        s.add(member)
+        await s.flush()
+        s.add(
+            NotificationChannel(
+                owner_id=member.id, name="m", type="webhook", config_enc=encode_config({"url": "https://m"}), events=[]
+            )
+        )
+        await s.commit()
+    # 只有普通成员有渠道时，无归属事件不会发给他
+    assert await notify(None, Notification(event=NotifyEvents.ACCOUNT_RISK, title="t", content="c")) == 0

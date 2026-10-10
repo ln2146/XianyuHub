@@ -34,6 +34,7 @@ from app.runtime import get_runtime
 
 PROFILE_TTL = timedelta(hours=24)
 MAX_FAILURES_BEFORE_PAUSE = 3
+NOTIFY_DIGEST_MAX = 10  # 汇总通知里最多列出的商品数
 _locks: dict[int, asyncio.Lock] = {}
 
 
@@ -446,19 +447,38 @@ async def _notify_new_recommendations(task: MonitorTask) -> None:
         for res, _rec in rows:
             res.notified = True
         await s.commit()
-    for res, rec in rows:
+    if not rows:
+        return
+    if len(rows) == 1:
+        res, rec = rows[0]
         tag = "✅ 推荐" if res.verdict == Verdict.RECOMMEND else "🟡 有条件推荐"
         lines = [f"¥{rec.price:g}　{rec.area}　{deal_label(res.deal_score)}", res.reason]
         if res.need_confirm:
             lines.append("需确认：" + "、".join(res.need_confirm))
-        await notify(
-            task.owner_id,
-            Notification(
-                event=NotifyEvents.ITEM_RECOMMENDED,
-                title=f"{tag}｜{rec.title[:40]}",
-                content="\n".join(line for line in lines if line),
-                url=rec.link,
-                image_url=rec.image_url or None,
-            ),
+        n = Notification(
+            event=NotifyEvents.ITEM_RECOMMENDED,
+            title=f"{tag}｜{rec.title[:40]}",
+            content="\n".join(line for line in lines if line),
+            url=rec.link,
+            image_url=rec.image_url or None,
         )
+    else:
+        # 一次搜索出多件时合并成一条汇总（推荐在前、同级按价格从低到高），避免逐条推送刷屏 / 耗尽渠道额度
+        ordered = sorted(rows, key=lambda r: (r[0].verdict != Verdict.RECOMMEND, r[1].price or 0))
+        lines = []
+        for i, (res, rec) in enumerate(ordered[:NOTIFY_DIGEST_MAX], 1):
+            mark = "✅" if res.verdict == Verdict.RECOMMEND else "🟡"
+            lines.append(f"{i}. {mark} ¥{rec.price:g}　{rec.title[:30]}\n{rec.link}")
+        if len(ordered) > NOTIFY_DIGEST_MAX:
+            lines.append(f"……另有 {len(ordered) - NOTIFY_DIGEST_MAX} 件，请到「智能搜索」查看")
+        first = ordered[0][1]
+        n = Notification(
+            event=NotifyEvents.ITEM_RECOMMENDED,
+            title=f"✅ 「{task.name}」发现 {len(rows)} 件推荐",
+            content="\n".join(lines),
+            url=first.link,
+            image_url=first.image_url or None,
+        )
+    await notify(task.owner_id, n)
+    for _res, rec in rows:
         await bus.publish(Topics.MARKET_ITEM_RECOMMENDED, {"task_id": task.id, "item_id": rec.item_id})

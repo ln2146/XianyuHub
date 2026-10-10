@@ -1,8 +1,13 @@
 """各通知渠道的发送实现。每个 sender 接收统一的 Notification，自行转换为渠道格式。"""
 
 import asyncio
+import base64
+import hashlib
+import hmac
 import re
 import smtplib
+import time
+import urllib.parse
 from email.mime.text import MIMEText
 from typing import Any
 
@@ -19,7 +24,10 @@ class Notification(BaseModel):
 
 
 class SendError(Exception):
-    pass
+    def __init__(self, message: str, *, retryable: bool = False) -> None:
+        super().__init__(message)
+        # 服务端 5xx / 429 属于临时故障，值得重试；4xx 与业务错误码通常是配置问题，重试无用
+        self.retryable = retryable
 
 
 def _markdown(n: Notification) -> str:
@@ -38,7 +46,8 @@ def _plain(n: Notification) -> str:
 async def _post(http: httpx.AsyncClient, url: str, **kw: Any) -> httpx.Response:
     resp = await http.post(url, **kw)
     if resp.status_code >= 400:
-        raise SendError(f"HTTP {resp.status_code}: {resp.text[:200]}")
+        retryable = resp.status_code >= 500 or resp.status_code == 429
+        raise SendError(f"HTTP {resp.status_code}: {resp.text[:200]}", retryable=retryable)
     return resp
 
 
@@ -48,14 +57,32 @@ async def send_wecom(http: httpx.AsyncClient, cfg: dict, n: Notification) -> Non
         raise SendError(resp.text[:200])
 
 
+def feishu_sign(secret: str, timestamp: int) -> str:
+    """飞书自定义机器人「签名校验」：以 timestamp\\nsecret 为密钥对空串做 HmacSHA256。"""
+    key = f"{timestamp}\n{secret}".encode()
+    return base64.b64encode(hmac.new(key, b"", hashlib.sha256).digest()).decode()
+
+
+def dingtalk_signed_url(url: str, secret: str, timestamp_ms: int) -> str:
+    """钉钉自定义机器人「加签」：对 timestamp\\nsecret 做 HmacSHA256，结果拼到 Webhook 参数里。"""
+    digest = hmac.new(secret.encode(), f"{timestamp_ms}\n{secret}".encode(), hashlib.sha256).digest()
+    sign = urllib.parse.quote_plus(base64.b64encode(digest).decode())
+    return f"{url}{'&' if '?' in url else '?'}timestamp={timestamp_ms}&sign={sign}"
+
+
 async def send_feishu(http: httpx.AsyncClient, cfg: dict, n: Notification) -> None:
-    card = {
+    card: dict[str, Any] = {
         "msg_type": "interactive",
         "card": {
             "header": {"title": {"tag": "plain_text", "content": n.title}},
             "elements": [{"tag": "markdown", "content": n.content + (f"\n[查看详情]({n.url})" if n.url else "")}],
         },
     }
+    secret = (cfg.get("secret") or "").strip()
+    if secret:
+        ts = int(time.time())
+        card["timestamp"] = str(ts)
+        card["sign"] = feishu_sign(secret, ts)
     resp = await _post(http, cfg["webhook_url"], json=card)
     if resp.json().get("code", 0) != 0:
         raise SendError(resp.text[:200])
@@ -86,9 +113,11 @@ async def send_pushplus(http: httpx.AsyncClient, cfg: dict, n: Notification) -> 
 
 
 async def send_dingtalk(http: httpx.AsyncClient, cfg: dict, n: Notification) -> None:
-    resp = await _post(
-        http, cfg["webhook_url"], json={"msgtype": "markdown", "markdown": {"title": n.title, "text": _markdown(n)}}
-    )
+    url = cfg["webhook_url"]
+    secret = (cfg.get("secret") or "").strip()
+    if secret:
+        url = dingtalk_signed_url(url, secret, int(time.time() * 1000))
+    resp = await _post(http, url, json={"msgtype": "markdown", "markdown": {"title": n.title, "text": _markdown(n)}})
     if resp.json().get("errcode", 0) != 0:
         raise SendError(resp.text[:200])
 
@@ -112,19 +141,14 @@ async def send_bark(http: httpx.AsyncClient, cfg: dict, n: Notification) -> None
 
 
 async def send_ntfy(http: httpx.AsyncClient, cfg: dict, n: Notification) -> None:
-    headers = {"Title": n.title.encode("utf-8").decode("latin-1"), "Tags": "fish"}
+    # 用 JSON 方式发布：中文标题放在请求头里会乱码，JSON body 天然支持 UTF-8
+    body: dict[str, Any] = {"topic": cfg["topic"], "title": n.title, "message": n.content, "tags": ["fish"]}
     if n.url:
-        headers["Click"] = n.url
+        body["click"] = n.url
     if n.image_url:
-        headers["Attach"] = n.image_url
-    if cfg.get("token"):
-        headers["Authorization"] = f"Bearer {cfg['token']}"
-    await _post(
-        http,
-        cfg.get("server_url", "https://ntfy.sh").rstrip("/") + "/" + cfg["topic"],
-        content=n.content.encode(),
-        headers=headers,
-    )
+        body["attach"] = n.image_url
+    headers = {"Authorization": f"Bearer {cfg['token']}"} if cfg.get("token") else {}
+    await _post(http, (cfg.get("server_url") or "https://ntfy.sh").rstrip("/"), json=body, headers=headers)
 
 
 async def send_webhook(http: httpx.AsyncClient, cfg: dict, n: Notification) -> None:
@@ -138,8 +162,12 @@ async def send_email(http: httpx.AsyncClient, cfg: dict, n: Notification) -> Non
         msg["Subject"] = n.title
         msg["From"] = cfg["username"]
         msg["To"] = cfg["to"]
-        cls = smtplib.SMTP_SSL if cfg.get("ssl", True) else smtplib.SMTP
+        use_ssl = cfg.get("ssl", True)
+        cls = smtplib.SMTP_SSL if use_ssl else smtplib.SMTP
         with cls(cfg["host"], int(cfg.get("port", 465)), timeout=15) as smtp:
+            # 非 SSL 直连（通常是 587 端口）时先升级为 STARTTLS，主流邮箱都要求加密后才能登录
+            if not use_ssl and cfg.get("starttls", True):
+                smtp.starttls()
             smtp.login(cfg["username"], cfg["password"])
             smtp.send_message(msg)
 
@@ -162,10 +190,12 @@ SENDERS = {
 
 # 可选配置项及默认值（供管理台渲染表单）
 OPTIONAL_FIELDS: dict[str, dict[str, object]] = {
+    "feishu": {"secret": ""},
+    "dingtalk": {"secret": ""},
     "telegram": {"api_base": "https://api.telegram.org"},
     "ntfy": {"server_url": "https://ntfy.sh", "token": ""},
     "webhook": {"headers": {}},
-    "email": {"port": 465, "ssl": True},
+    "email": {"port": 465, "ssl": True, "starttls": True},
 }
 
 

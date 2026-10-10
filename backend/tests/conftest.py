@@ -5,6 +5,7 @@ from app.core.config import get_settings
 from app.core.crypto import get_vault
 from app.core.events import bus
 from app.intelligence.llm import set_config, set_llm
+from app.notify.service import reset_dedupe
 
 ADMIN_PASSWORD = "admin-pass-123"
 
@@ -24,6 +25,7 @@ def _env(tmp_path, monkeypatch):
     get_settings.cache_clear()
     get_vault.cache_clear()
     bus.clear()
+    reset_dedupe()
     set_llm(None)
     set_config(None)
     yield

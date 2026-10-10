@@ -99,6 +99,7 @@ async def on_guard_state_change(key: str, rt: Runtime, reason: str) -> None:
             Notification(
                 event=NotifyEvents.ACCOUNT_RISK, title=f"⚠️ 账号 {nickname} 触发风控", content=content, url=rt.punish_url
             ),
+            dedupe_key=f"account_risk:{key}",
         )
     elif rt.state == AccountState.NEED_LOGIN and account_id is not None:
         await notify(
@@ -108,6 +109,7 @@ async def on_guard_state_change(key: str, rt: Runtime, reason: str) -> None:
                 title=f"账号 {nickname} 登录已失效",
                 content="自动续期失败，请在管理台重新扫码登录。",
             ),
+            dedupe_key=f"account_login:{account_id}",
         )
 
 
