@@ -90,6 +90,7 @@ async def start_workers() -> None:
     scheduler.add_interval_job("goods.publish_due", goods_service.publish_due_drafts, seconds=60, jitter=5)
     scheduler.add_cron_job("goods.polish_all", goods_service.polish_all, "30 9 * * *")
     scheduler.add_interval_job("order.retry_failed", order_service.retry_failed, seconds=60, jitter=10)
+    scheduler.add_interval_job("order.remind_unshipped", order_service.remind_unshipped, seconds=30 * 60, jitter=60)
     scheduler.add_interval_job("order.sync", order_service.sync_all_auto_delivery, seconds=10 * 60, jitter=60)
     scheduler.start()
     manager = ImGatewayManager(message_service.handle_event)

@@ -65,6 +65,7 @@ class RemoteOrder(BaseModel):
     receiver_name: str = ""
     receiver_phone: str = ""
     receiver_address: str = ""
+    deliver_url: str = ""  # 手机端「去发货」页（闲鱼 App 扫码打开，选快递、填运单号）
     created_at: datetime | None = None
 
 
@@ -132,6 +133,8 @@ def parse_order_detail(order_id: str, data: dict[str, Any]) -> RemoteOrder:
             order.receiver_name = cd.get("name") or ""
             order.receiver_phone = cd.get("phoneNumber") or ""
             order.receiver_address = cd.get("address") or ""
+            url = dig(cd, "rightButton", "clickEvent", "data", "url", default="") or ""
+            order.deliver_url = url if url.startswith("https://") else ""
         elif render == "orderStatusVO":
             title = dig(cd, "orderStatusInfo", "title", default="") or ""
             nodes = cd.get("orderStatusNodeList") or []

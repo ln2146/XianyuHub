@@ -121,6 +121,8 @@ class Order(IdMixin, TimestampMixin, Base):
     fail_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
     next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # 实物订单付款后长时间未发货的提醒（每单只提醒一次）
+    ship_reminded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     rated: Mapped[bool] = mapped_column(Boolean, default=False)
 
 

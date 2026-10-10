@@ -230,12 +230,105 @@ async def handle_paid(order_pk: int, *, confirmed: bool = False) -> None:
         acc = await s.get(XyAccount, account_id)
         settings = acc.get_settings()
         title, amount = order.item_title or order.item_id, order.amount
+        self_ship = order.id in await self_ship_order_ids(s, [order])
     await bus.publish(Topics.ORDER_PAID, {"account_id": account_id, "order_pk": order_pk})
-    await _notify_owner(
-        account_id, NotifyEvents.ORDER_PAID, f"💰 新订单已付款：{title}", f"金额：{amount}　订单号：{order_id}"
-    )
+    if self_ship:
+        # 实物商品：网页端没有填运单号发货的功能，提醒卖家去 App 发货（推送里不带收货地址）
+        await _notify_owner(
+            account_id,
+            NotifyEvents.ORDER_PAID,
+            f"📦 实物订单待发货：{title}",
+            f"金额：{amount}　订单号：{order_id}\n买家已付款，请尽快在闲鱼 App 里发货；"
+            "收货信息和扫码去发货在管理台「订单管理」里查看。",
+        )
+    else:
+        await _notify_owner(
+            account_id, NotifyEvents.ORDER_PAID, f"💰 新订单已付款：{title}", f"金额：{amount}　订单号：{order_id}"
+        )
     if settings.auto_delivery:
         await deliver(order_pk)
+
+
+# ---------------------------------------------------------------- 实物订单：卖家自己发货
+# 网页端没有填运单号发货的接口，只能在闲鱼 App 发货。这里负责识别、提醒和提供收货信息。
+SHIP_REMIND_AFTER = timedelta(hours=24)
+DELIVER_PAGE = (
+    "https://h5.m.goofish.com/wow/moyu/moyu-project/idle-logistics/pages/idleDeliver"
+    "?kun=true&titleVisible=false&useCusFont=true&orderId={order_id}"
+)
+
+
+async def self_ship_order_ids(s: AsyncSession, orders: list[Order]) -> set[int]:
+    """已付款、商品不是虚拟商品、也没有关联发货内容：需要卖家自己寄出的订单。"""
+    paid = [o for o in orders if o.status == OrderState.PAID and o.item_id]
+    if not paid:
+        return set()
+    owners = dict(
+        (
+            await s.execute(
+                select(XyAccount.id, XyAccount.owner_id).where(XyAccount.id.in_({o.account_id for o in paid}))
+            )
+        ).all()
+    )
+    item_ids = {o.item_id for o in paid}
+    bindings = (
+        await s.execute(
+            select(CardBinding.owner_id, CardBinding.item_id, CardBinding.account_id).where(
+                CardBinding.item_id.in_(item_ids)
+            )
+        )
+    ).all()
+    virtual = {
+        (a, i)
+        for a, i in (
+            await s.execute(
+                select(MyItem.account_id, MyItem.item_id).where(
+                    MyItem.item_id.in_(item_ids), MyItem.is_virtual.is_(True)
+                )
+            )
+        ).all()
+    }
+    out = set()
+    for o in paid:
+        if (o.account_id, o.item_id) in virtual:
+            continue
+        owner = owners.get(o.account_id)
+        if any(
+            b_owner == owner and b_item == o.item_id and b_acc in (None, o.account_id)
+            for b_owner, b_item, b_acc in bindings
+        ):
+            continue
+        out.add(o.id)
+    return out
+
+
+async def remind_unshipped() -> int:
+    """实物订单付款超过 24 小时仍未发货：提醒一次，避免超时被投诉。"""
+    cutoff = datetime.now(UTC) - SHIP_REMIND_AFTER
+    async with session_factory()() as s:
+        candidates = list(
+            (
+                await s.execute(
+                    select(Order).where(
+                        Order.status == OrderState.PAID, Order.ship_reminded_at.is_(None), Order.paid_at.is_not(None)
+                    )
+                )
+            ).scalars()
+        )
+        due = [o for o in candidates if _aware(o.paid_at) <= cutoff]
+        targets = [o for o in due if o.id in await self_ship_order_ids(s, due)]
+        for o in targets:
+            o.ship_reminded_at = datetime.now(UTC)
+        await s.commit()
+        items = [(o.account_id, o.order_id, o.item_title or o.item_id) for o in targets]
+    for account_id, order_id, title in items:
+        await _notify_owner(
+            account_id,
+            NotifyEvents.ORDER_PAID,
+            f"⏰ 实物订单超过 24 小时未发货：{title}",
+            f"订单号：{order_id}\n买家付款已超过 24 小时，请尽快在闲鱼 App 里发货，避免超时被投诉。",
+        )
+    return len(items)
 
 
 # ---------------------------------------------------------------- 发货

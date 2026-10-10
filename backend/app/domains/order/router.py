@@ -26,6 +26,7 @@ from app.domains.order.models import (
 from app.domains.system.audit import record_audit
 from app.goofish.errors import GoofishError
 from app.intelligence.llm import LLMError, LLMUnavailable, get_llm
+from app.runtime import get_runtime
 
 router = APIRouter(tags=["orders"])
 
@@ -52,6 +53,7 @@ class OrderOut(BaseModel):
     fail_reason: str | None
     retry_count: int
     created_at: datetime
+    self_ship: bool = False  # 实物订单，需要卖家自己在闲鱼 App 发货
 
 
 class PoolIn(BaseModel):
@@ -150,7 +152,7 @@ async def list_orders(
     q: str | None = None,
     limit: int = Query(50, le=200),
     offset: int = 0,
-) -> list[Order]:
+) -> list[OrderOut]:
     ids = await accessible_account_ids(session, user)
     stmt = select(Order).order_by(Order.id.desc())
     if ids is not None:
@@ -184,7 +186,8 @@ async def list_orders(
                 healed = True
     if healed:
         await session.commit()
-    return orders
+    self_ship = await service.self_ship_order_ids(session, orders)
+    return [OrderOut.model_validate(o).model_copy(update={"self_ship": o.id in self_ship}) for o in orders]
 
 
 @router.get("/orders/{order_pk}")
@@ -208,8 +211,9 @@ async def get_order(order_pk: int, user: CurrentUser, session: SessionDep) -> di
     records = await session.execute(
         select(DeliveryRecord).where(DeliveryRecord.order_pk == order.id).order_by(DeliveryRecord.id)
     )
+    self_ship = order.id in await service.self_ship_order_ids(session, [order])
     return {
-        "order": OrderOut.model_validate(order).model_dump(),
+        "order": OrderOut.model_validate(order).model_copy(update={"self_ship": self_ship}).model_dump(),
         "deliveries": [
             {
                 "id": r.id,
@@ -223,6 +227,32 @@ async def get_order(order_pk: int, user: CurrentUser, session: SessionDep) -> di
             }
             for r in records.scalars()
         ],
+    }
+
+
+@router.get("/orders/{order_pk}/shipping")
+async def shipping_info(order_pk: int, user: CurrentUser, session: SessionDep) -> dict[str, Any]:
+    """实物订单的收货信息与手机端「去发货」链接（实时向闲鱼查询，不在本地保存地址）。"""
+    order = await _own_order(session, user, order_pk)
+    try:
+        remote = await get_runtime().gateway.get_order_detail(order.account_id, order.order_id)
+    except GoofishError as e:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"获取收货信息失败：{e}") from e
+    await record_audit(
+        "order.view_address",
+        user_id=user.id,
+        actor_type="human",
+        account_id=order.account_id,
+        target_type="order",
+        target_id=order.order_id,
+    )
+    return {
+        "name": remote.receiver_name,
+        "phone": remote.receiver_phone,
+        "address": remote.receiver_address,
+        # 用闲鱼 App 扫码打开即是这笔订单的发货页（选快递、填运单号）
+        "deliver_url": remote.deliver_url or service.DELIVER_PAGE.format(order_id=order.order_id),
+        "status_text": remote.status_text,
     }
 
 

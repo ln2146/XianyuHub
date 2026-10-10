@@ -444,3 +444,68 @@ async def test_manual_order_sync_completed_and_manual_resolve(admin_client, im):
         assert await order_service.transition(s, o, local)
         await s.commit()
         assert o.status == OrderState.COMPLETED
+
+
+DETAIL_PHYSICAL = {
+    "components": [
+        {"render": "orderInfoVO", "data": {"itemInfo": {"itemId": "900", "price": "39", "title": "当代齐民要术"}}},
+        {"render": "orderStatusVO", "data": {"orderStatusInfo": {"title": "等待卖家发货"}}},
+        {
+            "render": "addressInfoVO",
+            "data": {
+                "name": "张三",
+                "phoneNumber": "13800000000",
+                "address": "上海市黄浦区人民大道 1 号",
+                "rightButton": {
+                    "clickEvent": {"data": {"url": "https://h5.m.goofish.com/x/idleDeliver?orderId=4400301"}}
+                },
+            },
+        },
+    ]
+}
+
+
+@respx.mock
+async def test_physical_order_waits_for_seller_with_address_and_reminder(admin_client, im):  # noqa: F811
+    account_id, fake = im
+    hook = respx.post("https://hook.example.com/ship").mock(return_value=httpx.Response(200))
+    await admin_client.post(
+        "/api/v1/notify/channels",
+        json={"name": "h", "type": "webhook", "config": {"url": "https://hook.example.com/ship"}},
+    )
+    await enable_auto_delivery(admin_client, account_id)
+    mock_trade(detail=DETAIL_PHYSICAL)
+    await receive(account_id, chat("在吗"))
+    await paid(account_id, "4400301")
+
+    order = (await admin_client.get("/api/v1/orders")).json()[0]
+    assert order["status"] == "paid" and order["self_ship"] is True and len(fake.sent) == 0
+    sent = [c.request.content.decode() for c in hook.calls]
+    assert any("实物订单待发货" in t for t in sent)
+    assert not any("13800000000" in t or "人民大道" in t for t in sent)  # 推送里不带收货信息
+
+    info = (await admin_client.get(f"/api/v1/orders/{order['id']}/shipping")).json()
+    assert info["name"] == "张三" and info["phone"] == "13800000000" and "人民大道" in info["address"]
+    assert info["deliver_url"].startswith("https://h5.m.goofish.com/") and "4400301" in info["deliver_url"]
+
+    # 付款超过 24 小时仍未发货：提醒一次
+    async with session_factory()() as s:
+        o = await s.get(Order, order["id"])
+        o.paid_at = datetime.now(UTC) - timedelta(hours=25)
+        await s.commit()
+    hook.calls.reset()
+    assert await order_service.remind_unshipped() == 1
+    assert await order_service.remind_unshipped() == 0
+    assert any("超过 24 小时未发货" in c.request.content.decode() for c in hook.calls)
+
+
+@respx.mock
+async def test_bound_or_virtual_orders_are_not_self_ship(admin_client, im):  # noqa: F811
+    account_id, fake = im
+    await setup_delivery(admin_client, account_id, cards="C1")
+    await admin_client.patch(f"/api/v1/accounts/{account_id}", json={"settings": {"auto_delivery": False}})
+    mock_trade()
+    await receive(account_id, chat("在吗"))
+    await paid(account_id, "4400302")
+    order = (await admin_client.get("/api/v1/orders")).json()[0]
+    assert order["status"] == "paid" and order["self_ship"] is False  # 关联了发货内容：不是自己寄的实物
