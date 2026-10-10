@@ -188,7 +188,7 @@ const eventGroups: EventGroup[] = [
   {
     name: '交易与订单',
     icon: Tickets,
-    events: ['order_paid', 'delivery_failed', 'stock_low'],
+    events: ['order_paid', 'delivery_failed', 'stock_low', 'item_relisted'],
   },
   {
     name: '买家与客服',

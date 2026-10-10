@@ -126,6 +126,7 @@ export const notifyEventMap: Record<string, string> = {
   delivery_failed: '发货失败',
   stock_low: '库存不足',
   task_failed: '任务失败',
+  item_relisted: '卖完自动重新上架',
 }
 
 export const notifyTypeMap: Record<string, string> = {
