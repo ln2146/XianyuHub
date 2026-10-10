@@ -169,3 +169,32 @@ export interface ConversationContext {
 export const getConversationContext = (convId: number) =>
   http.get<ConversationContext>(`/messages/conversations/${convId}/context`).then((r) => r.data)
 
+
+// ---------------------------------------------------------------- AI 回复：试运行与资料
+/** 「自动回复」页试运行：不需要已有会话 */
+export const aiTrial = (account_id: number, text: string, item_id?: string | null) =>
+  http
+    .post<ReplyPlan & { used_docs?: boolean }>('/messages/ai-trial', { account_id, text, item_id: item_id || null }, { timeout: 120_000 })
+    .then((r) => r.data)
+
+export interface KnowledgeDoc {
+  id: number
+  /** 为空表示所有账号通用 */
+  account_id: number | null
+  name: string
+  chars: number
+  preview: string
+  enabled: boolean
+  created_at: string
+}
+
+export const listKnowledgeDocs = () => http.get<KnowledgeDoc[]>('/messages/knowledge-docs').then((r) => r.data)
+export const uploadKnowledgeDoc = (file: File, account_id: number | null) => {
+  const fd = new FormData()
+  fd.append('file', file)
+  if (account_id !== null) fd.append('account_id', String(account_id))
+  return http.post<KnowledgeDoc>('/messages/knowledge-docs', fd, { timeout: 120_000 }).then((r) => r.data)
+}
+export const updateKnowledgeDoc = (id: number, body: { enabled?: boolean; account_id?: number; all_accounts?: boolean }) =>
+  http.patch<KnowledgeDoc>(`/messages/knowledge-docs/${id}`, body).then((r) => r.data)
+export const deleteKnowledgeDoc = (id: number) => http.delete(`/messages/knowledge-docs/${id}`)

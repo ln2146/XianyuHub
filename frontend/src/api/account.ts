@@ -6,6 +6,8 @@ export interface AccountSettings {
   auto_reply: boolean
   keyword_reply: boolean
   ai_mode: 'off' | 'suggest' | 'auto'
+  /** 给 AI 的说明：店铺情况、语气、发货与售后规则等 */
+  ai_instructions?: string
   takeover_minutes: number
   reply_delay_min: number
   reply_delay_max: number

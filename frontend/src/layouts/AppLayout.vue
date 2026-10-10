@@ -38,7 +38,7 @@ const breadcrumb = computed(() => {
     return [{ label: '订单发货' }, { label: sub }]
   }
   if (p.startsWith('/messages')) {
-    const sub = p.includes('inbox') ? '在线客服' : '回复规则'
+    const sub = p.includes('inbox') ? '在线客服' : '自动回复'
     return [{ label: '消息中心' }, { label: sub }]
   }
   if (['/accounts', '/llm', '/notify', '/system'].some((x) => p.startsWith(x))) {

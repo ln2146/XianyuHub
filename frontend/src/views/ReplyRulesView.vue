@@ -7,6 +7,7 @@ import { createRule, deleteRule, listRules, updateRule, type RuleIn, type RuleOu
 import { updateAccount, type Account } from '@/api/account'
 import { useAccountsStore } from '@/stores/accounts'
 import { useMobile } from '@/composables/useMobile'
+import AiReplyPanel from '@/components/AiReplyPanel.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import { accountStatusMap } from '@/utils/format'
 
@@ -122,6 +123,32 @@ async function toggleAccountAutoReply(a: Account, val: boolean) {
   }
 }
 
+// AI 回复由卖家自己选择开启；选「自动发送」时一并打开总开关（总开关关闭时 AI 不会发出任何消息）
+const aiModeOptions = [
+  { label: '关闭', value: 'off' },
+  { label: '建议', value: 'suggest' },
+  { label: '自动发送', value: 'auto' },
+]
+async function setAiMode(a: Account, mode: 'off' | 'suggest' | 'auto') {
+  busyAccount[`ai-${a.id}`] = true
+  try {
+    const settings = mode === 'auto' ? { ai_mode: mode, auto_reply: true } : { ai_mode: mode }
+    await updateAccount(a.id, { settings })
+    Object.assign(a.settings, settings)
+    ElMessage.success(
+      mode === 'off'
+        ? 'AI 回复已关闭，只按关键词规则回复'
+        : mode === 'suggest'
+          ? 'AI 会在收件箱给出回复建议，由你确认后发送'
+          : 'AI 回复已开启：关键词没命中时由 AI 自动回复',
+    )
+  } catch {
+    /* 拦截器已处理 */
+  } finally {
+    busyAccount[`ai-${a.id}`] = false
+  }
+}
+
 async function toggleAccountKeywordReply(a: Account, val: boolean) {
   busyAccount[`kw-${a.id}`] = true
   try {
@@ -225,7 +252,7 @@ async function quickEnableTemplate(tpl: PresetTemplate) {
   <div class="page rules-page">
     <div class="page-head">
       <div>
-        <h2>消息中心 · 回复规则</h2>
+        <h2>消息中心 · 自动回复</h2>
       </div>
       <div class="toolbar">
         <el-button :icon="Refresh" :loading="loading" round @click="load">刷新列表</el-button>
@@ -238,7 +265,7 @@ async function quickEnableTemplate(tpl: PresetTemplate) {
       <div class="acc-card-head">
         <div class="acc-card-title">
           <el-icon class="title-icon"><Setting /></el-icon>
-          <span>闲鱼账号自动回复状态</span>
+          <span>各账号的自动回复</span>
         </div>
         <el-link type="primary" class="smaller" @click="router.push('/accounts')">前往账号配置 &gt;</el-link>
       </div>
@@ -287,10 +314,22 @@ async function quickEnableTemplate(tpl: PresetTemplate) {
                 @change="(v: string | number | boolean) => toggleAccountKeywordReply(a, !!v)"
               />
             </div>
+            <div class="switch-col">
+              <span class="sw-label">AI 回复</span>
+              <el-segmented
+                :model-value="a.settings?.ai_mode ?? 'off'"
+                :options="aiModeOptions"
+                size="small"
+                :disabled="busyAccount[`ai-${a.id}`]"
+                @change="(v: string | number | boolean) => setAiMode(a, v as 'off' | 'suggest' | 'auto')"
+              />
+            </div>
           </div>
         </div>
       </div>
     </el-card>
+
+    <AiReplyPanel />
 
     <!-- 规则表格区域 (满高自适应，无规则时展示快速冷启动面板) -->
     <el-card shadow="never" class="table-card">
@@ -466,13 +505,16 @@ async function quickEnableTemplate(tpl: PresetTemplate) {
 }
 .acc-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  /* 每个账号一行三组开关（总开关 / 关键词 / AI 回复），需要更宽的卡片 */
+  grid-template-columns: repeat(auto-fill, minmax(min(460px, 100%), 1fr));
   gap: 10px;
 }
 .acc-item-card {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--xh-space-3);
   padding: 8px 12px;
   background: #f8fafc;
   border: 1px solid #e2e8f0;
@@ -482,7 +524,8 @@ async function quickEnableTemplate(tpl: PresetTemplate) {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-width: 0;
+  min-width: 120px;
+  flex: 1;
 }
 .acc-avatar {
   width: 32px;
@@ -524,8 +567,9 @@ async function quickEnableTemplate(tpl: PresetTemplate) {
 }
 .acc-item-switches {
   display: flex;
-  gap: 12px;
+  gap: 16px;
   align-items: center;
+  flex-shrink: 0;
 }
 .switch-col {
   display: flex;

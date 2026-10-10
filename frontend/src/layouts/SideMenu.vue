@@ -116,7 +116,7 @@ const activeMenu = computed(() => {
       </el-menu-item>
       <el-menu-item index="/messages/rules">
         <el-icon class="sub-icon"><Operation /></el-icon>
-        <template #title><span>回复规则</span></template>
+        <template #title><span>自动回复</span></template>
       </el-menu-item>
     </el-sub-menu>
 
