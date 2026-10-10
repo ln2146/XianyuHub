@@ -16,9 +16,20 @@ async function init() {
   const names = new Set(cookies.map((c) => c.name));
   const loggedIn = ["unb", "cookie2", "_m_h5_tk"].every((n) => names.has(n));
   const nick = cookies.find((c) => c.name === "tracknick");
-  $("status").innerHTML = loggedIn
-    ? `<span class="ok">已检测到登录态</span>${nick ? "（" + decodeURIComponent(nick.value) + "）" : ""}`
-    : `<span class="bad">未检测到完整登录态</span>，请先登录 goofish.com`;
+  // 用 DOM 节点拼装，不把 Cookie 里的昵称交给 HTML 解析
+  const status = $("status");
+  const tag = document.createElement("span");
+  tag.className = loggedIn ? "ok" : "bad";
+  tag.textContent = loggedIn ? "已检测到登录态" : "未检测到完整登录态";
+  let tail = loggedIn ? "" : "，请先登录 goofish.com";
+  if (loggedIn && nick) {
+    try {
+      tail = "（" + decodeURIComponent(nick.value) + "）";
+    } catch {
+      tail = "（" + nick.value + "）";
+    }
+  }
+  status.replaceChildren(tag, document.createTextNode(tail));
   const saved = await chrome.storage.local.get(["server", "token"]);
   $("server").value = saved.server || "";
   $("token").value = saved.token || "";

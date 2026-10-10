@@ -20,6 +20,7 @@ import {
 } from '@element-plus/icons-vue'
 
 import { useAccountsStore } from '@/stores/accounts'
+import { useAuthStore } from '@/stores/auth'
 import { usePrefsStore } from '@/stores/prefs'
 import { useRealtimeStore } from '@/stores/realtime'
 
@@ -30,6 +31,7 @@ const unreadCount = computed(() => realtime.totalUnread)
 
 // 有账号掉登录 / 被限制 / 消息断线时在「账号配置」上标红点：否则卖家要等发现没自动回复才知道
 const accounts = useAccountsStore()
+const auth = useAuthStore()
 const accountAlerts = computed(() => accounts.attention.length)
 let healthTimer: number | undefined
 onMounted(() => {
@@ -138,7 +140,7 @@ const activeMenu = computed(() => {
           </div>
         </template>
       </el-menu-item>
-      <el-menu-item index="/llm">
+      <el-menu-item v-if="auth.isAdmin" index="/llm">
         <el-icon class="sub-icon"><MagicStick /></el-icon>
         <template #title><span>模型配置</span></template>
       </el-menu-item>

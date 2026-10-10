@@ -34,7 +34,7 @@ const routes: RouteRecordRaw[] = [
       { path: 'orders/list', component: () => import('@/views/OrdersView.vue'), meta: { title: '订单管理' } },
       { path: 'orders/cards', component: () => import('@/views/CardsView.vue'), meta: { title: '自动发货' } },
       { path: 'notify', component: () => import('@/views/NotifyView.vue'), meta: { title: '通知设置' } },
-      { path: 'llm', component: () => import('@/views/LlmView.vue'), meta: { title: '模型配置' } },
+      { path: 'llm', component: () => import('@/views/LlmView.vue'), meta: { title: '模型配置', adminOnly: true } },
       { path: 'system', component: () => import('@/views/SystemView.vue'), meta: { title: '系统设置' } },
     ],
   },
