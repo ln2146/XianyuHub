@@ -403,7 +403,7 @@ onBeforeUnmount(stopQrPoll)
   <div class="page">
     <div class="page-head">
       <div>
-        <h2>账号中心</h2>
+        <h2>账号配置</h2>
       </div>
       <div class="toolbar">
         <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>

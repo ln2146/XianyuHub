@@ -226,7 +226,7 @@ onMounted(() => {
   <div class="page">
     <div class="page-head">
       <div>
-        <h2>系统</h2>
+        <h2>系统设置</h2>
         <div class="sub">当前用户：{{ auth.user?.username }}（{{ roleMap[auth.user?.role || ''] || auth.user?.role }}）</div>
       </div>
     </div>
