@@ -14,14 +14,11 @@ import {
   Money,
   Plus,
   Promotion,
-  Reading,
   Refresh,
   Right,
-  Search,
   Setting,
   Timer,
   Tools,
-  TrendCharts,
   User,
   UserFilled,
   Warning,
@@ -31,27 +28,15 @@ import { updateAccount } from '@/api/account'
 import { ElMessage } from 'element-plus'
 import StatusTag from '@/components/StatusTag.vue'
 import { NEEDS_ACTION_STATUSES, accountStatusMap, fmtMoney, fmtTime } from '@/utils/format'
+import { usePrefsStore } from '@/stores/prefs'
 
 const router = useRouter()
 const realtime = useRealtimeStore()
+const prefs = usePrefsStore()
 const data = ref<Dashboard | null>(null)
 const loading = ref(false)
-const quickKeyword = ref('')
-const activeTab = ref<'accounts' | 'search' | 'system'>('accounts')
+const activeTab = ref<'accounts' | 'system'>('accounts')
 let timer: number | undefined
-
-function goToSearch() {
-  const kw = quickKeyword.value.trim()
-  if (!kw) {
-    router.push('/radar/search')
-    return
-  }
-  router.push({ path: '/radar/search', query: { q: kw } })
-}
-
-function searchByKeyword(kw: string) {
-  router.push({ path: '/radar/search', query: { q: kw } })
-}
 
 async function load() {
   loading.value = true
@@ -112,7 +97,7 @@ const kpis = computed(() => {
   const t = data.value?.today
   const orders = t ? Object.values(t.orders).reduce((a, b) => a + b, 0) : 0
   const radar = t ? (t.radar.recommend || 0) + (t.radar.conditional || 0) : 0
-  return [
+  const list = [
     {
       label: '今日买家消息',
       value: t?.messages_in ?? 0,
@@ -158,7 +143,9 @@ const kpis = computed(() => {
       bg: 'rgba(234, 179, 8, 0.1)',
       path: '/orders/list',
     },
-    {
+  ]
+  if (prefs.showBuyer && radar > 0) {
+    list.push({
       label: '选品雷达推荐',
       value: radar,
       hint: `捡漏 ${t?.radar.recommend || 0} · 需核 ${t?.radar.conditional || 0}`,
@@ -166,8 +153,9 @@ const kpis = computed(() => {
       color: '#06b6d4',
       bg: 'rgba(6, 182, 212, 0.1)',
       path: '/radar/smart',
-    },
-  ]
+    })
+  }
+  return list
 })
 
 const llm = computed(() => data.value?.system.llm)
@@ -316,19 +304,6 @@ function fmtJobNextRun(v: string | null | undefined): string {
             <el-icon class="seg-icon"><UserFilled /></el-icon>
             <span class="seg-label">闲鱼账号与风控</span>
             <span v-if="data?.accounts.length" class="seg-counter-badge">{{ data.accounts.length }}</span>
-          </button>
-
-          <button
-            type="button"
-            class="seg-nav-item"
-            :class="{ 'is-active': activeTab === 'search' }"
-            role="tab"
-            :aria-selected="activeTab === 'search'"
-            @click="activeTab = 'search'"
-          >
-            <el-icon class="seg-icon"><Search /></el-icon>
-            <span class="seg-label">闲鱼实时找货</span>
-            <span class="seg-tag-pill">免建监控</span>
           </button>
 
           <button
@@ -623,165 +598,6 @@ function fmtJobNextRun(v: string | null | undefined): string {
           </div>
         </div>
 
-        <!-- 页面 2: 闲鱼实时找货引擎 -->
-        <div v-show="activeTab === 'search'" class="tab-pane-view">
-
-          <div class="tab-search-wrapper">
-            <!-- 找货 Hero 卡片 -->
-            <div class="search-hero-card">
-              <div class="hero-top-row">
-                <div class="hero-brand">
-                  <div class="search-badge-icon">
-                    <el-icon :size="20"><Search /></el-icon>
-                  </div>
-                  <div>
-                    <h3 class="hero-title">
-                      闲鱼全量一手货源实时探索
-                      <el-tag size="small" type="success" effect="plain" class="hero-tag">免建监控 · 即搜即看</el-tag>
-                    </h3>
-                  </div>
-                </div>
-
-                <div class="hero-input-box">
-                  <el-input
-                    v-model="quickKeyword"
-                    placeholder="输入商品型号（如 iPhone 15、MacBook M1、Switch OLED），回车立即搜索"
-                    size="large"
-                    clearable
-                    class="custom-hero-input"
-                    @keyup.enter="goToSearch"
-                  >
-                    <template #append>
-                      <el-button type="primary" :icon="Search" class="hero-submit-btn" @click="goToSearch">
-                        立即找货
-                      </el-button>
-                    </template>
-                  </el-input>
-                </div>
-              </div>
-
-              <!-- 分类热门关键词 -->
-              <div class="hero-hot-section">
-                <span class="hot-label">热门搜索：</span>
-                <div class="hot-chips-list">
-                  <span
-                    v-for="k in ['MacBook M1', 'iPhone 15', 'Switch OLED', 'PS5', '显卡 RTX', 'iPad Air', 'AirPods Pro', '机械键盘']"
-                    :key="k"
-                    class="hot-chip"
-                    @click="searchByKeyword(k)"
-                  >
-                    {{ k }}
-                  </span>
-                </div>
-                <el-button link type="primary" size="small" class="jump-radar-btn" @click="router.push('/radar/search')">
-                  进入完整选品雷达工作台 &gt;
-                </el-button>
-              </div>
-            </div>
-
-            <!-- 3 大核心业务入口卡片 (紧凑精致，带明确操作指引) -->
-            <div class="radar-workflow-grid">
-              <div class="workflow-card" @click="router.push('/radar/search')">
-                <div class="wf-icon-wrap icon-blue">
-                  <el-icon :size="20"><Search /></el-icon>
-                </div>
-                <div class="wf-content">
-                  <div class="wf-name">实时搜货</div>
-                  <div class="wf-desc">秒级同步闲鱼一手货源、底价与卖家信誉</div>
-                </div>
-                <div class="wf-action-pill">
-                  <span>立即搜货</span>
-                  <el-icon><Right /></el-icon>
-                </div>
-              </div>
-
-              <div class="workflow-card" @click="router.push('/radar/smart')">
-                <div class="wf-icon-wrap icon-purple">
-                  <el-icon :size="20"><Aim /></el-icon>
-                </div>
-                <div class="wf-content">
-                  <div class="wf-name">智能搜索 · 盯价</div>
-                  <div class="wf-desc">定时自动巡检好货并 AI 深度分析，到价即提醒</div>
-                </div>
-                <div class="wf-action-pill">
-                  <span>管理任务</span>
-                  <el-icon><Right /></el-icon>
-                </div>
-              </div>
-
-              <div class="workflow-card" @click="router.push('/radar/smart')">
-                <div class="wf-icon-wrap icon-emerald">
-                  <el-icon :size="20"><Promotion /></el-icon>
-                </div>
-                <div class="wf-content">
-                  <div class="wf-name">一键转手发品</div>
-                  <div class="wf-desc">从搜索结果中捕捉套利差价，带加价率生成文案</div>
-                </div>
-                <div class="wf-action-pill">
-                  <span>去挑选</span>
-                  <el-icon><Right /></el-icon>
-                </div>
-              </div>
-            </div>
-
-            <!-- 下半部分：热门类目探索矩阵与捡漏技巧 (充满视口，丰富实用) -->
-            <div class="radar-discover-board">
-              <div class="discover-col category-col">
-                <div class="discover-head">
-                  <span class="d-title"><el-icon><TrendCharts /></el-icon> 热门货源分类探索</span>
-                  <span class="d-sub">点击关键词直达全网最新挂牌底价</span>
-                </div>
-                <div class="category-matrix">
-                  <div class="cat-group">
-                    <span class="cat-group-name">数码轻奢：</span>
-                    <div class="cat-chips">
-                      <span v-for="it in ['MacBook Air M1', 'iPhone 15 Pro', 'iPad Air 5', 'AirPods Pro 2']" :key="it" class="d-chip" @click="searchByKeyword(it)">{{ it }}</span>
-                    </div>
-                  </div>
-                  <div class="cat-group">
-                    <span class="cat-group-name">游戏电竞：</span>
-                    <div class="cat-chips">
-                      <span v-for="it in ['Switch OLED', 'PS5 光驱版', 'Steam Deck', 'RTX 4070']" :key="it" class="d-chip" @click="searchByKeyword(it)">{{ it }}</span>
-                    </div>
-                  </div>
-                  <div class="cat-group">
-                    <span class="cat-group-name">外设潮物：</span>
-                    <div class="cat-chips">
-                      <span v-for="it in ['机械键盘 客制化', '索尼微单', '佳能 G7X', '大疆无人机']" :key="it" class="d-chip" @click="searchByKeyword(it)">{{ it }}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div class="discover-col tips-col">
-                <div class="discover-head">
-                  <span class="d-title"><el-icon><Reading /></el-icon> 闲鱼选品捡漏指南</span>
-                  <span class="d-sub">提升选品成功率与防踩坑小贴士</span>
-                </div>
-                <div class="tips-list">
-                  <div class="tip-item">
-                    <span class="tip-dot" />
-                    <div class="tip-content">
-                      <span class="tip-strong">善用「仅看个人闲置」</span>：过滤 90% 批量加价铺货与引流号，直达一手卖家原装自用。
-                    </div>
-                  </div>
-                  <div class="tip-item">
-                    <span class="tip-dot" />
-                    <div class="tip-content">
-                      <span class="tip-strong">设置合理价格区间</span>：过滤超低价钓鱼与配件引流品，例如 M1 笔记本锁定在 2500~3800 元。
-                    </div>
-                  </div>
-                  <div class="tip-item">
-                    <span class="tip-dot" />
-                    <div class="tip-content">
-                      <span class="tip-strong">结合「价格监控」</span>：遇到心仪商品先加监控盯价，卖家多次降价时系统秒级提醒，把握最佳入手时机。
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
 
         <!-- 页面 3: AI 引擎与系统底座服务 -->
         <div v-show="activeTab === 'system'" class="tab-pane-view">
@@ -1804,116 +1620,6 @@ function fmtJobNextRun(v: string | null | undefined): string {
   margin-top: 2px;
 }
 
-/* Tab 2 找货面板满屏自适应 */
-.tab-search-wrapper {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.search-hero-card {
-  background: linear-gradient(135deg, #f0fdf4 0%, #ffffff 50%, #eff6ff 100%);
-  border: 1px solid rgba(16, 185, 129, 0.25);
-  border-radius: 10px;
-  padding: 16px 20px;
-  box-shadow: 0 2px 10px rgba(16, 185, 129, 0.04);
-}
-.hero-top-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  flex-wrap: wrap;
-}
-.hero-brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.search-badge-icon {
-  width: 36px;
-  height: 36px;
-  background: #10b981;
-  color: #ffffff;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
-}
-.hero-title {
-  font-size: 16px;
-  font-weight: 700;
-  color: #0f172a;
-  margin: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.hero-tag {
-  font-weight: 500;
-}
-.hero-subtitle {
-  font-size: 12px;
-  color: #64748b;
-  margin: 3px 0 0;
-}
-.hero-input-box {
-  flex: 1;
-  min-width: 280px;
-  max-width: 620px;
-}
-.custom-hero-input :deep(.el-input__wrapper) {
-  border-radius: 8px 0 0 8px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-}
-.hero-submit-btn {
-  background: #10b981 !important;
-  border-color: #10b981 !important;
-  color: #ffffff !important;
-  font-weight: 500;
-  border-radius: 0 8px 8px 0;
-}
-.hero-hot-section {
-  margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px dashed rgba(16, 185, 129, 0.2);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.hot-label {
-  font-size: 11.5px;
-  color: #64748b;
-  font-weight: 500;
-}
-.hot-chips-list {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-.hot-chip {
-  font-size: 11px;
-  background: #ffffff;
-  border: 1px solid #d1fae5;
-  color: #065f46;
-  padding: 2px 9px;
-  border-radius: 999px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-.hot-chip:hover {
-  background: #10b981;
-  border-color: #10b981;
-  color: #ffffff;
-  transform: translateY(-1px);
-}
-.jump-radar-btn {
-  margin-left: auto;
-  font-size: 12px;
-  font-weight: 500;
-}
 
 /* 风控平稳运行态势卡片 (替代原死白空状态) */
 .shield-active-state {
@@ -2007,169 +1713,7 @@ function fmtJobNextRun(v: string | null | undefined): string {
   line-height: 1.5;
 }
 
-/* 玩法卡片网格与发现大盘 */
-.radar-workflow-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
-}
-.workflow-card {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
-  padding: 14px 16px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  box-sizing: border-box;
-}
-.workflow-card:hover {
-  transform: translateY(-2px);
-  border-color: #cbd5e1;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.05);
-}
-.wf-icon-wrap {
-  width: 40px;
-  height: 40px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-.icon-blue { background: #eff6ff; color: #2563eb; }
-.icon-purple { background: #f5f3ff; color: #7c3aed; }
-.icon-emerald { background: #ecfdf5; color: #059669; }
-
-.wf-content {
-  flex: 1;
-  min-width: 0;
-}
-.wf-name {
-  font-size: 13.5px;
-  font-weight: 600;
-  color: #1e293b;
-  margin-bottom: 2px;
-}
-.wf-desc {
-  font-size: 11px;
-  color: #64748b;
-  line-height: 1.4;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.wf-action-pill {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11.5px;
-  color: #10b981;
-  background: #ecfdf5;
-  border: 1px solid rgba(16, 185, 129, 0.2);
-  padding: 3px 8px;
-  border-radius: 999px;
-  font-weight: 500;
-  flex-shrink: 0;
-}
-
-/* 热门货源分类探索与捡漏技巧 */
-.radar-discover-board {
-  flex: 1;
-  display: grid;
-  grid-template-columns: 3fr 2fr;
-  gap: 12px;
-  min-height: 0;
-}
-.discover-col {
-  background: #ffffff;
-  border: 1px solid #eef2f6;
-  border-radius: 10px;
-  padding: 14px 16px;
-  display: flex;
-  flex-direction: column;
-}
-.discover-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-.d-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: #1e293b;
-}
-.d-sub {
-  font-size: 11px;
-  color: #94a3b8;
-}
-.category-matrix {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.cat-group {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.cat-group-name {
-  font-size: 11.5px;
-  font-weight: 600;
-  color: #475569;
-  flex-shrink: 0;
-  width: 66px;
-}
-.cat-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.d-chip {
-  font-size: 11px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  color: #334155;
-  padding: 3px 9px;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-.d-chip:hover {
-  background: #ecfdf5;
-  border-color: #10b981;
-  color: #059669;
-}
-.tips-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.tip-item {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  font-size: 11.5px;
-  color: #64748b;
-  line-height: 1.5;
-}
-.tip-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: #10b981;
-  margin-top: 6px;
-  flex-shrink: 0;
-}
-.tip-strong {
-  color: #1e293b;
-  font-weight: 600;
-}
-
-/* Tab 3 大模型与系统服务 */
+/* Tab 2 大模型与系统服务 */
 .llm-details-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
