@@ -346,10 +346,10 @@ function listingHint(row: MyItem): { label: string; type: 'warning' | 'success';
         <el-button type="primary" plain :icon="Refresh" :loading="syncing" :disabled="!filter.account_id" @click="sync">
           同步在售宝贝
         </el-button>
-        <el-select v-model="filter.status" clearable placeholder="全部商品状态" class="w130" @change="load">
+        <el-select v-model="filter.status" clearable placeholder="全部商品状态" class="w140" @change="load">
           <el-option v-for="(v, k) in goodsStatusMap" :key="k" :value="k" :label="v.label" />
         </el-select>
-        <el-input v-model="filter.q" placeholder="搜索标题关键字" clearable class="w200" :prefix-icon="Search" @keyup.enter="load" @clear="load" />
+        <el-input v-model="filter.q" placeholder="搜索标题关键字" clearable class="w220" :prefix-icon="Search" @keyup.enter="load" @clear="load" />
       </div>
     </el-card>
 
@@ -618,7 +618,13 @@ function listingHint(row: MyItem): { label: string; type: 'warning' | 'success';
 
 <style scoped>
 .filters :deep(.el-card__body) {
-  padding: 12px;
+  padding: 12px 16px;
+}
+.filters .toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 .clickable {
   cursor: pointer;
