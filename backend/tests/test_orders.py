@@ -207,3 +207,15 @@ async def test_dashboard(admin_client, im):  # noqa: F811
     assert d["accounts"][0]["im_connected"] and d["today"]["messages_in"] == 1
     assert d["today"]["deliveries"] == 1 and d["today"]["orders"]["delivered"] == 1
     assert d["today"]["gmv"] == 19.9 and "llm" in d["system"]
+
+
+def test_delivery_template_always_carries_the_content():
+    order = Order(order_id="o1", item_id="i1", item_title="资料", buyer_nick="小林", quantity=1, spec_value="")
+    # 标准占位符
+    assert order_service._render("内容：{content}", order, "CARD-1") == "内容：CARD-1"
+    # 常见写法 {card} / {卡密} 也认（曾经发出过字面量 {card}）
+    assert order_service._render("内容：\n{card}", order, "CARD-1") == "内容：\nCARD-1"
+    assert order_service._render("卡密 {卡密}，订单 {order_id}", order, "CARD-1") == "卡密 CARD-1，订单 o1"
+    # 模板没有占位符：内容附在末尾，买家一定能收到
+    assert order_service._render("感谢购买！", order, "CARD-1") == "感谢购买！\nCARD-1"
+    assert order_service._render("感谢购买！", order, "") == "感谢购买！"

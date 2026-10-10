@@ -298,8 +298,15 @@ def _render(template: str, order: Order, content: str = "") -> str:
         "quantity": str(order.quantity),
     }
     out = template
+    # 发货内容的常见写法都认：{content}（标准）、{card}、{卡密}
+    for alias in ("{card}", "{卡密}"):
+        out = out.replace(alias, "{content}")
+    has_slot = "{content}" in out
     for k, v in values.items():
         out = out.replace("{" + k + "}", v)
+    if content and not has_slot:
+        # 模板里没有内容占位符：附在末尾，保证买家一定能收到付款购买的内容
+        out = f"{out.rstrip()}\n{content}"
     return out
 
 

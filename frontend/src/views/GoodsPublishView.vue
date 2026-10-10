@@ -340,7 +340,7 @@ async function doPublish(draftId: number, accountId: number, poolId: number | nu
           account_id: accountId,
           item_id: r.item_id,
           spec_value: null,
-          template: '您购买的内容如下：\n{card}\n祝您使用愉快！',
+          template: '您购买的内容如下：\n{content}\n祝您使用愉快！',
           delay_seconds: 0,
           max_per_buyer: 1,
         })
