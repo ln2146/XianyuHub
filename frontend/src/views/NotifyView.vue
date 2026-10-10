@@ -1,16 +1,23 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, type Component } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
+  Aim,
+  Bell,
+  ChatDotRound,
   Check,
   CircleCheck,
   Connection,
   Delete,
   Edit,
+  Grid,
   Hide,
+  Plus,
   Refresh,
   Search,
+  Tickets,
   View,
+  Warning,
   WarningFilled,
 } from '@element-plus/icons-vue'
 import {
@@ -170,39 +177,39 @@ function getConnectedCount(type: string): number {
   return channels.value.filter((c) => c.type === type).length
 }
 
-/** 事件分组展示定义 */
+/** 事件分组展示定义（统一使用 Element Plus 图标，去除表情符号） */
 interface EventGroup {
   name: string
-  icon: string
+  icon: Component
   events: string[]
 }
 
 const eventGroups: EventGroup[] = [
   {
     name: '交易与订单',
-    icon: '📦',
+    icon: Tickets,
     events: ['order_paid', 'delivery_failed', 'stock_low'],
   },
   {
     name: '买家与客服',
-    icon: '💬',
+    icon: ChatDotRound,
     events: ['new_message', 'human_handoff'],
   },
   {
     name: '选品与雷达',
-    icon: '🎯',
+    icon: Aim,
     events: ['item_recommended', 'price_drop', 'task_failed'],
   },
   {
     name: '账号与安全',
-    icon: '🛡️',
+    icon: Warning,
     events: ['account_risk', 'account_login_required'],
   },
 ]
 
 /** 配置项的中文名称与提示 */
 const fieldMeta: Record<string, { label: string; placeholder?: string; secret?: boolean }> = {
-  webhook_url: { label: 'Webhook 地址', placeholder: 'https://qyapi.weixin.qq.com/... 或飞书/钉钉机器人的 Webhook URL', secret: true },
+  webhook_url: { label: 'Webhook 地址', placeholder: 'https://qyapi.weixin.qq.com/... 或机器人 Webhook URL', secret: true },
   bot_token: { label: 'Bot Token', placeholder: '123456789:ABCdefGhIJKlmNoPQ...', secret: true },
   chat_id: { label: 'Chat ID', placeholder: '用户或群组 ID，例如 -100123456789' },
   api_base: { label: 'API 地址', placeholder: 'https://api.telegram.org（可用反代地址）' },
@@ -475,19 +482,17 @@ function isEventChecked(e: string): boolean {
 
 function toggleEvent(e: string) {
   if (!edit.events.length) {
-    // 原来是全选状态，取消某一个
     edit.events = meta.value.events.filter((item) => item !== e)
   } else if (edit.events.includes(e)) {
     edit.events = edit.events.filter((item) => item !== e)
     if (edit.events.length === 0) {
-      // 保持至少非全选
       edit.events = ['none_placeholder']
     }
   } else {
     edit.events = edit.events.filter((item) => item !== 'none_placeholder')
     edit.events.push(e)
     if (edit.events.length === meta.value.events.length) {
-      edit.events = [] // 全选以空数组保存
+      edit.events = []
     }
   }
 }
@@ -528,76 +533,75 @@ async function remove(c: Channel) {
 </script>
 
 <template>
-  <div class="notify-page">
-    <!-- 1. 顶部 Header 导航条与搜索栏（参考参考图风格） -->
-    <div class="top-nav-bar">
-      <div class="tabs-group">
+  <div class="page">
+    <!-- 1. 规范页面头部：标题 + 规范分段页签 + 标准工具栏（完全对齐全局 UI 规范） -->
+    <div class="page-head">
+      <div class="title-wrap">
+        <div class="title-row">
+          <el-icon class="title-icon"><Bell /></el-icon>
+          <h2>通知设置</h2>
+        </div>
+        <span class="page-subtitle">连接企业微信、飞书、钉钉、QQ邮箱与个人微信，即时推送订单与风控告警</span>
+      </div>
+
+      <!-- 分段页签切换（遵循 RadarNav 规范设计，主色为鱼塘管家绿） -->
+      <nav class="tabs" aria-label="通知视图">
         <button
-          class="tab-btn"
+          type="button"
+          class="tab"
           :class="{ active: activeTab === 'market' }"
           @click="activeTab = 'market'"
         >
-          <span class="tab-icon">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-            </svg>
-          </span>
+          <el-icon><Grid /></el-icon>
           <span>应用连接器</span>
         </button>
 
         <button
-          class="tab-btn"
+          type="button"
+          class="tab"
           :class="{ active: activeTab === 'connected' }"
           @click="activeTab = 'connected'"
         >
-          <span class="tab-icon">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
-              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
-            </svg>
-          </span>
+          <el-icon><Connection /></el-icon>
           <span>已连接渠道</span>
-          <span v-if="channels.length" class="count-pill">{{ channels.length }}</span>
+          <span v-if="channels.length" class="count-badge">{{ channels.length }}</span>
         </button>
-      </div>
+      </nav>
 
-      <div class="top-actions">
-        <div class="search-wrap">
-          <el-icon class="search-icon"><Search /></el-icon>
-          <input
-            v-model="searchQuery"
-            type="text"
-            class="clean-search-input"
-            placeholder="搜索连接器..."
-          />
-          <button v-if="searchQuery" class="clear-search-btn" @click="searchQuery = ''">×</button>
-        </div>
-
-        <button class="custom-conn-btn" @click="openCreateCustom">
-          <span class="plus-icon">+</span>
-          <span>自定义连接器</span>
-        </button>
-
-        <button class="refresh-circle-btn" :class="{ spinning: loading }" title="刷新" @click="load">
-          <el-icon><Refresh /></el-icon>
-        </button>
+      <!-- 右侧标准工具栏 -->
+      <div class="toolbar">
+        <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
+        <el-button type="primary" :icon="Plus" @click="openCreateCustom">自定义连接器</el-button>
       </div>
     </div>
 
-    <!-- 2. 分类筛选 Pills (仅在市场 Tab 下展示) -->
-    <div v-if="activeTab === 'market'" class="category-filter-bar">
-      <button
-        v-for="cat in categories"
-        :key="cat.key"
-        class="cat-chip"
-        :class="{ active: selectedCategory === cat.key }"
-        @click="selectedCategory = cat.key"
-      >
-        {{ cat.label }}
-      </button>
+    <!-- 2. 筛选条（仅在市场 Tab 下展示：左侧分类 Chip，右侧统一搜索输入框） -->
+    <div v-if="activeTab === 'market'" class="market-filter-bar">
+      <div class="cat-chips-row">
+        <button
+          v-for="cat in categories"
+          :key="cat.key"
+          type="button"
+          class="cat-chip"
+          :class="{ active: selectedCategory === cat.key }"
+          @click="selectedCategory = cat.key"
+        >
+          {{ cat.label }}
+        </button>
+      </div>
+
+      <div class="search-box">
+        <el-input
+          v-model="searchQuery"
+          placeholder="搜索连接器或应用..."
+          clearable
+          :prefix-icon="Search"
+          class="search-input"
+        />
+      </div>
     </div>
 
-    <!-- 3. 应用连接器市场 Grid（双列真实软件图标卡片） -->
+    <!-- 3. 应用连接器市场 Grid（双列真实软件图标卡片，鱼塘管家标准令牌配色） -->
     <div v-if="activeTab === 'market'" v-loading="loading" class="market-view-container">
       <div v-if="!filteredConnectors.length" class="empty-search-box">
         <el-empty description="没有找到匹配的应用连接器">
@@ -633,6 +637,7 @@ async function remove(c: Channel) {
           <!-- 右侧圆形添加按钮 -->
           <div class="card-action-side">
             <button
+              type="button"
               class="round-plus-btn"
               title="配置并接入此应用"
               @click.stop="openAddForApp(app)"
@@ -648,10 +653,9 @@ async function remove(c: Channel) {
     <div v-if="activeTab === 'connected'" v-loading="loading" class="connected-view-container">
       <div v-if="!channels.length" class="empty-connected-card">
         <el-empty description="尚未配置任何通知渠道，订单、发货与风控消息将无法推送到应用">
-          <button class="custom-conn-btn" @click="activeTab = 'market'">
-            <span class="plus-icon">+</span>
-            <span>前往应用连接器市场添加</span>
-          </button>
+          <el-button type="primary" :icon="Plus" @click="activeTab = 'market'">
+            前往应用连接器市场添加
+          </el-button>
         </el-empty>
       </div>
 
@@ -714,25 +718,24 @@ async function remove(c: Channel) {
 
           <!-- 操作条 -->
           <div class="ch-card-actions">
-            <button
-              class="action-btn-test"
-              :disabled="busy[`t-${c.id}`]"
+            <el-button
+              size="small"
+              type="primary"
+              plain
+              :icon="Connection"
+              :loading="busy[`t-${c.id}`]"
               @click="testExisting(c)"
             >
-              <el-icon v-if="busy[`t-${c.id}`]" class="is-loading"><Refresh /></el-icon>
-              <el-icon v-else><Connection /></el-icon>
-              <span>测试消息</span>
-            </button>
+              测试消息
+            </el-button>
 
-            <button class="action-btn-edit" @click="openEdit(c)">
-              <el-icon><Edit /></el-icon>
-              <span>编辑</span>
-            </button>
+            <el-button size="small" :icon="Edit" @click="openEdit(c)">
+              编辑
+            </el-button>
 
-            <button class="action-btn-delete" @click="remove(c)">
-              <el-icon><Delete /></el-icon>
-              <span>删除</span>
-            </button>
+            <el-button size="small" type="danger" plain :icon="Delete" @click="remove(c)">
+              删除
+            </el-button>
           </div>
         </div>
       </div>
@@ -816,7 +819,7 @@ async function remove(c: Channel) {
             <div v-if="f.kind === 'json'" class="form-tip">填写 JSON 格式，留空则使用默认配置。</div>
           </el-form-item>
 
-          <!-- 订阅事件多选组 -->
+          <!-- 订阅事件多选组（规范化图标，无 emoji） -->
           <el-form-item label="订阅事件">
             <div class="event-picker-block">
               <div class="preset-buttons-row">
@@ -847,7 +850,7 @@ async function remove(c: Channel) {
               <div class="event-category-grid">
                 <div v-for="grp in eventGroups" :key="grp.name" class="event-group-card">
                   <div class="event-grp-title">
-                    <span class="grp-icon">{{ grp.icon }}</span>
+                    <el-icon class="grp-icon"><component :is="grp.icon" /></el-icon>
                     <span>{{ grp.name }}</span>
                   </div>
                   <div class="event-checkbox-list">
@@ -909,194 +912,127 @@ async function remove(c: Channel) {
 </template>
 
 <style scoped>
-.notify-page {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  min-height: calc(100vh - 120px);
-}
-
-/* ================= 1. 顶部 Header 导航条与搜索 ================= */
-.top-nav-bar {
+/* ================= 1. 规范页面头部与分段页签 ================= */
+.page-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 12px;
-  padding: 4px 0 8px;
+  gap: var(--xh-space-3) var(--xh-space-4);
+  margin-bottom: var(--xh-space-4);
 }
 
-.tabs-group {
+.title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--xh-space-1);
+}
+
+.title-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  background: var(--xh-fill);
-  padding: 4px;
-  border-radius: var(--xh-radius-pill);
-  border: 1px solid var(--xh-border);
+  gap: var(--xh-space-2);
 }
 
-.tab-btn {
+.title-row h2 {
+  margin: 0;
+  font-size: var(--xh-fs-xl);
+  font-weight: 600;
+  color: var(--xh-text);
+}
+
+.title-icon {
+  font-size: var(--xh-fs-xl);
+  color: var(--xh-primary);
+}
+
+.page-subtitle {
+  font-size: var(--xh-fs-sm);
+  color: var(--xh-muted);
+}
+
+/* 分段页签（遵循 RadarNav 规范设计，主色为鱼塘管家绿） */
+.tabs {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: var(--xh-radius-md);
+  background: var(--xh-fill-strong);
+}
+
+.tab {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 16px;
-  border-radius: var(--xh-radius-pill);
+  height: 32px;
+  padding: 0 var(--xh-space-3);
   border: none;
+  border-radius: var(--xh-radius-sm);
   background: transparent;
   color: var(--xh-text-2);
   font-size: var(--xh-fs-sm);
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background 0.15s, color 0.15s;
 }
 
-.tab-btn:hover {
+.tab:hover {
   color: var(--xh-text);
 }
 
-.tab-btn.active {
-  background: var(--xh-text);
-  color: #ffffff;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
-}
-
-.tab-btn .tab-icon {
-  display: flex;
-  align-items: center;
-}
-
-.count-pill {
-  display: inline-block;
-  font-size: 11px;
-  padding: 1px 6px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.25);
-  line-height: 1.2;
-}
-
-.tab-btn:not(.active) .count-pill {
-  background: var(--xh-fill-strong);
-  color: var(--xh-text-2);
-}
-
-.top-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.search-wrap {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.search-icon {
-  position: absolute;
-  left: 12px;
-  color: var(--xh-muted);
-  pointer-events: none;
-  font-size: 14px;
-}
-
-.clean-search-input {
-  width: 220px;
-  height: 36px;
-  padding: 0 28px 0 32px;
-  border-radius: var(--xh-radius-pill);
-  border: 1px solid var(--xh-border);
+.tab.active {
   background: var(--xh-card);
-  color: var(--xh-text);
-  font-size: var(--xh-fs-sm);
-  outline: none;
-  transition: all 0.2s ease;
-}
-
-.clean-search-input:focus {
-  border-color: var(--xh-primary);
-  box-shadow: 0 0 0 2px var(--xh-primary-soft);
-  width: 260px;
-}
-
-.clear-search-btn {
-  position: absolute;
-  right: 10px;
-  background: none;
-  border: none;
-  font-size: 16px;
-  color: var(--xh-muted);
-  cursor: pointer;
-  line-height: 1;
-}
-
-.custom-conn-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 36px;
-  padding: 0 16px;
-  border-radius: var(--xh-radius-pill);
-  border: 1px solid var(--xh-border-strong);
-  background: var(--xh-card);
-  color: var(--xh-text);
-  font-size: var(--xh-fs-sm);
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.custom-conn-btn:hover {
-  border-color: var(--xh-primary);
   color: var(--xh-primary);
-  background: var(--xh-primary-soft);
+  font-weight: 600;
+  box-shadow: var(--xh-shadow-1);
 }
 
-.custom-conn-btn .plus-icon {
-  font-size: 16px;
+.tab:focus-visible {
+  outline: 2px solid var(--xh-primary);
+  outline-offset: 1px;
+}
+
+.count-badge {
+  display: inline-block;
+  font-size: var(--xh-fs-xs);
+  padding: 1px 6px;
+  border-radius: var(--xh-radius-pill);
+  background: var(--xh-primary-soft);
+  color: var(--xh-primary);
+  line-height: 1.2;
   font-weight: 600;
 }
 
-.refresh-circle-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  border: 1px solid var(--xh-border);
-  background: var(--xh-card);
-  color: var(--xh-text-2);
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.refresh-circle-btn:hover {
-  color: var(--xh-text);
-  border-color: var(--xh-border-strong);
-}
-
-.refresh-circle-btn.spinning .el-icon {
-  animation: spin 1s infinite linear;
-}
-
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-/* ================= 2. 分类 Pills ================= */
-.category-filter-bar {
+.toolbar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--xh-space-2);
+}
+
+.toolbar :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+
+/* ================= 2. 筛选条 ================= */
+.market-filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--xh-space-3);
+  margin-bottom: var(--xh-space-4);
+}
+
+.cat-chips-row {
+  display: flex;
+  align-items: center;
+  gap: var(--xh-space-2);
   overflow-x: auto;
-  padding-bottom: 2px;
 }
 
 .cat-chip {
-  padding: 5px 14px;
-  border-radius: var(--xh-radius-pill);
+  padding: 5px 12px;
+  border-radius: var(--xh-radius-sm);
   border: 1px solid transparent;
   background: transparent;
   color: var(--xh-text-2);
@@ -1112,17 +1048,25 @@ async function remove(c: Channel) {
 }
 
 .cat-chip.active {
-  background: var(--xh-fill-strong);
-  color: var(--xh-text);
+  background: var(--xh-primary-soft);
+  color: var(--xh-primary);
   font-weight: 600;
-  border-color: var(--xh-border);
+  border-color: var(--xh-primary-border);
+}
+
+.search-box {
+  margin-left: auto;
+}
+
+.search-input {
+  width: 220px;
 }
 
 /* ================= 3. 连接器卡片网格 ================= */
 .connector-market-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
+  gap: var(--xh-space-3) var(--xh-space-4);
 }
 
 @media (max-width: 900px) {
@@ -1135,19 +1079,19 @@ async function remove(c: Channel) {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 16px 20px;
+  gap: var(--xh-space-4);
+  padding: var(--xh-space-4);
   background: var(--xh-card);
   border: 1px solid var(--xh-border);
-  border-radius: 12px;
+  border-radius: var(--xh-radius-md);
   cursor: pointer;
-  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: var(--xh-shadow-1);
 }
 
 .connector-app-card:hover {
   border-color: var(--xh-primary-border);
-  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.06);
+  box-shadow: var(--xh-shadow-2);
   transform: translateY(-1px);
 }
 
@@ -1170,26 +1114,26 @@ async function remove(c: Channel) {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: var(--xh-space-1);
 }
 
 .app-title-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--xh-space-2);
 }
 
 .app-title {
-  font-size: 15px;
+  font-size: var(--xh-fs-md);
   font-weight: 600;
   color: var(--xh-text);
 }
 
 .app-provider-pill {
-  font-size: 11px;
+  font-size: var(--xh-fs-xs);
   font-weight: 500;
-  padding: 1px 7px;
-  border-radius: 4px;
+  padding: 1px 6px;
+  border-radius: var(--xh-radius-sm);
   background: var(--xh-fill-strong);
   color: var(--xh-text-2);
   border: 1px solid var(--xh-border);
@@ -1199,11 +1143,12 @@ async function remove(c: Channel) {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 11px;
-  color: var(--xh-success);
+  font-size: var(--xh-fs-xs);
+  color: var(--xh-primary);
   background: var(--xh-primary-soft);
+  border: 1px solid var(--xh-primary-border);
   padding: 1px 8px;
-  border-radius: 10px;
+  border-radius: var(--xh-radius-pill);
   font-weight: 500;
 }
 
@@ -1211,14 +1156,14 @@ async function remove(c: Channel) {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--xh-success);
+  background: var(--xh-primary);
 }
 
 .app-description {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--xh-fs-sm);
   color: var(--xh-text-2);
-  line-height: 1.45;
+  line-height: 1.5;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -1227,7 +1172,7 @@ async function remove(c: Channel) {
 
 .card-action-side {
   flex-shrink: 0;
-  margin-left: 4px;
+  margin-left: var(--xh-space-1);
 }
 
 .round-plus-btn {
@@ -1236,7 +1181,7 @@ async function remove(c: Channel) {
   border-radius: 50%;
   border: 1px solid var(--xh-border);
   background: var(--xh-fill);
-  color: var(--xh-text);
+  color: var(--xh-text-2);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1261,7 +1206,7 @@ async function remove(c: Channel) {
 .empty-search-box {
   background: var(--xh-card);
   border: 1px solid var(--xh-border);
-  border-radius: 12px;
+  border-radius: var(--xh-radius-md);
   padding: 40px 16px;
   text-align: center;
 }
@@ -1270,18 +1215,18 @@ async function remove(c: Channel) {
 .connected-list-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-  gap: 16px;
+  gap: var(--xh-space-4);
 }
 
 .connected-channel-card {
   background: var(--xh-card);
   border: 1px solid var(--xh-border);
-  border-radius: 12px;
-  padding: 16px;
+  border-radius: var(--xh-radius-md);
+  padding: var(--xh-space-4);
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  gap: var(--xh-space-3);
+  box-shadow: var(--xh-shadow-1);
 }
 
 .ch-card-header {
@@ -1293,7 +1238,7 @@ async function remove(c: Channel) {
 .ch-info-left {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--xh-space-3);
 }
 
 .ch-names {
@@ -1303,7 +1248,7 @@ async function remove(c: Channel) {
 }
 
 .ch-title-text {
-  font-size: 15px;
+  font-size: var(--xh-fs-md);
   font-weight: 600;
   color: var(--xh-text);
 }
@@ -1311,15 +1256,15 @@ async function remove(c: Channel) {
 .ch-sub-meta {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
+  gap: var(--xh-space-2);
+  font-size: var(--xh-fs-xs);
 }
 
 .type-pill {
   background: var(--xh-fill-strong);
   color: var(--xh-text-2);
   padding: 1px 6px;
-  border-radius: 4px;
+  border-radius: var(--xh-radius-sm);
 }
 
 .status-live-tag {
@@ -1343,8 +1288,8 @@ async function remove(c: Channel) {
 .ch-card-events {
   display: flex;
   align-items: flex-start;
-  gap: 6px;
-  font-size: 12px;
+  gap: var(--xh-space-2);
+  font-size: var(--xh-fs-xs);
 }
 
 .events-label {
@@ -1356,7 +1301,7 @@ async function remove(c: Channel) {
 .events-tags-wrap {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--xh-space-1);
 }
 
 .event-tag-bubble {
@@ -1364,7 +1309,7 @@ async function remove(c: Channel) {
   border: 1px solid var(--xh-border);
   color: var(--xh-text-2);
   padding: 1px 7px;
-  border-radius: 4px;
+  border-radius: var(--xh-radius-sm);
 }
 
 .event-tag-bubble.all {
@@ -1381,17 +1326,17 @@ async function remove(c: Channel) {
 .ch-card-config {
   background: var(--xh-fill);
   border: 1px solid var(--xh-border);
-  border-radius: 6px;
-  padding: 8px 10px;
+  border-radius: var(--xh-radius-sm);
+  padding: var(--xh-space-2) var(--xh-space-3);
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--xh-space-1);
 }
 
 .config-row-item {
   display: flex;
   align-items: center;
-  font-size: 12px;
+  font-size: var(--xh-fs-xs);
   overflow: hidden;
 }
 
@@ -1410,72 +1355,31 @@ async function remove(c: Channel) {
 .ch-error-alert {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--xh-space-2);
   padding: 6px 10px;
-  border-radius: 6px;
+  border-radius: var(--xh-radius-sm);
   background: #fff1f0;
   border: 1px solid #ffa39e;
   color: var(--xh-danger);
-  font-size: 12px;
+  font-size: var(--xh-fs-xs);
 }
 
 .ch-card-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--xh-space-2);
   margin-top: auto;
-  padding-top: 4px;
+  padding-top: var(--xh-space-1);
 }
 
-.action-btn-test,
-.action-btn-edit,
-.action-btn-delete {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 5px 12px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.action-btn-test {
-  background: var(--xh-primary-soft);
-  border: 1px solid var(--xh-primary-border);
-  color: var(--xh-primary);
-}
-.action-btn-test:hover {
-  background: var(--xh-primary);
-  color: #fff;
-}
-
-.action-btn-edit {
-  background: var(--xh-fill);
-  border: 1px solid var(--xh-border);
-  color: var(--xh-text);
-}
-.action-btn-edit:hover {
-  border-color: var(--xh-border-strong);
-  background: var(--xh-fill-strong);
-}
-
-.action-btn-delete {
-  background: transparent;
-  border: 1px solid transparent;
-  color: var(--xh-danger);
-  margin-left: auto;
-}
-.action-btn-delete:hover {
-  background: #fff1f0;
-  border-color: #ffa39e;
+.ch-card-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
 }
 
 .empty-connected-card {
   background: var(--xh-card);
   border: 1px solid var(--xh-border);
-  border-radius: 12px;
+  border-radius: var(--xh-radius-md);
   padding: 48px 16px;
   text-align: center;
 }
@@ -1484,12 +1388,12 @@ async function remove(c: Channel) {
 .guide-banner {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 12px 16px;
+  gap: var(--xh-space-3);
+  padding: var(--xh-space-3) var(--xh-space-4);
   background: var(--xh-fill);
   border: 1px solid var(--xh-border);
-  border-radius: 10px;
-  margin-bottom: 20px;
+  border-radius: var(--xh-radius-md);
+  margin-bottom: var(--xh-space-4);
 }
 
 .guide-text {
@@ -1499,15 +1403,15 @@ async function remove(c: Channel) {
 .guide-app-title {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--xh-space-2);
   font-weight: 600;
-  font-size: 14px;
+  font-size: var(--xh-fs-md);
   color: var(--xh-text);
-  margin-bottom: 3px;
+  margin-bottom: 2px;
 }
 
 .guide-detail {
-  font-size: 12px;
+  font-size: var(--xh-fs-xs);
   color: var(--xh-text-2);
   line-height: 1.5;
 }
@@ -1515,7 +1419,7 @@ async function remove(c: Channel) {
 .input-with-secret-toggle {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--xh-space-2);
   width: 100%;
 }
 
@@ -1523,7 +1427,7 @@ async function remove(c: Channel) {
   flex-shrink: 0;
   width: 32px;
   height: 32px;
-  border-radius: 6px;
+  border-radius: var(--xh-radius-sm);
   border: 1px solid var(--xh-border);
   background: var(--xh-fill);
   color: var(--xh-muted);
@@ -1539,7 +1443,7 @@ async function remove(c: Channel) {
 }
 
 .form-tip {
-  font-size: 12px;
+  font-size: var(--xh-fs-xs);
   color: var(--xh-muted);
   margin-top: 4px;
 }
@@ -1547,20 +1451,20 @@ async function remove(c: Channel) {
 .event-picker-block {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--xh-space-3);
   width: 100%;
 }
 
 .preset-buttons-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--xh-space-2);
 }
 
 .preset-btn {
   padding: 3px 10px;
-  border-radius: 12px;
-  font-size: 12px;
+  border-radius: var(--xh-radius-pill);
+  font-size: var(--xh-fs-xs);
   border: 1px solid var(--xh-border);
   background: var(--xh-card);
   color: var(--xh-text-2);
@@ -1582,7 +1486,7 @@ async function remove(c: Channel) {
 .event-category-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: var(--xh-space-2);
 }
 
 @media (max-width: 600px) {
@@ -1594,18 +1498,23 @@ async function remove(c: Channel) {
 .event-group-card {
   background: var(--xh-fill);
   border: 1px solid var(--xh-border);
-  border-radius: 8px;
-  padding: 10px 12px;
+  border-radius: var(--xh-radius-sm);
+  padding: var(--xh-space-2) var(--xh-space-3);
 }
 
 .event-grp-title {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 13px;
+  gap: var(--xh-space-2);
+  font-size: var(--xh-fs-sm);
   font-weight: 600;
   color: var(--xh-text);
-  margin-bottom: 8px;
+  margin-bottom: var(--xh-space-2);
+}
+
+.grp-icon {
+  font-size: var(--xh-fs-md);
+  color: var(--xh-primary);
 }
 
 .event-checkbox-list {
@@ -1617,18 +1526,18 @@ async function remove(c: Channel) {
 .custom-check-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--xh-space-2);
   padding: 4px 6px;
-  border-radius: 4px;
+  border-radius: var(--xh-radius-sm);
   cursor: pointer;
   user-select: none;
-  font-size: 12px;
+  font-size: var(--xh-fs-xs);
   color: var(--xh-text-2);
   transition: background 0.12s;
 }
 
 .custom-check-item:hover {
-  background: rgba(0, 0, 0, 0.03);
+  background: var(--xh-fill-strong);
 }
 
 .custom-check-item.checked {
@@ -1656,24 +1565,24 @@ async function remove(c: Channel) {
 
 .switch-tip-text {
   margin-left: 10px;
-  font-size: 12px;
+  font-size: var(--xh-fs-xs);
   color: var(--xh-muted);
 }
 
 .test-feedback-box {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
-  padding: 10px 14px;
-  border-radius: 8px;
-  font-size: 13px;
-  margin-top: 14px;
+  gap: var(--xh-space-2);
+  padding: var(--xh-space-2) var(--xh-space-3);
+  border-radius: var(--xh-radius-sm);
+  font-size: var(--xh-fs-sm);
+  margin-top: var(--xh-space-3);
 }
 
 .test-feedback-box.success {
   background: var(--xh-primary-soft);
   border: 1px solid var(--xh-primary-border);
-  color: var(--xh-success);
+  color: var(--xh-primary);
 }
 
 .test-feedback-box.error {
