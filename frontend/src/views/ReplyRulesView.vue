@@ -521,7 +521,7 @@ onMounted(() => {
           <template #label>
             <div class="tab-label-inner">
               <el-icon><Tickets /></el-icon>
-              <span>关键词精准规则</span>
+              <span>精准回复</span>
               <el-badge v-if="rules.length" :value="rules.length" class="tab-count-badge" type="info" />
             </div>
           </template>
