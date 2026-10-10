@@ -31,3 +31,15 @@ frontend/dist/
 .DS_Store
 .idea/
 .vscode/
+
+# AI 编程助手 / 工具的本地配置与产物（各人本地使用，不进仓库）
+.agents/
+.claude/
+.cursor/
+.windsurf/
+.codex/
+.gemini/
+.playwright-mcp/
+CLAUDE.md
+AGENTS.md
+GEMINI.md
