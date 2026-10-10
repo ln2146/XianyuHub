@@ -2,7 +2,7 @@
 import { computed, onActivated, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowDown, Bell, Check, Close, Grid, List, MagicStick, Search, Upload } from '@element-plus/icons-vue'
+import { ArrowDown, Bell, Check, Clock, Close, Compass, Delete, Grid, List, MagicStick, Search, Upload } from '@element-plus/icons-vue'
 import {
   createTask,
   emptyTask,
@@ -148,12 +148,140 @@ function onCardAction(it: SearchItem, key: string) {
   else if (key === 'open') window.open(safeItemLink(it), '_blank', 'noopener')
 }
 
-// 未搜索时的引导：几组常用关键词
-const exploreGroups = [
-  { name: '数码', items: ['MacBook M1', 'iPhone 15', 'iPad Air', 'AirPods Pro'] },
-  { name: '游戏', items: ['Switch OLED', 'PS5', 'Steam Deck', '显卡 RTX'] },
-  { name: '影像与外设', items: ['索尼微单', '佳能微单', '机械键盘', '戴森吹风机'] },
+// 未搜索时的引导：分类热门词与技巧攻略
+interface ExploreCategory {
+  id: string
+  name: string
+  tagline: string
+  icon: string
+  color: 'blue' | 'amber' | 'emerald' | 'purple'
+  items: { text: string; hot?: boolean }[]
+}
+
+const exploreCategories: ExploreCategory[] = [
+  {
+    id: 'digital',
+    name: '数码极客',
+    tagline: '高保值 · 捡漏高频',
+    icon: '📱',
+    color: 'blue',
+    items: [
+      { text: 'MacBook M1', hot: true },
+      { text: 'iPhone 15' },
+      { text: 'iPad Air' },
+      { text: 'AirPods Pro', hot: true },
+      { text: 'Apple Watch' },
+      { text: 'ThinkPad' },
+    ],
+  },
+  {
+    id: 'gaming',
+    name: '游戏电竞',
+    tagline: '主机掌机 · 热门显卡',
+    icon: '🎮',
+    color: 'amber',
+    items: [
+      { text: 'Switch OLED', hot: true },
+      { text: 'PS5' },
+      { text: 'Steam Deck', hot: true },
+      { text: '显卡 RTX' },
+      { text: 'Xbox Series X' },
+      { text: 'ROG 掌机' },
+    ],
+  },
+  {
+    id: 'camera',
+    name: '摄影外设',
+    tagline: '微单镜头 · 客制化外设',
+    icon: '📷',
+    color: 'emerald',
+    items: [
+      { text: '索尼微单', hot: true },
+      { text: '佳能微单' },
+      { text: '富士微单', hot: true },
+      { text: '机械键盘' },
+      { text: '戴森吹风机' },
+      { text: '4K 显示器' },
+    ],
+  },
+  {
+    id: 'lifestyle',
+    name: '潮流潮玩',
+    tagline: '热销转手 · 溢价潜力',
+    icon: '🛹',
+    color: 'purple',
+    items: [
+      { text: '始祖鸟', hot: true },
+      { text: '卡西欧' },
+      { text: '乐高积木' },
+      { text: '露营装备' },
+      { text: '拍立得' },
+      { text: '大疆无人机', hot: true },
+    ],
+  },
 ]
+
+const radarTips = [
+  {
+    icon: '⚡',
+    title: '最新发布捡漏',
+    desc: '点击顶部「新发布」排序，毫秒级捕获卖家急售或标错价的一手好物。',
+  },
+  {
+    icon: '📉',
+    title: '追踪主动降价',
+    desc: '切换「新降价」筛选，专门发现卖家主动调低价格、急于清仓的宝贝。',
+  },
+  {
+    icon: '🛡️',
+    title: '避坑验货认证',
+    desc: '勾选「验货宝」或「个人闲置」，自动过滤非标转卖与批量引流号。',
+  },
+  {
+    icon: '🎯',
+    title: '一键监控转手',
+    desc: '鼠标悬停结果即可一键「加入价格监控」或「一键转手到我的小店」。',
+  },
+]
+
+// 搜索历史
+const SEARCH_HISTORY_KEY = 'xh_radar_search_history'
+const searchHistory = ref<string[]>([])
+
+function loadSearchHistory() {
+  try {
+    const raw = localStorage.getItem(SEARCH_HISTORY_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) {
+        searchHistory.value = parsed.slice(0, 8)
+      }
+    }
+  } catch {
+    searchHistory.value = []
+  }
+}
+
+function addSearchHistory(kw: string) {
+  const clean = kw.trim()
+  if (!clean) return
+  const list = [clean, ...searchHistory.value.filter((k) => k !== clean)].slice(0, 8)
+  searchHistory.value = list
+  try {
+    localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(list))
+  } catch {
+    // ignore
+  }
+}
+
+function clearSearchHistory() {
+  searchHistory.value = []
+  try {
+    localStorage.removeItem(SEARCH_HISTORY_KEY)
+  } catch {
+    // ignore
+  }
+}
 
 // 搜索结果状态
 const items = ref<SearchItem[]>([])
@@ -209,6 +337,7 @@ async function doSearch(page = 1) {
     ElMessage.warning('请输入搜索关键词')
     return
   }
+  addSearchHistory(kw)
   lastQueryQ = kw
 
   // 智能降速保护：如果两次搜索发起间隔小于 1.8 秒，自动平滑缓冲，模拟真人操作节奏，降低触发平台风控几率
@@ -402,6 +531,7 @@ onMounted(() => {
   accounts.load().catch(() => undefined)
   refreshChannelStatus()
   checkRouteQuery()
+  loadSearchHistory()
 })
 
 onActivated(() => {
@@ -568,13 +698,102 @@ onActivated(() => {
         </div>
       </div>
 
-      <div v-if="!searched && !loading" class="welcome">
-        <el-icon class="welcome-icon"><Search /></el-icon>
-        <p class="welcome-title">输入关键词，实时查看闲鱼在售商品</p>
-        <div class="explore">
-          <div v-for="g in exploreGroups" :key="g.name" class="explore-row">
-            <span class="explore-name">{{ g.name }}</span>
-            <button v-for="k in g.items" :key="k" type="button" class="chip" @click="onQuickSearch(k)">{{ k }}</button>
+      <div v-if="!searched && !loading" class="radar-welcome">
+        <!-- 头部 Hero 区域：发光雷达与价值主张 -->
+        <div class="welcome-hero">
+          <div class="hero-radar-badge">
+            <span class="radar-ripple ring-1"></span>
+            <span class="radar-ripple ring-2"></span>
+            <div class="radar-icon-box">
+              <el-icon :size="30"><Compass /></el-icon>
+            </div>
+          </div>
+          <h2 class="welcome-heading">闲鱼全网货源 · 实时精准捕获</h2>
+          <p class="welcome-tagline">
+            输入关键词即刻直连闲鱼底层检索链路，毫秒级扫描最新在售、降价急售与高保值好货
+          </p>
+          <div class="welcome-features">
+            <span class="feat-pill"><span class="feat-dot dot-emerald"></span>官方链路直连</span>
+            <span class="feat-pill"><span class="feat-dot dot-blue"></span>毫秒级上架捕获</span>
+            <span class="feat-pill"><span class="feat-dot dot-amber"></span>智能防限流控频</span>
+            <span class="feat-pill"><span class="feat-dot dot-purple"></span>一键转手 & 监控</span>
+          </div>
+        </div>
+
+        <!-- 最近搜索历史 (若存在) -->
+        <div v-if="searchHistory.length" class="history-bar">
+          <div class="history-label">
+            <el-icon class="history-icon"><Clock /></el-icon>
+            <span>最近搜索：</span>
+          </div>
+          <div class="history-tags">
+            <button
+              v-for="kw in searchHistory"
+              :key="kw"
+              type="button"
+              class="history-chip"
+              @click="onQuickSearch(kw)"
+            >
+              {{ kw }}
+            </button>
+            <button type="button" class="history-clear-btn" title="清空搜索历史" @click="clearSearchHistory">
+              <el-icon><Delete /></el-icon>
+              <span>清空</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 热门分类探索卡片网格 -->
+        <div class="explore-section">
+          <div class="section-title-wrap">
+            <span class="section-badge">HOT CATEGORIES</span>
+            <h3 class="section-title">热门选品与高流转类目</h3>
+          </div>
+          <div class="explore-grid">
+            <div
+              v-for="cat in exploreCategories"
+              :key="cat.id"
+              class="explore-card"
+              :class="`theme-${cat.color}`"
+            >
+              <div class="card-head">
+                <span class="cat-icon-badge">{{ cat.icon }}</span>
+                <div class="cat-title-wrap">
+                  <div class="cat-name">{{ cat.name }}</div>
+                  <div class="cat-tagline">{{ cat.tagline }}</div>
+                </div>
+              </div>
+              <div class="card-chips">
+                <button
+                  v-for="item in cat.items"
+                  :key="item.text"
+                  type="button"
+                  class="keyword-chip"
+                  :class="{ hot: item.hot }"
+                  @click="onQuickSearch(item.text)"
+                >
+                  <span class="chip-text">{{ item.text }}</span>
+                  <span v-if="item.hot" class="chip-hot-tag" title="热搜">HOT</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 选品捡漏技巧攻略卡片 -->
+        <div class="pro-tips-section">
+          <div class="section-title-wrap">
+            <span class="section-badge tips">PRO TIPS</span>
+            <h3 class="section-title">选品雷达高效捡漏秘籍</h3>
+          </div>
+          <div class="tips-grid">
+            <div v-for="(tip, idx) in radarTips" :key="idx" class="tip-card">
+              <div class="tip-icon-box">{{ tip.icon }}</div>
+              <div class="tip-body">
+                <div class="tip-title">{{ tip.title }}</div>
+                <div class="tip-desc">{{ tip.desc }}</div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -1051,60 +1270,396 @@ onActivated(() => {
   grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
   gap: var(--xh-space-4);
 }
-.welcome {
+/* ==================== 选品雷达初始欢迎页 ==================== */
+.radar-welcome {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 48px var(--xh-space-4);
-  text-align: center;
+  gap: var(--xh-space-5);
+  padding: 36px var(--xh-space-4) 48px;
+  max-width: 1120px;
+  margin: 0 auto;
 }
-.welcome-icon {
-  font-size: 36px;
-  color: var(--xh-primary);
-  margin-bottom: var(--xh-space-2);
-}
-.welcome-title {
-  margin: 0;
-  font-size: var(--xh-fs-lg);
-  font-weight: 600;
-  color: var(--xh-text);
-}
-.welcome-sub {
-  margin: 6px 0 var(--xh-space-5);
-  font-size: var(--xh-fs-sm);
-  color: var(--xh-muted);
-}
-.explore {
+
+/* 头部 Hero 区域 */
+.welcome-hero {
   display: flex;
   flex-direction: column;
-  gap: var(--xh-space-2);
+  align-items: center;
+  text-align: center;
+  max-width: 640px;
 }
-.explore-row {
+
+.hero-radar-badge {
+  position: relative;
+  width: 68px;
+  height: 68px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: var(--xh-space-3);
+}
+
+.radar-icon-box {
+  width: 52px;
+  height: 52px;
+  border-radius: var(--xh-radius-lg);
+  background: linear-gradient(135deg, var(--xh-primary-soft) 0%, #d8f3e5 100%);
+  border: 1px solid var(--xh-primary-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--xh-primary);
+  box-shadow: 0 4px 12px rgba(30, 158, 106, 0.15);
+  z-index: 2;
+  transition: transform 0.3s ease;
+}
+
+.hero-radar-badge:hover .radar-icon-box {
+  transform: scale(1.06) rotate(6deg);
+}
+
+.radar-ripple {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 52px;
+  height: 52px;
+  border-radius: var(--xh-radius-lg);
+  border: 1.5px solid var(--xh-primary);
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  pointer-events: none;
+  animation: radarWave 2.8s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
+}
+
+.radar-ripple.ring-2 {
+  animation-delay: 1.4s;
+}
+
+@keyframes radarWave {
+  0% {
+    width: 50px;
+    height: 50px;
+    opacity: 0.6;
+    border-radius: var(--xh-radius-lg);
+  }
+  100% {
+    width: 88px;
+    height: 88px;
+    opacity: 0;
+    border-radius: 24px;
+  }
+}
+
+.welcome-heading {
+  margin: 0 0 var(--xh-space-2);
+  font-size: var(--xh-fs-xl);
+  font-weight: 700;
+  color: var(--xh-text);
+  letter-spacing: -0.01em;
+}
+
+.welcome-tagline {
+  margin: 0 0 var(--xh-space-3);
+  font-size: var(--xh-fs-sm);
+  color: var(--xh-text-2);
+  line-height: 1.5;
+}
+
+.welcome-features {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
   gap: var(--xh-space-2);
 }
-.explore-name {
-  width: 72px;
-  text-align: right;
-  font-size: var(--xh-fs-xs);
-  color: var(--xh-muted);
-}
-.chip {
-  height: 28px;
-  padding: 0 var(--xh-space-3);
+
+.feat-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  background: var(--xh-card);
   border: 1px solid var(--xh-border);
   border-radius: var(--xh-radius-pill);
+  font-size: var(--xh-fs-xs);
+  color: var(--xh-text-2);
+  font-weight: 500;
+  box-shadow: var(--xh-shadow-1);
+}
+
+.feat-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.feat-dot.dot-emerald { background: #1e9e6a; }
+.feat-dot.dot-blue { background: #3b82f6; }
+.feat-dot.dot-amber { background: #f59e0b; }
+.feat-dot.dot-purple { background: #8b5cf6; }
+
+/* 搜索历史条 */
+.history-bar {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--xh-space-2);
+  padding: 10px 16px;
   background: var(--xh-card);
+  border: 1px solid var(--xh-border);
+  border-radius: var(--xh-radius-md);
+  box-shadow: var(--xh-shadow-1);
+}
+
+.history-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--xh-fs-xs);
+  color: var(--xh-muted);
+  white-space: nowrap;
+}
+
+.history-icon {
+  font-size: 14px;
+}
+
+.history-tags {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--xh-space-2);
+  flex: 1;
+}
+
+.history-chip {
+  padding: 2px 10px;
+  font-size: var(--xh-fs-xs);
+  color: var(--xh-text-2);
+  background: var(--xh-fill);
+  border: 1px solid var(--xh-border);
+  border-radius: var(--xh-radius-sm);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.history-chip:hover {
+  color: var(--xh-primary);
+  border-color: var(--xh-primary-border);
+  background: var(--xh-primary-soft);
+}
+
+.history-clear-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  padding: 2px 6px;
+  font-size: var(--xh-fs-xs);
+  color: var(--xh-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  border-radius: var(--xh-radius-sm);
+  transition: color 0.2s;
+}
+
+.history-clear-btn:hover {
+  color: var(--xh-danger);
+}
+
+/* 分类卡片区域 */
+.explore-section {
+  width: 100%;
+}
+
+.section-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: var(--xh-space-2);
+  margin-bottom: var(--xh-space-3);
+}
+
+.section-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  background: rgba(30, 158, 106, 0.1);
+  color: var(--xh-primary);
+  border-radius: 4px;
+  letter-spacing: 0.05em;
+}
+
+.section-badge.tips {
+  background: rgba(59, 130, 246, 0.1);
+  color: #2563eb;
+}
+
+.section-title {
+  margin: 0;
+  font-size: var(--xh-fs-md);
+  font-weight: 600;
+  color: var(--xh-text);
+}
+
+.explore-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--xh-space-4);
+}
+
+.explore-card {
+  background: var(--xh-card);
+  border: 1px solid var(--xh-border);
+  border-radius: var(--xh-radius-md);
+  padding: 18px;
+  box-shadow: var(--xh-shadow-1);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.explore-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: transparent;
+  transition: background 0.25s ease;
+}
+
+.explore-card.theme-blue:hover::before { background: #3b82f6; }
+.explore-card.theme-amber:hover::before { background: #f59e0b; }
+.explore-card.theme-emerald:hover::before { background: #1e9e6a; }
+.explore-card.theme-purple:hover::before { background: #8b5cf6; }
+
+.explore-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--xh-border-strong);
+  box-shadow: var(--xh-shadow-2);
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cat-icon-badge {
+  font-size: 24px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--xh-radius-md);
+  background: var(--xh-fill);
+}
+
+.cat-name {
+  font-size: var(--xh-fs-md);
+  font-weight: 600;
+  color: var(--xh-text);
+}
+
+.cat-tagline {
+  font-size: var(--xh-fs-xs);
+  color: var(--xh-muted);
+  margin-top: 1px;
+}
+
+.card-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.keyword-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 12px;
+  border-radius: var(--xh-radius-pill);
+  background: var(--xh-fill);
+  border: 1px solid var(--xh-border);
   color: var(--xh-text-2);
   font-size: var(--xh-fs-sm);
   cursor: pointer;
+  transition: all 0.2s ease;
+  line-height: 1.2;
 }
-.chip:hover {
-  border-color: var(--xh-primary);
+
+.keyword-chip:hover {
+  background: var(--xh-primary-soft);
+  border-color: var(--xh-primary-border);
   color: var(--xh-primary);
+  transform: translateY(-1px);
+}
+
+.chip-hot-tag {
+  font-size: 9px;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, #ff5722, #f44336);
+  padding: 1px 4px;
+  border-radius: 4px;
+  line-height: 1;
+}
+
+/* 选品攻略卡片区域 */
+.pro-tips-section {
+  width: 100%;
+}
+
+.tips-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: var(--xh-space-3);
+}
+
+.tip-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--xh-card);
+  border: 1px solid var(--xh-border);
+  border-radius: var(--xh-radius-md);
+  box-shadow: var(--xh-shadow-1);
+  transition: all 0.2s ease;
+}
+
+.tip-card:hover {
+  background: var(--xh-fill);
+  border-color: var(--xh-border-strong);
+}
+
+.tip-icon-box {
+  font-size: 20px;
+  line-height: 1;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.tip-title {
+  font-size: var(--xh-fs-sm);
+  font-weight: 600;
+  color: var(--xh-text);
+  margin-bottom: 3px;
+}
+
+.tip-desc {
+  font-size: var(--xh-fs-xs);
+  color: var(--xh-text-2);
+  line-height: 1.45;
 }
 .list-item {
   display: flex;
