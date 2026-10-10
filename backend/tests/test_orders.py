@@ -435,7 +435,8 @@ async def test_manual_order_sync_completed_and_manual_resolve(admin_client, im):
         await s.commit()
 
     # 模拟远端返回已完成
-    from app.goofish.parsers.trade import RemoteOrder, OrderStatus
+    from app.goofish.parsers.trade import OrderStatus, RemoteOrder
+
     async with session_factory()() as s:
         o = (await s.execute(select(Order).where(Order.order_id == "998878"))).scalar_one()
         remote = RemoteOrder(order_id="998878", status=OrderStatus.COMPLETED, status_text="交易成功")
