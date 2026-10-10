@@ -3,12 +3,10 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox, type UploadRequestOptions } from 'element-plus'
 import {
-  ChatDotRound,
   Check,
   Delete,
   Document,
   MagicStick,
-  Opportunity,
   Plus,
   Refresh,
   Search,
@@ -18,7 +16,6 @@ import {
   WarningFilled,
 } from '@element-plus/icons-vue'
 import {
-  aiTrial,
   createRule,
   deleteKnowledgeDoc,
   deleteRule,
@@ -28,16 +25,14 @@ import {
   updateRule,
   uploadKnowledgeDoc,
   type KnowledgeDoc,
-  type ReplyPlan,
   type RuleIn,
   type RuleOut,
 } from '@/api/message'
 import { updateAccount, type Account } from '@/api/account'
-import { listItems, type MyItem } from '@/api/goods'
 import { useAccountsStore } from '@/stores/accounts'
 import { useMobile } from '@/composables/useMobile'
 import StatusTag from '@/components/StatusTag.vue'
-import { accountStatusMap, intentText } from '@/utils/format'
+import { accountStatusMap } from '@/utils/format'
 
 const route = useRoute()
 const router = useRouter()
@@ -45,16 +40,16 @@ const accounts = useAccountsStore()
 const isMobile = useMobile()
 
 // ---------------------------------------------------------------- Tab 状态
-const activeTab = ref<'rules' | 'ai' | 'trial'>('rules')
-if (route.query.tab && ['rules', 'ai', 'trial'].includes(String(route.query.tab))) {
-  activeTab.value = route.query.tab as 'rules' | 'ai' | 'trial'
+const activeTab = ref<'rules' | 'ai'>('rules')
+if (route.query.tab && ['rules', 'ai'].includes(String(route.query.tab))) {
+  activeTab.value = route.query.tab as 'rules' | 'ai'
 }
 
 watch(
   () => route.query.tab,
   (t) => {
-    if (t && ['rules', 'ai', 'trial'].includes(String(t))) {
-      activeTab.value = t as 'rules' | 'ai' | 'trial'
+    if (t && ['rules', 'ai'].includes(String(t))) {
+      activeTab.value = t as 'rules' | 'ai'
     }
   },
 )
@@ -404,56 +399,6 @@ async function removeDoc(d: KnowledgeDoc) {
   docs.value = docs.value.filter((x) => x.id !== d.id)
   ElMessage.success('已删除知识库资料')
 }
-
-// ---------------------------------------------------------------- Tab 3: 效果沙盒与试运行
-const items = ref<MyItem[]>([])
-const trial = reactive({
-  text: '',
-  itemId: '' as string,
-  loading: false,
-  plan: null as (ReplyPlan & { used_docs?: boolean }) | null,
-})
-
-watch(
-  selectedAccountId,
-  async (id) => {
-    trial.itemId = ''
-    trial.plan = null
-    items.value = id ? await listItems({ account_id: id }).catch(() => []) : []
-  },
-  { immediate: true },
-)
-
-const trialChips = ['在吗还在吗', '能便宜点吗', '什么时候发货', '包邮吗', '是正品吗', '有使用痕迹吗']
-
-async function runTrial() {
-  if (!selectedAccountId.value || !trial.text.trim()) return
-  trial.loading = true
-  trial.plan = null
-  try {
-    trial.plan = await aiTrial(selectedAccountId.value, trial.text.trim(), trial.itemId || null)
-  } finally {
-    trial.loading = false
-  }
-}
-
-const trialSource = computed(() => {
-  const p = trial.plan
-  if (!p) return ''
-  if (p.source === 'auto_keyword') return '命中关键词精准规则'
-  if (p.source === 'auto_ai') return 'AI 大模型智能生成'
-  return ''
-})
-
-const trialHint = computed(() => {
-  const p = trial.plan
-  if (!p) return ''
-  if (p.action === 'off') return '提示：该账号当前 AI 回复未开启，开启后会自动发送此内容。'
-  if (p.action === 'suggest') return '提示：当前为「建议」模式，将在收件箱以卡片形式推荐此回复，需手动确认发送。'
-  if (p.action === 'handoff') return '提示：检测到复杂或特殊诉求，系统将转交人工并推送通知。'
-  if (p.action === 'none') return p.note || '提示：未触发自动回复条件，不发送消息。'
-  return ''
-})
 
 // ---------------------------------------------------------------- 综合刷新
 async function refreshAll() {
@@ -853,163 +798,6 @@ onMounted(() => {
           </div>
         </el-tab-pane>
 
-        <!-- 标签页 3: 效果沙盒与试运行 -->
-        <el-tab-pane name="trial">
-          <template #label>
-            <div class="tab-label-inner">
-              <el-icon><Opportunity /></el-icon>
-              <span>效果模拟与沙盒</span>
-            </div>
-          </template>
-
-          <div class="tab-body">
-            <div class="trial-sandbox-grid">
-              <!-- 左侧：输入模拟区 -->
-              <div class="trial-input-card">
-                <div class="panel-header">
-                  <div class="panel-title">
-                    <span class="title-text">模拟买家咨询</span>
-                    <span class="title-desc">测试买家提问在当前策略下会命中关键词还是触发 AI 回复</span>
-                  </div>
-                </div>
-
-                <div class="trial-form">
-                  <div class="form-row">
-                    <label class="form-label">咨询商品（可选）：</label>
-                    <el-select
-                      v-model="trial.itemId"
-                      clearable
-                      filterable
-                      placeholder="不指定特定商品（通用咨询）"
-                      class="item-picker"
-                    >
-                      <el-option
-                        v-for="it in items"
-                        :key="it.item_id"
-                        :value="it.item_id"
-                        :label="`${it.title} (¥${it.price || '--'})`"
-                      />
-                    </el-select>
-                  </div>
-
-                  <div class="form-row">
-                    <label class="form-label">买家发送的消息：</label>
-                    <el-input
-                      v-model="trial.text"
-                      type="textarea"
-                      :rows="3"
-                      maxlength="500"
-                      placeholder="输入买家可能发送的提问，例如：能便宜点吗 / 什么时候发货"
-                      @keydown.enter.ctrl="runTrial"
-                    />
-                  </div>
-
-                  <div class="preset-query-chips">
-                    <span class="query-chip-label">常见买家问题：</span>
-                    <div class="query-chip-list">
-                      <span
-                        v-for="c in trialChips"
-                        :key="c"
-                        class="query-chip"
-                        @click="trial.text = c"
-                      >
-                        {{ c }}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div class="trial-submit-wrap">
-                    <el-button
-                      type="primary"
-                      size="default"
-                      :loading="trial.loading"
-                      :disabled="!trial.text.trim()"
-                      @click="runTrial"
-                    >
-                      开始模拟咨询
-                    </el-button>
-                    <span class="submit-tip">按 Ctrl + Enter 快速测试</span>
-                  </div>
-                </div>
-              </div>
-
-              <!-- 右侧：决策全链路与效果预览 -->
-              <div class="trial-preview-card">
-                <div class="panel-header">
-                  <div class="panel-title">
-                    <span class="title-text">决策全链路与输出预览</span>
-                    <span class="title-desc">展示规则匹配、意图判断、知识库引用及最终回复</span>
-                  </div>
-                </div>
-
-                <div v-if="!trial.plan && !trial.loading" class="trial-placeholder">
-                  <el-icon class="ph-icon"><ChatDotRound /></el-icon>
-                  <div class="ph-title">准备就绪，等待输入</div>
-                  <div class="ph-desc">在左侧输入买家咨询或点击常见问题，点击“开始模拟咨询”查看即时应答</div>
-                </div>
-
-                <div v-else-if="trial.loading" class="trial-loading-box">
-                  <el-icon class="is-loading loading-icon"><Refresh /></el-icon>
-                  <div class="loading-text">正在分析买家消息，匹配规则与知识库...</div>
-                </div>
-
-                <div v-else-if="trial.plan" class="trial-result-panel">
-                  <!-- 决策链标签 -->
-                  <div class="trace-tags-row">
-                    <div class="trace-item">
-                      <span class="trace-label">响应源：</span>
-                      <el-tag :type="trial.plan.source === 'auto_ai' ? 'success' : 'primary'" size="small">
-                        {{ trialSource }}
-                      </el-tag>
-                    </div>
-
-                    <div v-if="trial.plan.intent" class="trace-item">
-                      <span class="trace-label">识别意图：</span>
-                      <el-tag size="small" effect="plain">{{ intentText(trial.plan.intent) }}</el-tag>
-                    </div>
-
-                    <div v-if="trial.plan.used_docs" class="trace-item">
-                      <span class="trace-label">资料引用：</span>
-                      <el-tag size="small" type="warning" effect="plain">参考了知识库</el-tag>
-                    </div>
-
-                    <div class="trace-item">
-                      <span class="trace-label">执行动作：</span>
-                      <el-tag
-                        size="small"
-                        :type="trial.plan.action === 'auto' ? 'success' : trial.plan.action === 'suggest' ? 'warning' : 'info'"
-                      >
-                        {{ trial.plan.action === 'auto' ? '自动发送' : trial.plan.action === 'suggest' ? '收件箱建议' : trial.plan.action === 'handoff' ? '转人工' : '不回复' }}
-                      </el-tag>
-                    </div>
-                  </div>
-
-                  <!-- 模拟聊天气泡效果 -->
-                  <div class="chat-simulation-box">
-                    <div class="chat-bubble buyer-bubble">
-                      <div class="bubble-header">买家提问</div>
-                      <div class="bubble-content">{{ trial.text }}</div>
-                    </div>
-
-                    <div class="chat-bubble seller-bubble">
-                      <div class="bubble-header">
-                        <span>系统自动回复</span>
-                        <span class="bubble-time">刚刚</span>
-                      </div>
-                      <div class="bubble-content">{{ trial.plan.text || '（无回复文本）' }}</div>
-                    </div>
-                  </div>
-
-                  <!-- 解释与提示说明 -->
-                  <div v-if="trialHint" class="trial-explain-box">
-                    <el-icon><WarningFilled /></el-icon>
-                    <span>{{ trialHint }}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </el-tab-pane>
       </el-tabs>
     </div>
 
@@ -1754,244 +1542,6 @@ onMounted(() => {
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
-}
-
-/* 试运行沙盒 */
-.trial-sandbox-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-}
-
-@media (max-width: 992px) {
-  .trial-sandbox-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-.trial-input-card,
-.trial-preview-card {
-  border: 1px solid var(--xh-border);
-  border-radius: var(--xh-radius-sm);
-  padding: 16px;
-  background: #fafbfc;
-  display: flex;
-  flex-direction: column;
-}
-
-.trial-form {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.form-row {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.form-label {
-  font-size: var(--xh-fs-xs);
-  font-weight: 600;
-  color: var(--xh-text);
-}
-
-.item-picker {
-  width: 100%;
-}
-
-.preset-query-chips {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-}
-
-.query-chip-label {
-  font-size: 11px;
-  color: var(--xh-muted);
-  flex-shrink: 0;
-  margin-top: 2px;
-}
-
-.query-chip-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-
-.query-chip {
-  font-size: 11px;
-  background: #ffffff;
-  border: 1px solid var(--xh-border);
-  padding: 2px 7px;
-  border-radius: 4px;
-  cursor: pointer;
-  color: var(--xh-text-2);
-  transition: all 0.15s ease;
-}
-
-.query-chip:hover {
-  border-color: var(--xh-primary);
-  color: var(--xh-primary);
-  background: var(--xh-primary-soft);
-}
-
-.trial-submit-wrap {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 4px;
-}
-
-.submit-tip {
-  font-size: 11px;
-  color: var(--xh-muted);
-}
-
-.trial-placeholder {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 40px 16px;
-  color: var(--xh-muted);
-  background: #ffffff;
-  border: 1px dashed var(--xh-border);
-  border-radius: var(--xh-radius-sm);
-}
-
-.ph-icon {
-  font-size: 40px;
-  color: var(--xh-border-strong);
-  margin-bottom: 8px;
-}
-
-.ph-title {
-  font-size: var(--xh-fs-sm);
-  font-weight: 600;
-  color: var(--xh-text);
-  margin-bottom: 4px;
-}
-
-.ph-desc {
-  font-size: 11px;
-  color: var(--xh-muted);
-  text-align: center;
-  max-width: 260px;
-}
-
-.trial-loading-box {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 40px 16px;
-  background: #ffffff;
-  border: 1px solid var(--xh-border);
-  border-radius: var(--xh-radius-sm);
-}
-
-.loading-icon {
-  font-size: 28px;
-  color: var(--xh-primary);
-  margin-bottom: 10px;
-}
-
-.loading-text {
-  font-size: var(--xh-fs-xs);
-  color: var(--xh-muted);
-}
-
-.trial-result-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  flex: 1;
-}
-
-.trace-tags-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  padding: 10px 12px;
-  background: #ffffff;
-  border: 1px solid var(--xh-border);
-  border-radius: 6px;
-}
-
-.trace-item {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.trace-label {
-  font-size: 11px;
-  color: var(--xh-muted);
-}
-
-.chat-simulation-box {
-  background: #ffffff;
-  border: 1px solid var(--xh-border);
-  border-radius: 6px;
-  padding: 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  flex: 1;
-}
-
-.chat-bubble {
-  padding: 10px 12px;
-  border-radius: 8px;
-  max-width: 85%;
-  line-height: 1.45;
-  font-size: var(--xh-fs-sm);
-}
-
-.buyer-bubble {
-  align-self: flex-start;
-  background: #f1f5f9;
-  border: 1px solid #e2e8f0;
-  color: var(--xh-text);
-}
-
-.seller-bubble {
-  align-self: flex-end;
-  background: var(--xh-primary-soft);
-  border: 1px solid var(--xh-primary-border);
-  color: #064e3b;
-}
-
-.bubble-header {
-  font-size: 11px;
-  color: var(--xh-muted);
-  margin-bottom: 4px;
-  display: flex;
-  justify-content: space-between;
-}
-
-.seller-bubble .bubble-header {
-  color: var(--xh-primary);
-}
-
-.bubble-content {
-  word-break: break-word;
-}
-
-.trial-explain-box {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--xh-text-2);
-  background: #f8fafc;
-  padding: 8px 12px;
-  border-radius: 4px;
-  border: 1px solid var(--xh-border);
 }
 
 .w-full {
