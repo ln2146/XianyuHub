@@ -18,10 +18,12 @@ import {
   WarningFilled,
 } from '@element-plus/icons-vue'
 import {
+  createTask,
   deleteTask,
   emptyRules,
   emptyTask,
   exportResults,
+  generateTask,
   listResults,
   listTasks,
   markResult,
@@ -35,6 +37,7 @@ import {
   type TaskOut,
   type UserMark,
 } from '@/api/buyer'
+import { errorMessage } from '@/api/http'
 import EChart from '@/components/EChart.vue'
 import ItemCard, { type CardItem, type CardMenuItem } from '@/components/ItemCard.vue'
 import ItemDrawer, { type DrawerItem } from '@/components/ItemDrawer.vue'
@@ -173,6 +176,7 @@ const dialog = reactive({
   nl: '' as string,
 })
 const quickKw = ref('')
+const quickLoading = ref(false)
 
 function openCreate(preset: Partial<TaskIn> | null = null, nl = '') {
   Object.assign(dialog, { open: true, task: null, preset, nl })
@@ -187,14 +191,67 @@ function looksLikeSentence(text: string) {
   return text.length >= 8 && /[，。,；;！!？?]|想买|想要|求|预算|以内|以下|左右|不要|最好|电池|成色/.test(text)
 }
 
-function quickCreate() {
+async function quickCreate() {
   const text = quickKw.value.trim()
   if (!text) return openCreate()
-  // 一句话需求交给 AI 拆成关键词 / 价格 / 排除词；几个关键词则直接预填
-  if (looksLikeSentence(text)) return openCreate(null, text)
-  // “iPhone 13 128G”是一个搜索词；只有逗号 / 顿号才表示多个关键词
-  const keywords = text.split(/[,，、;；]+/).map((k) => k.trim()).filter(Boolean).slice(0, 8)
-  openCreate({ name: (keywords[0] || text).slice(0, 32), keywords })
+  if (quickLoading.value) return
+
+  quickLoading.value = true
+  try {
+    let taskData: TaskIn
+    if (looksLikeSentence(text)) {
+      try {
+        const d = await generateTask(text)
+        taskData = {
+          ...emptyTask(),
+          name: (d.name || text).slice(0, 32),
+          keywords: d.keywords?.length ? d.keywords.slice(0, 8) : [text.slice(0, 32)],
+          min_price: d.min_price ?? null,
+          max_price: d.max_price ?? null,
+          province: d.province ?? null,
+          city: d.city ?? null,
+          publish_days: d.publish_days ?? null,
+          personal_only: !!d.personal_only,
+          rules: {
+            ...emptyRules(),
+            include_all: d.rules?.include_all || [],
+            exclude: d.rules?.exclude || [],
+          },
+          criteria: d.criteria || '',
+          decision_mode: 'ai',
+          enabled: true,
+        }
+      } catch {
+        const keywords = text.split(/[,，、;；\s]+/).map((k) => k.trim()).filter(Boolean).slice(0, 8)
+        taskData = {
+          ...emptyTask(),
+          name: text.slice(0, 32),
+          keywords: keywords.length ? keywords : [text.slice(0, 32)],
+          criteria: text,
+          enabled: true,
+        }
+      }
+    } else {
+      const keywords = text.split(/[,，、;；]+/).map((k) => k.trim()).filter(Boolean).slice(0, 8)
+      taskData = {
+        ...emptyTask(),
+        name: (keywords[0] || text).slice(0, 32),
+        keywords: keywords.length ? keywords : [text.slice(0, 32)],
+        enabled: true,
+      }
+    }
+
+    const created = await createTask(taskData)
+    quickKw.value = ''
+    ElMessage.success(`「${created.name}」已创建并开始搜索`)
+    await loadTasks(true)
+    selectTask(created.id)
+    await run(created)
+  } catch (err) {
+    ElMessage.error(errorMessage(err) || '创建搜索任务失败')
+  } finally {
+    quickLoading.value = false
+  }
 }
 
 async function onSaved(t: TaskOut, created: boolean) {
@@ -477,7 +534,7 @@ onBeforeUnmount(stopTimer)
       </template>
     </RadarNav>
 
-    <!-- 新建：一个入口。输入关键词回车；弹窗里也可以一句话描述需求让 AI 生成 -->
+    <!-- 新建：一个入口。输入关键词回车直接创建并搜索，无需弹窗二次确认；留空点击可打开完整配置弹窗 -->
     <div class="quick">
       <el-input
         v-model="quickKw"
@@ -485,9 +542,18 @@ onBeforeUnmount(stopTimer)
         clearable
         :prefix-icon="Search"
         placeholder="想买什么？输入关键词，或直接说需求：2000 以内的 iPhone 13，电池 85 以上，不要维修过的"
+        :disabled="quickLoading"
         @keyup.enter="quickCreate"
       />
-      <el-button size="large" type="primary" :icon="Plus" @click="quickCreate">新建智能搜索</el-button>
+      <el-button
+        size="large"
+        type="primary"
+        :icon="quickKw.trim() ? Search : Plus"
+        :loading="quickLoading"
+        @click="quickCreate"
+      >
+        {{ quickKw.trim() ? '直接搜索' : '新建智能搜索' }}
+      </el-button>
     </div>
 
     <div class="layout">
