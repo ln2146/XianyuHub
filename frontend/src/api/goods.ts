@@ -168,6 +168,8 @@ export const listItems = (params: { account_id?: number; status?: string; q?: st
 export const updateItem = (id: number, body: ItemUpdate) =>
   http.patch<MyItem>(`/goods/items/${id}`, body).then((r) => r.data)
 export const polishItem = (id: number) => http.post<{ ok: boolean }>(`/goods/items/${id}/polish`).then((r) => r.data)
+export const polishAllItems = (accountId?: number) =>
+  http.post<{ message: string }>('/goods/polish-all', null, { params: { account_id: accountId } }).then((r) => r.data)
 export const offlineItem = (id: number) => http.post<{ ok: boolean }>(`/goods/items/${id}/offline`).then((r) => r.data)
 export const getMarket = (keyword: string, my_price?: number | null) =>
   http

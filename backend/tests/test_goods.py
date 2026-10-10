@@ -284,3 +284,12 @@ async def test_import_image_url(admin_client):
     img_resp = await admin_client.get(data["url"])
     assert img_resp.status_code == 200
     assert img_resp.content == PNG
+
+
+@respx.mock
+async def test_polish_all_endpoint(admin_client):
+    acc_id = await make_account(admin_client)
+    respx.post(url__regex=r".*mtop\.taobao\.idle\.item\.polish.*").mock(return_value=ok({}))
+    r = await admin_client.post(f"/api/v1/goods/polish-all?account_id={acc_id}")
+    assert r.status_code == 200
+    assert "启动" in r.json()["message"]

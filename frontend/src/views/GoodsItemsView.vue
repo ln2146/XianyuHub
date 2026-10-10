@@ -2,8 +2,8 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Delete, Plus, Refresh, Search } from '@element-plus/icons-vue'
-import { getMarket, listItems, offlineItem, polishItem, syncItems, updateItem, type MarketView, type MyItem } from '@/api/goods'
+import { Delete, MagicStick, Plus, Refresh, Search } from '@element-plus/icons-vue'
+import { getMarket, listItems, offlineItem, polishAllItems, polishItem, syncItems, updateItem, type MarketView, type MyItem } from '@/api/goods'
 import {
   createBinding,
   deleteBinding,
@@ -197,6 +197,24 @@ async function polish(it: MyItem) {
   }
 }
 
+const polishingAll = ref(false)
+async function handlePolishAll() {
+  await ElMessageBox.confirm(
+    '将在后台按安全间隔依次擦亮在售商品，以提升曝光度并避免触发平台频率限制。确定立即执行？',
+    '一键擦亮在售商品',
+    { type: 'info', confirmButtonText: '开始擦亮' },
+  )
+  polishingAll.value = true
+  try {
+    const res = await polishAllItems(filter.account_id || undefined)
+    ElMessage.success(res.message || '已在后台启动自动擦亮')
+  } catch {
+    /* 拦截器已处理 */
+  } finally {
+    polishingAll.value = false
+  }
+}
+
 async function offline(it: MyItem) {
   await ElMessageBox.confirm(`将在闲鱼上下架「${it.title}」，确定？`, '下架商品', { type: 'warning' })
   busy[`o-${it.id}`] = true
@@ -345,6 +363,9 @@ function listingHint(row: MyItem): { label: string; type: 'warning' | 'success';
         </el-select>
         <el-button type="primary" plain :icon="Refresh" :loading="syncing" :disabled="!filter.account_id" @click="sync">
           同步在售宝贝
+        </el-button>
+        <el-button :icon="MagicStick" :loading="polishingAll" @click="handlePolishAll">
+          一键擦亮在售
         </el-button>
         <el-select v-model="filter.status" clearable placeholder="全部商品状态" class="w140" @change="load">
           <el-option v-for="(v, k) in goodsStatusMap" :key="k" :value="k" :label="v.label" />

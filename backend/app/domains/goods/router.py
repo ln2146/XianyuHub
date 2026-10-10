@@ -1,3 +1,4 @@
+import asyncio
 from datetime import UTC, datetime
 from typing import Any
 
@@ -217,6 +218,13 @@ async def offline(item_pk: int, user: CurrentUser, session: SessionDep) -> dict[
         target_id=item.item_id,
     )
     return {"ok": True}
+
+
+@router.post("/polish-all")
+async def trigger_polish_all(_: CurrentUser, account_id: int | None = None) -> dict[str, str]:
+    """手动立即触发自动擦亮任务（后台按安全间隔陆续执行）。"""
+    asyncio.create_task(service.polish_all(account_id=account_id))
+    return {"message": "已在后台启动擦亮任务，在售商品将按安全间隔陆续擦亮"}
 
 
 @router.get("/market")

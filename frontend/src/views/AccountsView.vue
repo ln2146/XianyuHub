@@ -631,6 +631,7 @@ onBeforeUnmount(() => {
               <div class="flags">
                 <el-tag size="small" :type="row.settings.auto_reply ? 'success' : 'info'" effect="plain">回复{{ row.settings.auto_reply ? '开' : '关' }}</el-tag>
                 <el-tag size="small" :type="row.settings.auto_delivery ? 'success' : 'info'" effect="plain">发货{{ row.settings.auto_delivery ? '开' : '关' }}</el-tag>
+                <el-tag size="small" :type="row.settings.auto_polish ? 'success' : 'info'" effect="plain">擦亮{{ row.settings.auto_polish ? '开' : '关' }}</el-tag>
                 <el-tag size="small" effect="plain">AI {{ { off: '关', suggest: '建议', auto: '自动' }[row.settings.ai_mode as string] }}</el-tag>
               </div>
             </template>

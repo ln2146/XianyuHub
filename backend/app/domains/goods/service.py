@@ -362,10 +362,15 @@ async def polish_item(item: MyItem, user_id: int | None = None) -> None:
     )
 
 
-async def polish_all() -> None:
-    """每日擦亮：只处理开启了 auto_polish 的账号，商品之间随机间隔。"""
+async def polish_all(account_id: int | None = None) -> int:
+    """每日擦亮：只处理开启了 auto_polish 的账号（若指定 account_id 则对该账号在售商品执行），商品之间随机间隔。"""
     async with session_factory()() as s:
-        accounts = [a for a in (await s.execute(select(XyAccount))).scalars() if a.get_settings().auto_polish]
+        stmt = select(XyAccount)
+        if account_id:
+            stmt = stmt.where(XyAccount.id == account_id)
+        else:
+            stmt = stmt.where(XyAccount.status == "active")
+        accounts = [a for a in (await s.execute(stmt)).scalars() if account_id or a.get_settings().auto_polish]
         items = []
         for acc in accounts:
             items += list(
@@ -375,9 +380,12 @@ async def polish_all() -> None:
                     )
                 ).scalars()
             )
+    count = 0
     for item in items:
         try:
             await polish_item(item)
+            count += 1
         except GoofishError as e:
             logger.warning("擦亮失败 item={} err={}", item.item_id, e)
-        await asyncio.sleep(random.uniform(20, 60))
+        await asyncio.sleep(random.uniform(5, 15))
+    return count
