@@ -9,6 +9,8 @@ import {
   createBinding,
   deliverOrder,
   getOrder,
+  importCards,
+  listBindings,
   listOrders,
   listPools,
   syncOrders,
@@ -200,6 +202,73 @@ const deliveryModeLabel: Record<string, string> = {
 const canDeliver = (o: Order) => ['paid', 'risk_hold', 'deliver_failed', 'manual'].includes(o.status)
 /** 因为商品没有关联发货内容而卡住的订单（与后端 NO_BINDING_REASON 对应） */
 const needsLink = (o: Order) => canDeliver(o) && !!o.fail_reason?.includes('还没有关联发货内容')
+/** 缺库存/缺卡密拦截的订单 */
+const isOutOfStock = (o: Order) =>
+  canDeliver(o) &&
+  !!o.fail_reason &&
+  (o.fail_reason.includes('库存') || o.fail_reason.includes('卡密不足') || o.fail_reason.includes('无可用卡密'))
+
+// 缺库存就地快捷补卡并重试发货
+const quickReplenish = reactive({
+  open: false,
+  saving: false,
+  order: null as Order | null,
+  pool_id: null as number | null,
+  lines: '',
+  autoDeliver: true,
+})
+
+async function openQuickReplenish(o: Order) {
+  await ensurePools()
+  const bindings = await listBindings().catch(() => [])
+  const matched = bindings.find(
+    (b) => b.item_id === o.item_id && (!b.account_id || b.account_id === o.account_id),
+  )
+  const poolId = matched?.pool_id || pools.value.find((p) => p.kind === 'pool')?.id || pools.value[0]?.id || null
+
+  Object.assign(quickReplenish, {
+    open: true,
+    saving: false,
+    order: o,
+    pool_id: poolId,
+    lines: '',
+    autoDeliver: true,
+  })
+}
+
+async function submitQuickReplenish() {
+  if (!quickReplenish.order || !quickReplenish.pool_id) {
+    ElMessage.warning('请选择目标卡密库')
+    return
+  }
+  const lines = quickReplenish.lines.trim()
+  if (!lines) {
+    ElMessage.warning('请输入要补充的卡密内容（一行一条）')
+    return
+  }
+  const o = quickReplenish.order
+  quickReplenish.saving = true
+  try {
+    const res = await importCards(quickReplenish.pool_id, lines)
+    ElMessage.success(`成功补充 ${res.added} 条卡密${res.duplicated ? `（跳过 ${res.duplicated} 条重复）` : ''}`)
+
+    if (quickReplenish.autoDeliver) {
+      const r = await deliverOrder(o.id)
+      if (r.ok) {
+        ElMessage.success('发货成功！卡密已发出并已在闲鱼确认发货')
+      } else {
+        ElMessage.warning(`补卡成功，但发货提示：${r.error || r.status}`)
+      }
+    }
+    quickReplenish.open = false
+    await load(page.value)
+    if (detail.open && detail.order?.id === o.id) await openDetail(o)
+  } catch {
+    /* 拦截器已提示 */
+  } finally {
+    quickReplenish.saving = false
+  }
+}
 
 function goLink(o: Order) {
   router.push({ path: '/orders/cards', query: { tab: 'bindings', item_id: o.item_id || undefined } })
@@ -366,7 +435,7 @@ async function openDetail(o: Order) {
             </template>
           </el-table-column>
 
-          <el-table-column label="操作" :width="isMobile ? 100 : 210" :fixed="isMobile ? undefined : 'right'">
+          <el-table-column label="操作" :width="isMobile ? 100 : 250" :fixed="isMobile ? undefined : 'right'">
             <template #default="{ row }">
               <div class="ops">
                 <el-button size="small" @click="openDetail(row as Order)">详情</el-button>
@@ -374,8 +443,11 @@ async function openDetail(o: Order) {
                 <el-button v-if="needsLink(row as Order)" size="small" type="warning" plain @click="openQuickBind(row as Order)">
                   关联发货
                 </el-button>
+                <el-button v-if="isOutOfStock(row as Order)" size="small" type="warning" plain @click="openQuickReplenish(row as Order)">
+                  补卡发货
+                </el-button>
                 <el-button v-if="canDeliver(row as Order)" size="small" type="primary" :loading="busy[`d-${row.id}`]" @click="deliver(row as Order)">
-                  手动发货
+                  {{ isOutOfStock(row as Order) ? '重试发货' : '手动发货' }}
                 </el-button>
                 <el-button v-if="row.status === 'risk_hold'" size="small" type="warning" plain :loading="busy[`h-${row.id}`]" @click="toManual(row as Order)">
                   转人工
@@ -414,7 +486,10 @@ async function openDetail(o: Order) {
 
           <div class="ops mt">
             <el-button v-if="needsLink(detail.order)" type="warning" plain @click="openQuickBind(detail.order)">关联发货</el-button>
-            <el-button v-if="canDeliver(detail.order)" type="primary" :loading="busy[`d-${detail.order.id}`]" @click="deliver(detail.order)">手动发货</el-button>
+            <el-button v-if="isOutOfStock(detail.order)" type="warning" plain @click="openQuickReplenish(detail.order)">一键补卡发货</el-button>
+            <el-button v-if="canDeliver(detail.order)" type="primary" :loading="busy[`d-${detail.order.id}`]" @click="deliver(detail.order)">
+              {{ isOutOfStock(detail.order) ? '重试发货' : '手动发货' }}
+            </el-button>
             <el-button v-if="detail.order.status === 'risk_hold'" type="warning" plain @click="toManual(detail.order)">转人工</el-button>
           </div>
 
@@ -530,6 +605,81 @@ async function openDetail(o: Order) {
             </el-button>
           </div>
         </div>
+      </template>
+    </el-dialog>
+
+    <!-- 缺库存就地快捷补卡弹窗 -->
+    <el-dialog
+      v-model="quickReplenish.open"
+      title="一键补卡并重试发货"
+      width="540px"
+      destroy-on-close
+      class="quick-replenish-dialog"
+    >
+      <div v-if="quickReplenish.order" class="quick-bind-body">
+        <div class="quick-bind-summary">
+          <div class="summary-line">
+            <span class="muted">订单编号：</span>
+            <span class="mono font-semibold">{{ quickReplenish.order.order_id }}</span>
+            <span class="dot-sep">·</span>
+            <span>{{ accounts.nameOf(quickReplenish.order.account_id) }}</span>
+          </div>
+          <div class="summary-line mt-xs">
+            <span class="muted">商品标题：</span>
+            <span class="font-semibold">{{ quickReplenish.order.item_title || quickReplenish.order.item_id }}</span>
+          </div>
+          <div v-if="quickReplenish.order.fail_reason" class="summary-line mt-xs">
+            <span class="muted">拦截原因：</span>
+            <span class="err">{{ quickReplenish.order.fail_reason }}</span>
+          </div>
+        </div>
+
+        <el-alert
+          type="warning"
+          :closable="false"
+          show-icon
+          class="mt"
+          title="直接在此粘贴新卡密即可就地导入库存，并自动重试发货，无需离开订单页面。"
+        />
+
+        <el-form label-position="top" class="mt">
+          <el-form-item label="目标卡密库" required>
+            <el-select v-model="quickReplenish.pool_id" placeholder="请选择卡密库" class="w-full">
+              <el-option
+                v-for="p in pools.filter((x) => x.kind === 'pool')"
+                :key="p.id"
+                :label="`${p.name}（当前可用库存: ${p.stock?.available ?? 0}）`"
+                :value="p.id"
+              />
+            </el-select>
+          </el-form-item>
+
+          <el-form-item label="补充卡密（一行一条）" required>
+            <el-input
+              v-model="quickReplenish.lines"
+              type="textarea"
+              :rows="5"
+              placeholder="例如：&#10;CARD-AAAA-BBBB-CCCC&#10;CARD-DDDD-EEEE-FFFF"
+            />
+          </el-form-item>
+
+          <el-form-item>
+            <el-checkbox v-model="quickReplenish.autoDeliver">
+              导入成功后立即自动为该订单发货（推荐）
+            </el-checkbox>
+          </el-form-item>
+        </el-form>
+      </div>
+
+      <template #footer>
+        <el-button @click="quickReplenish.open = false">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="quickReplenish.saving"
+          @click="submitQuickReplenish"
+        >
+          确认补卡{{ quickReplenish.autoDeliver ? '并立即发货' : '' }}
+        </el-button>
       </template>
     </el-dialog>
 
