@@ -17,7 +17,7 @@ from app.core.db import session_factory
 from app.domains.buyer.models import PriceWatch, WatchStatus
 from app.domains.buyer.pipeline import upsert_market_item
 from app.goofish.dto import ItemDetail
-from app.goofish.errors import BizError, GoofishError, RiskBlockedError, RiskControlError
+from app.goofish.errors import BizError, RiskBlockedError, RiskControlError
 from app.notify.senders import Notification
 from app.notify.service import NotifyEvents, notify
 from app.runtime import get_runtime

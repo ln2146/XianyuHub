@@ -109,7 +109,7 @@ const activeMenu = computed(() => {
         <el-icon class="sub-icon"><Message /></el-icon>
         <template #title>
           <div class="menu-item-row">
-            <span>在线客服</span>
+            <span>在线消息</span>
             <el-badge v-if="unreadCount > 0" :value="unreadCount" :max="99" class="unread-badge" />
           </div>
         </template>
