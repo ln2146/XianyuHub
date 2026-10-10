@@ -165,6 +165,9 @@ async def upsert_account(
     await DbSessionStore().save_cookies(acc.id, cookies)
     rt = get_runtime()
     await rt.gateway.invalidate(acc.id)
+    guard_rt = rt.guard.runtime(account_key(acc.id))
+    guard_rt.last_error = None
+    guard_rt.punish_url = None
     rt.guard.load(account_key(acc.id), AccountState.ACTIVE, 0, acc.strikes)
     # 通知 IM 网关用新的登录态（重新）建立长连接
     await bus.publish(

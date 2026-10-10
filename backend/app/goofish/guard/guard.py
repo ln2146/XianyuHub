@@ -84,6 +84,9 @@ class RiskGuard:
         rt.state = AccountState(state)
         rt.cooldown_until = cooldown_until
         rt.strikes = strikes
+        if rt.state == AccountState.ACTIVE:
+            rt.last_error = None
+            rt.punish_url = None
 
     async def set_state(self, key: str, state: AccountState, reason: str = "") -> None:
         rt = self._rt[key]

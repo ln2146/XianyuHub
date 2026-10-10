@@ -66,10 +66,18 @@ export interface QrPoll {
 
 export const listAccounts = () => http.get<Account[]>('/accounts').then((r) => r.data)
 export const getAccount = (id: number) => http.get<Account>(`/accounts/${id}`).then((r) => r.data)
-export const importCookies = (body: { cookies: string; proxy?: string | null; verify?: boolean }) =>
-  http.post<Account>('/accounts/import', body).then((r) => r.data)
-export const qrStart = (proxy?: string | null) =>
-  http.post<{ qr_id: string; qr_content: string }>('/accounts/qr', { proxy: proxy || null }).then((r) => r.data)
+export const importCookies = (body: {
+  cookies: string
+  proxy?: string | null
+  verify?: boolean
+  account_id?: number | null
+}) => http.post<Account>('/accounts/import', body).then((r) => r.data)
+
+export const qrStart = (proxy?: string | null, accountId?: number | null) =>
+  http.post<{ qr_id: string; qr_content: string }>('/accounts/qr', {
+    proxy: proxy || null,
+    account_id: accountId || null,
+  }).then((r) => r.data)
 export const qrPoll = (qrId: string) =>
   http.get<QrPoll>(`/accounts/qr/${qrId}`, { silent: true }).then((r) => r.data)
 export const updateAccount = (id: number, body: AccountUpdate) =>

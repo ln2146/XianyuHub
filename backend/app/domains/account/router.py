@@ -9,6 +9,7 @@ from app.core.crypto import get_vault
 from app.core.deps import AdminUser, CurrentUser, SessionDep
 from app.domains.account import service
 from app.domains.account.models import AccountGrant, AccountSettings, RiskEvent, XyAccount
+from app.domains.account.store import DbSessionStore
 from app.domains.system.audit import record_audit
 from app.domains.system.models import User
 from app.goofish.gateway import account_key
@@ -63,10 +64,12 @@ class ImportIn(BaseModel):
     cookies: str
     proxy: str | None = None
     verify: bool = True
+    account_id: int | None = None
 
 
 class QrStartIn(BaseModel):
     proxy: str | None = None
+    account_id: int | None = None
 
 
 class AccountUpdate(BaseModel):
@@ -103,7 +106,10 @@ async def list_accounts(user: CurrentUser, session: SessionDep) -> list[AccountO
 @router.post("/import", response_model=AccountOut, status_code=201)
 async def import_cookies(body: ImportIn, user: CurrentUser, session: SessionDep) -> AccountOut:
     cookies = service.parse_cookie_input(body.cookies)
-    acc = await service.upsert_account(session, user, cookies, body.proxy)
+    proxy = body.proxy
+    if proxy is None and body.account_id:
+        proxy = await DbSessionStore().get_proxy(body.account_id)
+    acc = await service.upsert_account(session, user, cookies, proxy)
     if body.verify and not await service.probe_account(acc.id):
         rt = get_runtime().guard.runtime(account_key(acc.id))
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Cookie 校验失败：{rt.last_error or '登录态无效'}")
@@ -113,7 +119,10 @@ async def import_cookies(body: ImportIn, user: CurrentUser, session: SessionDep)
 
 @router.post("/qr")
 async def qr_start(body: QrStartIn, user: CurrentUser) -> dict[str, str]:
-    qr_id, content = await service.qr_manager.start(user, body.proxy)
+    proxy = body.proxy
+    if proxy is None and body.account_id:
+        proxy = await DbSessionStore().get_proxy(body.account_id)
+    qr_id, content = await service.qr_manager.start(user, proxy)
     return {"qr_id": qr_id, "qr_content": content}
 
 

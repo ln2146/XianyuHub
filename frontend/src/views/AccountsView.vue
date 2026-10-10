@@ -229,6 +229,149 @@ async function submitCookie() {
   }
 }
 
+// ---------------------------------------------------------------- 重新登录
+const relogin = reactive({
+  open: false,
+  account: null as Account | null,
+  tab: 'qr' as 'qr' | 'cookie',
+  // 扫码
+  qrId: '',
+  qrImage: '',
+  qrStatus: '' as QrStatus | '',
+  qrMessage: '',
+  qrVerifyUrl: '',
+  qrStarting: false,
+  // Cookie 导入
+  cookies: '',
+  proxy: '',
+  useExistingProxy: true,
+  verify: true,
+  submitting: false,
+})
+let reloginTimer: number | undefined
+
+function isSessionExpired(row: any): boolean {
+  if (!row) return false
+  if (row.status === 'need_login' || row.status === 'inactive') return true
+  const err = row.last_error || ''
+  return (
+    err.includes('FAIL_SYS_SESSION_EXPIRED') ||
+    err.includes('FAIL_SYS_LOGIN') ||
+    err.includes('FAIL_SYS_USER_NOT_LOGIN') ||
+    err.toLowerCase().includes('session expired') ||
+    err.includes('登录已失效') ||
+    err.includes('未登录')
+  )
+}
+
+function openReLogin(a: Account) {
+  stopReLoginQrPoll()
+  relogin.account = a
+  relogin.open = true
+  relogin.tab = 'qr'
+  relogin.cookies = ''
+  relogin.proxy = ''
+  relogin.useExistingProxy = !!a.has_proxy
+  relogin.verify = true
+  // 自动开始生成登录二维码
+  startReLoginQr()
+}
+
+async function startReLoginQr() {
+  const a = relogin.account
+  if (!a) return
+  stopReLoginQrPoll()
+  relogin.qrStarting = true
+  relogin.qrId = ''
+  relogin.qrImage = ''
+  relogin.qrStatus = 'NEW'
+  relogin.qrMessage = '正在生成二维码...'
+  relogin.qrVerifyUrl = ''
+  try {
+    const res = await qrStart(null, a.id)
+    relogin.qrId = res.qr_id
+    relogin.qrImage = await QRCode.toDataURL(res.qr_content, { width: 232, margin: 1 })
+    relogin.qrStatus = 'NEW'
+    relogin.qrMessage = '请使用闲鱼 App 扫码登录'
+    scheduleReLoginQrPoll(1500)
+  } catch {
+    relogin.qrStatus = 'ERROR'
+    relogin.qrMessage = '生成二维码失败，请重试'
+  } finally {
+    relogin.qrStarting = false
+  }
+}
+
+async function pollReLoginQr() {
+  if (!relogin.open || !relogin.qrId) return
+  try {
+    const res = await qrPoll(relogin.qrId)
+    relogin.qrStatus = res.status
+    relogin.qrMessage = res.message || ''
+    relogin.qrVerifyUrl = res.verify_url || ''
+    if (res.status === 'SUCCESS') {
+      ElMessage.success(`账号「${relogin.account?.nickname || relogin.account?.unb}」重新登录成功！`)
+      closeReLogin()
+      await load()
+      return
+    }
+    if (['EXPIRED', 'CANCELED', 'ERROR'].includes(res.status)) {
+      return
+    }
+    const nextDelay = res.status === 'SCANED' ? 1000 : 2000
+    scheduleReLoginQrPoll(nextDelay)
+  } catch {
+    relogin.qrStatus = 'ERROR'
+    relogin.qrMessage = '轮询状态失败'
+  }
+}
+
+function scheduleReLoginQrPoll(ms: number) {
+  stopReLoginQrPoll()
+  reloginTimer = window.setTimeout(pollReLoginQr, ms)
+}
+
+function stopReLoginQrPoll() {
+  if (reloginTimer !== undefined) {
+    window.clearTimeout(reloginTimer)
+    reloginTimer = undefined
+  }
+}
+
+function closeReLogin() {
+  stopReLoginQrPoll()
+  relogin.open = false
+  relogin.qrId = ''
+  relogin.qrImage = ''
+  relogin.qrStatus = ''
+}
+
+async function submitReLoginCookie() {
+  const a = relogin.account
+  if (!a) return
+  if (!relogin.cookies.trim()) {
+    ElMessage.warning('请粘贴新 Cookie')
+    return
+  }
+  relogin.submitting = true
+  try {
+    const proxyVal = relogin.useExistingProxy ? null : relogin.proxy.trim() || null
+    const acc = await importCookies({
+      cookies: relogin.cookies.trim(),
+      proxy: proxyVal,
+      verify: relogin.verify,
+      account_id: a.id,
+    })
+    ElMessage.success(`账号「${acc.nickname || acc.unb}」登录态已恢复！`)
+    closeReLogin()
+    await load()
+  } catch {
+    /* 拦截器已提示 */
+  } finally {
+    relogin.submitting = false
+  }
+}
+
 // ---------------------------------------------------------------- 账号设置
 const settings = reactive({
   open: false,
@@ -396,7 +539,10 @@ async function revokeGrant(g: AccountGrant) {
   })
 }
 
-onBeforeUnmount(stopQrPoll)
+onBeforeUnmount(() => {
+  stopQrPoll()
+  stopReLoginQrPoll()
+})
 </script>
 
 <template>
@@ -459,18 +605,28 @@ onBeforeUnmount(stopQrPoll)
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="最近检查 / 错误" min-width="180">
+          <el-table-column label="最近检查 / 错误" min-width="190">
             <template #default="{ row }">
               <div class="small">{{ fmtTime(row.last_probe_at) }}</div>
+              <div v-if="isSessionExpired(row)" class="session-expired-hint">
+                <el-tag size="small" type="danger" effect="plain" class="expired-tag">登录已失效</el-tag>
+                <el-link type="danger" :underline="false" class="small relogin-link" @click="openReLogin(row as Account)">重新登录</el-link>
+              </div>
               <el-tooltip v-if="row.last_error" :content="row.last_error" placement="top">
                 <div class="small err ellipsis">{{ row.last_error }}</div>
               </el-tooltip>
               <el-link v-if="row.punish_url" :href="row.punish_url" target="_blank" type="danger" class="small">打开验证页面</el-link>
             </template>
           </el-table-column>
-          <el-table-column label="操作" :width="isMobile ? 120 : 330" :fixed="isMobile ? undefined : 'right'">
+          <el-table-column label="操作" :width="isMobile ? 120 : 360" :fixed="isMobile ? undefined : 'right'">
             <template #default="{ row }">
               <div class="ops">
+                <el-button
+                  size="small"
+                  :type="isSessionExpired(row) ? 'danger' : 'warning'"
+                  plain
+                  @click="openReLogin(row as Account)"
+                >重新登录</el-button>
                 <el-button size="small" type="primary" plain @click="openSettings(row as Account)">设置</el-button>
                 <el-tooltip content="用一次只读请求确认账号仍处于登录状态" placement="top">
                   <el-button size="small" :loading="busy[`probe-${row.id}`]" @click="probe(row as Account)">检查登录</el-button>
@@ -486,6 +642,7 @@ onBeforeUnmount(stopQrPoll)
                   <el-button size="small">更多</el-button>
                   <template #dropdown>
                     <el-dropdown-menu>
+                      <el-dropdown-item @click="openReLogin(row as Account)">重新登录</el-dropdown-item>
                       <el-dropdown-item @click="openRisk(row as Account)">风控记录</el-dropdown-item>
                       <el-dropdown-item v-if="isAdmin" @click="openGrants(row as Account)">授权</el-dropdown-item>
                       <el-dropdown-item @click="toggleEnabled(row as Account)">{{ row.status === 'disabled' ? '启用账号' : '停用账号' }}</el-dropdown-item>
@@ -544,6 +701,118 @@ onBeforeUnmount(stopQrPoll)
         <el-button @click="cookie.open = false">取消</el-button>
         <el-button type="primary" :loading="cookie.saving" @click="submitCookie">导入</el-button>
       </template>
+    </el-dialog>
+
+    <!-- 重新登录弹窗 -->
+    <el-dialog
+      v-model="relogin.open"
+      :title="`重新登录 · ${relogin.account?.nickname || relogin.account?.unb || ''}`"
+      width="540px"
+      destroy-on-close
+      @closed="closeReLogin"
+    >
+      <div class="relogin-dialog-content">
+        <!-- 账号上下文横幅 -->
+        <div class="relogin-account-banner">
+          <el-avatar :size="42" :src="relogin.account?.avatar || undefined">
+            {{ (relogin.account?.nickname || relogin.account?.unb || 'X').slice(0, 1) }}
+          </el-avatar>
+          <div class="relogin-acc-meta">
+            <div class="relogin-acc-name">
+              <span>{{ relogin.account?.nickname || relogin.account?.unb }}</span>
+              <el-tag size="small" type="info" effect="plain">ID: {{ relogin.account?.unb }}</el-tag>
+              <el-tag v-if="relogin.account?.has_proxy" size="small" type="success" effect="plain">已配代理</el-tag>
+            </div>
+            <div class="relogin-acc-desc muted small">
+              重新登录成功后将直接恢复该账号的全部业务配置、商品关联与自动化任务，无需重新创建。
+            </div>
+          </div>
+        </div>
+
+        <el-tabs v-model="relogin.tab" class="relogin-tabs">
+          <!-- 扫码重新登录 -->
+          <el-tab-pane label="闲鱼 App 扫码" name="qr">
+            <div class="qr-box relogin-qr-box">
+              <template v-if="relogin.qrStarting && !relogin.qrImage">
+                <div class="qr-loading-box">
+                  <el-icon class="is-loading" :size="32"><Refresh /></el-icon>
+                  <div class="mt-s muted small">正在获取二维码...</div>
+                </div>
+              </template>
+              <template v-else>
+                <div class="qr-img" :class="{ dim: ['EXPIRED', 'CANCELED', 'ERROR'].includes(relogin.qrStatus) }">
+                  <img v-if="relogin.qrImage" :src="relogin.qrImage" alt="登录二维码" />
+                </div>
+                <div class="qr-status" :class="relogin.qrStatus">
+                  {{ qrStatusText[relogin.qrStatus] || relogin.qrStatus }}
+                </div>
+                <div v-if="relogin.qrMessage && relogin.qrStatus !== 'NEW'" class="muted small mt-s">
+                  {{ relogin.qrMessage }}
+                </div>
+                <el-alert v-if="relogin.qrStatus === 'NEED_VERIFY'" type="warning" :closable="false" class="mt full">
+                  <div>闲鱼要求进行身份验证（人脸 / 短信），请在浏览器中打开链接完成验证：</div>
+                  <el-link v-if="relogin.qrVerifyUrl" :href="relogin.qrVerifyUrl" target="_blank" type="primary">打开验证页面</el-link>
+                  <div class="mt-s"><el-button size="small" type="primary" @click="pollReLoginQr">我已完成验证，继续检测</el-button></div>
+                </el-alert>
+                <div class="relogin-qr-actions mt">
+                  <el-button
+                    type="primary"
+                    :loading="relogin.qrStarting"
+                    @click="startReLoginQr"
+                  >
+                    {{ ['EXPIRED', 'CANCELED', 'ERROR'].includes(relogin.qrStatus) ? '刷新二维码' : '重新生成二维码' }}
+                  </el-button>
+                </div>
+                <div v-if="relogin.account?.has_proxy" class="relogin-proxy-tip muted small mt-s">
+                  💡 系统将自动使用此账号绑定的专属代理进行扫码握手
+                </div>
+              </template>
+            </div>
+          </el-tab-pane>
+
+          <!-- 导入 Cookie -->
+          <el-tab-pane label="导入新 Cookie" name="cookie">
+            <el-form label-position="top" class="relogin-cookie-form">
+              <el-form-item label="最新 Cookie 字符串或 JSON" required>
+                <el-input
+                  v-model="relogin.cookies"
+                  type="textarea"
+                  :rows="5"
+                  placeholder="粘贴 goofish.com 最新的 Cookie 字符串或导出的 JSON（需含 unb、cookie2、_m_h5_tk）"
+                />
+              </el-form-item>
+
+              <el-form-item v-if="relogin.account?.has_proxy" label="代理设置">
+                <el-checkbox v-model="relogin.useExistingProxy">
+                  沿用该账号当前配置的专属代理（推荐）
+                </el-checkbox>
+                <el-input
+                  v-if="!relogin.useExistingProxy"
+                  v-model="relogin.proxy"
+                  class="mt-s"
+                  placeholder="留空表示直连，或填写 http://user:pass@host:port"
+                />
+              </el-form-item>
+              <el-form-item v-else label="代理（可选）">
+                <el-input v-model="relogin.proxy" placeholder="http://user:pass@host:port 或 socks5://…" />
+              </el-form-item>
+
+              <el-form-item>
+                <el-checkbox v-model="relogin.verify">更新前校验登录状态（推荐）</el-checkbox>
+              </el-form-item>
+
+              <div class="relogin-form-foot">
+                <el-button @click="closeReLogin">取消</el-button>
+                <el-button
+                  type="primary"
+                  :loading="relogin.submitting"
+                  @click="submitReLoginCookie"
+                >更新并重新登录</el-button>
+              </div>
+            </el-form>
+          </el-tab-pane>
+        </el-tabs>
+      </div>
     </el-dialog>
 
     <!-- 账号设置 -->
@@ -817,5 +1086,78 @@ onBeforeUnmount(stopQrPoll)
 .opt-hint {
   float: right;
   margin-left: 12px;
+}
+.session-expired-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 4px;
+}
+.expired-tag {
+  font-weight: 500;
+}
+.relogin-link {
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.relogin-dialog-content {
+  padding: 4px 0;
+}
+.relogin-account-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--xh-bg-elevated);
+  border: 1px solid var(--xh-border);
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+.relogin-acc-meta {
+  flex: 1;
+  min-width: 0;
+}
+.relogin-acc-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.relogin-acc-desc {
+  line-height: 1.4;
+}
+.relogin-tabs :deep(.el-tabs__header) {
+  margin-bottom: 16px;
+}
+.relogin-qr-box {
+  min-height: 300px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 0;
+}
+.qr-loading-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+}
+.relogin-qr-actions {
+  display: flex;
+  gap: 8px;
+}
+.relogin-proxy-tip {
+  color: var(--xh-text-muted);
+}
+.relogin-form-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
 }
 </style>

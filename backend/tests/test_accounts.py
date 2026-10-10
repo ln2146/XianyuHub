@@ -136,3 +136,39 @@ async def test_qr_login_flow(admin_client):
     assert r["status"] == "SUCCESS" and r["account_id"]
     cookies = await DbSessionStore().load_cookies(r["account_id"])
     assert cookies["unb"] == "2200999" and cookies["_m_h5_tk"] == "new_1"
+
+
+@respx.mock
+async def test_account_relogin_clears_error(admin_client: httpx.AsyncClient):
+    mock_probe(True)
+    acc = (
+        await admin_client.post(
+            "/api/v1/accounts/import",
+            json={"cookies": COOKIES, "proxy": "http://127.0.0.1:8888"},
+        )
+    ).json()
+    account_id = acc["id"]
+
+    # 模拟发生过期错误
+    from app.goofish.gateway import account_key
+    from app.runtime import get_runtime
+    guard_rt = get_runtime().guard.runtime(account_key(account_id))
+    guard_rt.last_error = "FAIL_SYS_SESSION_EXPIRED::Session expired"
+
+    # 验证此时读取账号带错误
+    r = await admin_client.get(f"/api/v1/accounts/{account_id}")
+    assert "SESSION_EXPIRED" in r.json()["last_error"]
+
+    # 重新登录（导入新 Cookie，继承原代理）
+    new_cookies = COOKIES.replace("unb=2219896089989", "unb=2219896089989") + "; cookie2=updated_cookie"
+    r2 = await admin_client.post(
+        "/api/v1/accounts/import",
+        json={"cookies": new_cookies, "account_id": account_id, "verify": False},
+    )
+    assert r2.status_code == 201
+    updated_acc = r2.json()
+    assert updated_acc["id"] == account_id
+    assert updated_acc["status"] == "active"
+    assert updated_acc["last_error"] is None
+    assert updated_acc["has_proxy"] is True
+
