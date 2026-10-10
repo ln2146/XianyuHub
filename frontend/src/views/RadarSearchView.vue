@@ -2,7 +2,7 @@
 import { computed, onActivated, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowDown, Bell, Check, Close, Delete, Grid, List, MagicStick, Search, Upload } from '@element-plus/icons-vue'
+import { ArrowDown, Bell, Check, Close, Grid, List, MagicStick, Search, Upload } from '@element-plus/icons-vue'
 import {
   createTask,
   emptyTask,
@@ -148,53 +148,6 @@ function onCardAction(it: SearchItem, key: string) {
   else if (key === 'open') window.open(safeItemLink(it), '_blank', 'noopener')
 }
 
-// 推荐热门分类词
-const exploreGroups = [
-  { name: '数码', items: ['MacBook M1', 'iPhone 15', 'iPad Air', 'AirPods Pro', 'Apple Watch'] },
-  { name: '游戏', items: ['Switch OLED', 'PS5', 'Steam Deck', '显卡 RTX', 'ROG 掌机'] },
-  { name: '影音外设', items: ['索尼微单', '佳能微单', '机械键盘', '戴森吹风机', '4K显示器'] },
-  { name: '潮流潮玩', items: ['始祖鸟', '卡西欧', '乐高', '露营装备', '大疆无人机'] },
-]
-
-// 搜索历史
-const SEARCH_HISTORY_KEY = 'xh_radar_search_history'
-const searchHistory = ref<string[]>([])
-
-function loadSearchHistory() {
-  try {
-    const raw = localStorage.getItem(SEARCH_HISTORY_KEY)
-    if (raw) {
-      const parsed = JSON.parse(raw)
-      if (Array.isArray(parsed)) {
-        searchHistory.value = parsed.slice(0, 8)
-      }
-    }
-  } catch {
-    searchHistory.value = []
-  }
-}
-
-function addSearchHistory(kw: string) {
-  const clean = kw.trim()
-  if (!clean) return
-  const list = [clean, ...searchHistory.value.filter((k) => k !== clean)].slice(0, 8)
-  searchHistory.value = list
-  try {
-    localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(list))
-  } catch {
-    // ignore
-  }
-}
-
-function clearSearchHistory() {
-  searchHistory.value = []
-  try {
-    localStorage.removeItem(SEARCH_HISTORY_KEY)
-  } catch {
-    // ignore
-  }
-}
-
 // 搜索结果状态
 const items = ref<SearchItem[]>([])
 const loading = ref(false)
@@ -249,7 +202,6 @@ async function doSearch(page = 1) {
     ElMessage.warning('请输入搜索关键词')
     return
   }
-  addSearchHistory(kw)
   lastQueryQ = kw
 
   // 智能降速保护：如果两次搜索发起间隔小于 1.8 秒，自动平滑缓冲，模拟真人操作节奏，降低触发平台风控几率
@@ -443,7 +395,6 @@ onMounted(() => {
   accounts.load().catch(() => undefined)
   refreshChannelStatus()
   checkRouteQuery()
-  loadSearchHistory()
 })
 
 onActivated(() => {
@@ -611,50 +562,11 @@ onActivated(() => {
       </div>
 
       <div v-if="!searched && !loading" class="radar-welcome">
-        <div class="welcome-header">
-          <div class="welcome-icon">
-            <el-icon :size="24"><Search /></el-icon>
-          </div>
-          <div class="welcome-title">输入关键词，开始实时搜货</div>
-          <div class="welcome-sub">支持按新发布、新降价、验货宝等条件筛选在售商品</div>
+        <div class="welcome-icon">
+          <el-icon :size="32"><Search /></el-icon>
         </div>
-
-        <div class="explore-box">
-          <!-- 最近搜索历史 (若存在) -->
-          <div v-if="searchHistory.length" class="explore-row history-row">
-            <span class="explore-label">最近搜索</span>
-            <div class="explore-chips">
-              <button
-                v-for="kw in searchHistory"
-                :key="kw"
-                type="button"
-                class="chip history"
-                @click="onQuickSearch(kw)"
-              >
-                {{ kw }}
-              </button>
-              <button type="button" class="clear-history-btn" title="清空搜索历史" @click="clearSearchHistory">
-                <el-icon><Delete /></el-icon>
-                <span>清空</span>
-              </button>
-            </div>
-          </div>
-
-          <div v-for="g in exploreGroups" :key="g.name" class="explore-row">
-            <span class="explore-label">{{ g.name }}</span>
-            <div class="explore-chips">
-              <button
-                v-for="k in g.items"
-                :key="k"
-                type="button"
-                class="chip"
-                @click="onQuickSearch(k)"
-              >
-                {{ k }}
-              </button>
-            </div>
-          </div>
-        </div>
+        <div class="welcome-title">输入关键词，开始实时搜货</div>
+        <div class="welcome-sub">支持按新发布、新降价、验货宝等条件筛选在售商品</div>
       </div>
 
       <el-empty v-else-if="searched && !loading && !items.length && !searchError" description="暂无符合条件的商品" :image-size="80">
@@ -1134,124 +1046,37 @@ onActivated(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 40px 16px 48px;
-  max-width: 680px;
-  margin: 0 auto;
-}
-
-.welcome-header {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+  justify-content: center;
   text-align: center;
-  margin-bottom: 20px;
+  padding: 72px 20px 88px;
+  user-select: none;
 }
 
 .welcome-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: var(--xh-radius-md);
+  width: 60px;
+  height: 60px;
+  border-radius: var(--xh-radius-lg);
   background: var(--xh-primary-soft);
   color: var(--xh-primary);
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 10px;
+  margin-bottom: var(--xh-space-3);
+  box-shadow: 0 4px 14px rgba(30, 158, 106, 0.12);
 }
 
 .welcome-title {
-  font-size: var(--xh-fs-lg);
+  font-size: var(--xh-fs-xl);
   font-weight: 600;
   color: var(--xh-text);
-  margin-bottom: 4px;
+  margin-bottom: var(--xh-space-2);
 }
 
 .welcome-sub {
-  font-size: var(--xh-fs-xs);
+  font-size: var(--xh-fs-sm);
   color: var(--xh-muted);
-}
-
-.explore-box {
-  width: 100%;
-  background: var(--xh-card);
-  border: 1px solid var(--xh-border);
-  border-radius: var(--xh-radius-md);
-  padding: 16px 20px;
-  box-shadow: var(--xh-shadow-1);
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.explore-row {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.explore-row.history-row {
-  padding-bottom: 12px;
-  border-bottom: 1px dashed var(--xh-border);
-}
-
-.explore-label {
-  font-size: var(--xh-fs-xs);
-  font-weight: 500;
-  color: var(--xh-muted);
-  width: 56px;
-  flex-shrink: 0;
-  text-align: right;
-  line-height: 28px;
-}
-
-.explore-chips {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  flex: 1;
-}
-
-.chip {
-  height: 28px;
-  padding: 0 12px;
-  border: 1px solid var(--xh-border);
-  border-radius: var(--xh-radius-pill);
-  background: var(--xh-fill);
-  color: var(--xh-text-2);
-  font-size: var(--xh-fs-xs);
-  cursor: pointer;
-  transition: all 0.15s ease;
-  line-height: 26px;
-}
-
-.chip:hover {
-  background: var(--xh-primary-soft);
-  border-color: var(--xh-primary-border);
-  color: var(--xh-primary);
-}
-
-.chip.history {
-  background: var(--xh-card);
-}
-
-.clear-history-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  margin-left: auto;
-  padding: 2px 6px;
-  font-size: var(--xh-fs-xs);
-  color: var(--xh-muted);
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  border-radius: var(--xh-radius-sm);
-  transition: color 0.15s;
-}
-
-.clear-history-btn:hover {
-  color: var(--xh-danger);
+  max-width: 480px;
+  line-height: 1.6;
 }
 .list-item {
   display: flex;
