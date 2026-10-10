@@ -1,5 +1,7 @@
 """选品任务与调度器的同步。"""
 
+from datetime import UTC, datetime, timedelta
+
 from sqlalchemy import select
 
 from app.core.db import session_factory
@@ -15,6 +17,10 @@ def job_id(task_id: int) -> str:
     return f"buyer.task.{task_id}"
 
 
+def retry_job_id(task_id: int) -> str:
+    return f"buyer.task.{task_id}.retry"
+
+
 def sync_task(task: MonitorTask) -> None:
     if not _enabled:
         return
@@ -22,11 +28,19 @@ def sync_task(task: MonitorTask) -> None:
         scheduler.add_cron_job(job_id(task.id), run_task, task.cron, args=[task.id])
     else:
         scheduler.remove_job(job_id(task.id))
+    if task.enabled and task.retry_at is not None:
+        # 风控退避重试；进程重启时已过期的重试稍后补跑
+        at = task.retry_at if task.retry_at.tzinfo else task.retry_at.replace(tzinfo=UTC)
+        at = max(at, datetime.now(UTC) + timedelta(seconds=5))
+        scheduler.add_date_job(retry_job_id(task.id), run_task, at, args=[task.id])
+    else:
+        scheduler.remove_job(retry_job_id(task.id))
 
 
 def remove_task(task_id: int) -> None:
     if _enabled:
         scheduler.remove_job(job_id(task_id))
+        scheduler.remove_job(retry_job_id(task_id))
 
 
 async def on_task_changed(payload: dict) -> None:

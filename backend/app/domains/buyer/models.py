@@ -64,6 +64,8 @@ class MonitorTask(IdMixin, TimestampMixin, Base):
     last_stats: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     consecutive_failures: Mapped[int] = mapped_column(Integer, default=0)
     paused_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 被闲鱼风控限制后，后台退避重试的时间（不暂停任务）
+    retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class MarketItemRecord(Base):

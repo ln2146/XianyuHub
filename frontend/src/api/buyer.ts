@@ -45,6 +45,8 @@ export interface TaskOut extends TaskIn {
   last_error: string | null
   last_stats: Record<string, unknown>
   paused_reason: string | null
+  /** 被闲鱼限制后，后台自动重试的时间 */
+  retry_at: string | null
   running: boolean
   result_counts: Record<string, number>
 }

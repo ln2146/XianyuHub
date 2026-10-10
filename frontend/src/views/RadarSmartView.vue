@@ -71,10 +71,20 @@ async function loadTasks(silent = false) {
   }
 }
 
+// 后端时间不带时区后缀时按 UTC 解析
+const parseUtc = (v: string) => new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(v) ? v : `${v}Z`).getTime()
+const retryDue = (t: TaskOut) => !!t.retry_at && parseUtc(t.retry_at) <= Date.now()
+function retryText(t: TaskOut) {
+  const d = new Date(parseUtc(t.retry_at || ''))
+  const p = (n: number) => String(n).padStart(2, '0')
+  return retryDue(t) ? '正在重新尝试' : `${p(d.getHours())}:${p(d.getMinutes())} 自动重试`
+}
+
 function startTimer() {
   stopTimer()
   timer = window.setInterval(() => {
-    if (tasks.value.some((t) => t.running)) loadTasks(true)
+    // 搜索中，或退避重试已到点：刷新任务状态
+    if (tasks.value.some((t) => t.running || retryDue(t))) loadTasks(true)
   }, 5000)
 }
 function stopTimer() {
@@ -505,7 +515,7 @@ onBeforeUnmount(stopTimer)
           @keyup.enter="selectTask(t.id)"
         >
           <div class="t-row">
-            <span class="dot" :class="t.running ? 'running' : t.paused_reason || (t.last_status && t.last_status !== 'ok') ? 'bad' : t.enabled ? 'on' : 'off'" />
+            <span class="dot" :class="t.running ? 'running' : t.retry_at ? 'wait' : t.paused_reason || (t.last_status && t.last_status !== 'ok') ? 'bad' : t.enabled ? 'on' : 'off'" />
             <span class="t-name ellipsis">{{ t.name }}</span>
             <span v-if="t.running" class="t-state">搜索中</span>
             <span v-else-if="t.result_counts.recommend" class="t-count" title="推荐数量">{{ t.result_counts.recommend }}</span>
@@ -514,6 +524,7 @@ onBeforeUnmount(stopTimer)
             {{ cronText(t) }}<template v-if="t.last_run_at"> · {{ statusLabel[t.last_status || '']?.label && t.last_status !== 'ok' ? statusLabel[t.last_status || ''].label + ' · ' : '' }}{{ fmtRelative(t.last_run_at) }}</template>
           </div>
           <div v-if="t.paused_reason" class="t-paused" :title="`已暂停：${t.paused_reason}`">已暂停：{{ t.paused_reason }}</div>
+          <div v-else-if="t.retry_at && !t.running" class="t-wait" :title="t.last_error || ''">闲鱼临时限制，{{ retryText(t) }}</div>
           <div class="t-ops" @click.stop>
             <el-button size="small" link type="primary" :icon="CaretRight" :loading="busy[`run-${t.id}`]" :disabled="t.running" @click="run(t)">搜索</el-button>
             <el-button size="small" link :icon="Edit" @click="openEdit(t)">编辑</el-button>
@@ -578,6 +589,9 @@ onBeforeUnmount(stopTimer)
                   <p v-if="currentTask?.paused_reason" class="empty-paused-hint">
                     <el-icon><WarningFilled /></el-icon>
                     <span>当前任务已暂停：{{ currentTask.paused_reason }}</span>
+                  </p>
+                  <p v-else-if="currentTask?.retry_at && !currentTask.running" class="empty-wait-hint">
+                    闲鱼临时限制了搜索，系统会在后台等待，{{ retryText(currentTask) }}
                   </p>
                 </div>
               </template>
@@ -823,6 +837,9 @@ onBeforeUnmount(stopTimer)
 .dot.bad {
   background: var(--xh-danger);
 }
+.dot.wait {
+  background: var(--xh-warning);
+}
 .t-state {
   font-size: var(--xh-fs-xs);
   color: var(--xh-primary);
@@ -846,6 +863,14 @@ onBeforeUnmount(stopTimer)
   padding-left: 16px;
   font-size: var(--xh-fs-xs);
   color: var(--xh-danger);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.t-wait {
+  padding-left: 16px;
+  font-size: var(--xh-fs-xs);
+  color: var(--xh-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -923,6 +948,11 @@ onBeforeUnmount(stopTimer)
   margin: 0;
   font-size: var(--xh-fs-base);
   color: var(--xh-text-2);
+}
+.empty-wait-hint {
+  margin: var(--xh-space-2) 0 0;
+  font-size: var(--xh-fs-xs);
+  color: var(--xh-muted);
 }
 .empty-paused-hint {
   margin: var(--xh-space-2) 0 0;

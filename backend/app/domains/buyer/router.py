@@ -97,6 +97,7 @@ class TaskOut(TaskIn):
     last_error: str | None
     last_stats: dict[str, Any]
     paused_reason: str | None
+    retry_at: datetime | None = None  # 被闲鱼限制后，后台自动重试的时间
     running: bool = False
     result_counts: dict[str, int] = Field(default_factory=dict)
 
@@ -147,6 +148,7 @@ def _task_out(t: MonitorTask, counts: dict[str, int] | None = None) -> TaskOut:
         last_error=t.last_error,
         last_stats=t.last_stats or {},
         paused_reason=t.paused_reason,
+        retry_at=t.retry_at,
         running=task_lock(t.id).locked(),
         result_counts=counts or {},
     )
@@ -218,6 +220,7 @@ async def update_task(task_id: int, body: TaskIn, user: CurrentUser, session: Se
         setattr(task, k, v)
     task.rules = body.rules.model_dump()
     task.paused_reason = None
+    task.retry_at = None
     task.consecutive_failures = 0
     await session.commit()
     scheduling.sync_task(task)
@@ -239,10 +242,15 @@ async def trigger_task(task_id: int, user: CurrentUser, session: SessionDep) -> 
     task = await _own_task(session, user, task_id)
     if task_lock(task.id).locked():
         raise HTTPException(status.HTTP_409_CONFLICT, "任务正在运行")
-    if task.paused_reason:
-        task.paused_reason = None
-        task.consecutive_failures = 0
+    waiting = task.retry_at is not None
+    if task.paused_reason or waiting:
+        if task.paused_reason:
+            task.consecutive_failures = 0
+        task.paused_reason = task.retry_at = None
         await session.commit()
+    if waiting:  # 手动立即搜索：取消排队中的退避重试
+        scheduling.sync_task(task)
+        await bus.publish(Topics.BUYER_TASK_CHANGED, {"task_id": task.id})
     bg = asyncio.create_task(run_task(task.id))
     _background.add(bg)
     bg.add_done_callback(_background.discard)

@@ -1,7 +1,9 @@
 """选品雷达流水线：采集 → 去重 / 价格快照 → 规则初筛 → 价格情报 → 文本粗筛 → 详情 / 画像 → AI 判定 → 推送。"""
 
 import asyncio
+import math
 import random
+import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -25,6 +27,7 @@ from app.domains.buyer.models import (
 )
 from app.goofish.dto import MarketItem, SearchQuery, SellerProfile
 from app.goofish.errors import GoofishError, RiskBlockedError, RiskControlError
+from app.goofish.gateway import account_key
 from app.intelligence.llm import LLMError, LLMUnavailable, Tier, get_llm
 from app.intelligence.pricing import MarketStats, deal_label, deal_score, market_stats
 from app.intelligence.rules import ItemRules, check_item
@@ -34,6 +37,10 @@ from app.runtime import get_runtime
 
 PROFILE_TTL = timedelta(hours=24)
 MAX_FAILURES_BEFORE_PAUSE = 3
+# 被闲鱼风控限制时不暂停任务，而是后台退避重试：2 → 4 → 8 … 分钟，最长 1 小时；
+# 若该通道的冷却期更长，则等到冷却结束再试（冷却期内重试只会被本地拦下）
+RISK_RETRY_BASE_SECONDS = 120
+RISK_RETRY_MAX_SECONDS = 3600
 NOTIFY_DIGEST_MAX = 10  # 汇总通知里最多列出的商品数
 _locks: dict[int, asyncio.Lock] = {}
 
@@ -204,6 +211,10 @@ async def _run(task_id: int) -> RunStats:
         if task.paused_reason:
             stats.notes.append("任务已暂停")
             return stats
+        if task.retry_at is not None and _aware(task.retry_at) > datetime.now(UTC) + timedelta(seconds=5):
+            # 定时触发撞上退避等待期：交给重试任务，不在冷却期内再去碰闲鱼
+            stats.notes.append("等待风控退避重试")
+            return stats
         owner_id = task.owner_id
     try:
         await _collect_and_evaluate(task, stats)
@@ -224,21 +235,47 @@ async def _run(task_id: int) -> RunStats:
         task.last_status = status
         task.last_error = error
         task.last_stats = stats.as_dict()
+        had_retry = task.retry_at is not None
+        task.retry_at = None
         if status == "ok":
             task.consecutive_failures = 0
         else:
             task.consecutive_failures += 1
-            if task.consecutive_failures >= MAX_FAILURES_BEFORE_PAUSE or status == "risk":
+            if status == "risk":
+                delay = risk_retry_delay(task.consecutive_failures, _cooldown_left(task.account_id))
+                task.retry_at = datetime.now(UTC) + timedelta(seconds=delay)
+            elif task.consecutive_failures >= MAX_FAILURES_BEFORE_PAUSE:
                 task.paused_reason = f"连续失败 {task.consecutive_failures} 次：{error}"
         paused = task.paused_reason
+        retry_at = task.retry_at
         name = task.name
         await s.commit()
+    if retry_at is not None or had_retry:
+        # 让调度进程按 retry_at 安排（或取消）一次性重试
+        await bus.publish(Topics.BUYER_TASK_CHANGED, {"task_id": task_id})
+    if retry_at is not None:
+        logger.info("选品任务 {} 被闲鱼限制，{} 后台重试", task_id, retry_at.isoformat())
     if status != "ok" and paused:
         await notify(
             owner_id,
             Notification(event=NotifyEvents.TASK_FAILED, title=f"选品任务「{name}」已暂停", content=paused or ""),
         )
     return stats
+
+
+def _aware(dt: datetime) -> datetime:
+    return dt if dt.tzinfo else dt.replace(tzinfo=UTC)  # SQLite 取回的是不带时区的 UTC
+
+
+def _cooldown_left(account_id: int | None) -> float:
+    rt = get_runtime().gateway.guard.runtime(account_key(account_id))
+    return max(0.0, rt.cooldown_until - time.time())
+
+
+def risk_retry_delay(failures: int, cooldown: float) -> float:
+    """第 failures 次连续被限制后，距下次重试的秒数（含 15~90 秒随机抖动，避免整点扎堆）。"""
+    backoff = min(RISK_RETRY_MAX_SECONDS, RISK_RETRY_BASE_SECONDS * 2 ** max(0, failures - 1))
+    return math.ceil(max(backoff, cooldown) + random.uniform(15, 90))
 
 
 async def _collect_and_evaluate(task: MonitorTask, stats: RunStats) -> None:

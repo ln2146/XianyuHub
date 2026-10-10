@@ -1,3 +1,5 @@
+import asyncio
+
 import httpx
 import respx
 from sqlalchemy import select
@@ -5,7 +7,9 @@ from sqlalchemy import select
 from app.core.db import session_factory
 from app.domains.buyer.models import MarketItemRecord, PriceSnapshot, TaskResult
 from app.domains.buyer.pipeline import run_task
+from app.goofish.gateway import account_key
 from app.intelligence.llm import LLMGateway, LLMResult, set_llm
+from app.runtime import get_runtime
 from tests.test_goofish_protocol import load
 
 TASK = {
@@ -103,19 +107,51 @@ async def test_buyer_pipeline_end_to_end(admin_client):
 
 
 @respx.mock
-async def test_buyer_task_pauses_on_risk(admin_client):
+async def test_buyer_task_backs_off_on_risk_instead_of_pausing(admin_client):
+    from datetime import UTC, datetime
+
     respx.post(url__regex=r".*mtop\.gaia.*").mock(
         return_value=httpx.Response(200, json={"ret": ["SUCCESS"], "data": {}}, headers={"set-cookie": "_m_h5_tk=a_1"})
     )
-    respx.post(url__regex=r".*idlemtopsearch.*").mock(
+    search = respx.post(url__regex=r".*idlemtopsearch.*").mock(
         return_value=httpx.Response(200, json={"ret": ["RGV587_ERROR::SM::哎哟喂,被挤爆啦"], "data": {}})
     )
     task_id = (await admin_client.post("/api/v1/buyer/tasks", json={**TASK, "decision_mode": "rule"})).json()["id"]
     await run_task(task_id)
     task = (await admin_client.get(f"/api/v1/buyer/tasks/{task_id}")).json()
-    assert task["last_status"] == "risk" and task["paused_reason"]
+    assert task["last_status"] == "risk" and task["paused_reason"] is None and task["enabled"]
+    retry_at = datetime.fromisoformat(task["retry_at"])
+    retry_at = retry_at if retry_at.tzinfo else retry_at.replace(tzinfo=UTC)
+    assert retry_at > datetime.now(UTC)
     async with session_factory()() as s:
         assert (await s.execute(select(TaskResult))).first() is None
+
+    # 退避期内的定时触发直接跳过，不再去碰闲鱼
+    calls = search.call_count
+    stats = await run_task(task_id)
+    assert "等待风控退避重试" in stats.notes and search.call_count == calls
+
+    # 手动「立即搜索」取消等待；成功后清除重试
+    search.mock(
+        return_value=httpx.Response(200, json={"ret": ["SUCCESS::ok"], "data": load("search_response.json")["data"]})
+    )
+    get_runtime().gateway.guard.load(account_key(None), "active")
+    assert (await admin_client.post(f"/api/v1/buyer/tasks/{task_id}/run")).status_code == 202
+    from app.domains.buyer.router import _background
+
+    await asyncio.gather(*list(_background))
+    assert search.call_count > calls
+    task = (await admin_client.get(f"/api/v1/buyer/tasks/{task_id}")).json()
+    assert task["last_status"] == "ok" and task["retry_at"] is None
+
+
+def test_risk_retry_delay_backs_off_and_respects_cooldown():
+    from app.domains.buyer.pipeline import RISK_RETRY_MAX_SECONDS, risk_retry_delay
+
+    first, third = risk_retry_delay(1, 0), risk_retry_delay(3, 0)
+    assert 120 < first <= 210 and 480 < third <= 570
+    assert risk_retry_delay(20, 0) <= RISK_RETRY_MAX_SECONDS + 90
+    assert risk_retry_delay(1, 1800) >= 1800  # 冷却期更长时等到冷却结束
 
 
 async def test_task_validation(admin_client):
@@ -218,3 +254,23 @@ async def test_manual_search_falls_back_to_account_when_anonymous_is_limited(adm
     r = await admin_client.get("/api/v1/buyer/items/900000000001/detail")
     assert r.status_code == 200, r.text
     assert detail_calls == {"anon": 0, "acc": 1}
+
+
+def test_sync_task_schedules_and_cancels_backoff_retry(monkeypatch):
+    from datetime import UTC, datetime, timedelta
+
+    from app.domains.buyer import scheduling
+    from app.domains.buyer.models import MonitorTask
+    from app.workers import scheduler
+
+    monkeypatch.setattr(scheduling, "_enabled", True)
+    task = MonitorTask(id=987, enabled=True, cron="*/30 8-23 * * *", retry_at=datetime.now(UTC) + timedelta(minutes=5))
+    try:
+        scheduling.sync_task(task)
+        job = scheduler.get_scheduler().get_job(scheduling.retry_job_id(987))
+        assert job is not None and list(job.args) == [987]
+        task.retry_at = None
+        scheduling.sync_task(task)
+        assert scheduler.get_scheduler().get_job(scheduling.retry_job_id(987)) is None
+    finally:
+        scheduling.remove_task(987)

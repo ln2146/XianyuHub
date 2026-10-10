@@ -4,9 +4,11 @@
 """
 
 from collections.abc import Awaitable, Callable
+from datetime import datetime
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.date import DateTrigger
 from loguru import logger
 
 _scheduler: AsyncIOScheduler | None = None
@@ -35,6 +37,20 @@ def add_cron_job(job_id: str, fn: Callable[..., Awaitable[None]], cron: str, *, 
         max_instances=1,
         coalesce=True,
         misfire_grace_time=300,
+    )
+
+
+def add_date_job(
+    job_id: str, fn: Callable[..., Awaitable[None]], run_at: datetime, *, args: list | None = None
+) -> None:
+    """在指定时间运行一次（如退避重试）；同 id 的旧任务会被替换。"""
+    get_scheduler().add_job(
+        fn,
+        DateTrigger(run_date=run_at),
+        id=job_id,
+        args=args or [],
+        replace_existing=True,
+        misfire_grace_time=600,
     )
 
 
