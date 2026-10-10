@@ -383,7 +383,20 @@ async def export_results(user: CurrentUser, session: SessionDep, task_id: int | 
 
 
 @router.get("/items/{item_id}/prices")
-async def price_history(item_id: str, _: CurrentUser, session: SessionDep) -> list[dict[str, Any]]:
+async def price_history(item_id: str, user: CurrentUser, session: SessionDep) -> list[dict[str, Any]]:
+    """价格走势：只给自己监控中、或出现在自己智能搜索结果里的商品（管理员不限）。"""
+    if user.role != "admin":
+        watched = await session.execute(
+            select(PriceWatch.id).where(PriceWatch.owner_id == user.id, PriceWatch.item_id == item_id).limit(1)
+        )
+        in_tasks = await session.execute(
+            select(TaskResult.id)
+            .join(MonitorTask, MonitorTask.id == TaskResult.task_id)
+            .where(TaskResult.item_id == item_id, MonitorTask.owner_id == user.id)
+            .limit(1)
+        )
+        if watched.first() is None and in_tasks.first() is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "没有这件商品的价格记录")
     rows = await session.execute(
         select(PriceSnapshot).where(PriceSnapshot.item_id == item_id).order_by(PriceSnapshot.seen_at)
     )
@@ -632,7 +645,7 @@ async def _item_analysis(
         snapshots=[PricePoint(price=p.price, seen_at=p.seen_at) for p in snaps.scalars()],
         stats=market_stats(peers),
     )
-    insight_row = await session.get(ItemInsightRecord, item_id)
+    insight_row = await _own_insight(session, user, item_id)
     if insight_row and insight_row.ai_data:
         try:
             analysis.ai_insight = InsightOut.model_validate(insight_row.ai_data)
@@ -640,6 +653,15 @@ async def _item_analysis(
         except Exception:
             pass
     return analysis, rec
+
+
+async def _own_insight(session, user, item_id: str) -> ItemInsightRecord | None:  # noqa: ANN001
+    """当前用户自己保存的 AI 点评（每人一份）。"""
+    return (
+        await session.execute(
+            select(ItemInsightRecord).where(ItemInsightRecord.owner_id == user.id, ItemInsightRecord.item_id == item_id)
+        )
+    ).scalar_one_or_none()
 
 
 async def _seller_analysis(
@@ -732,7 +754,7 @@ class InsightResp(BaseModel):
 @router.get("/items/{item_id}/insight", response_model=InsightResp | None)
 async def get_item_insight(item_id: str, user: CurrentUser, session: SessionDep) -> InsightResp | None:
     """获取已保存的商品大模型综合点评；未分析过则返回 None。"""
-    row = await session.get(ItemInsightRecord, item_id)
+    row = await _own_insight(session, user, item_id)
     if not row or not row.ai_data:
         return None
     try:
@@ -767,9 +789,10 @@ async def item_insight(item_id: str, body: InsightIn, user: CurrentUser, session
 
     # 持久化保存 AI 点评历史记录，退出后再进入可直接查看
     now = datetime.now(UTC)
-    row = await session.get(ItemInsightRecord, item_id)
+    row = await _own_insight(session, user, item_id)
     if row is None:
         row = ItemInsightRecord(
+            owner_id=user.id,
             item_id=item_id,
             ai_data=ai.model_dump(mode="json"),
             item_analysis=item.model_dump(mode="json"),

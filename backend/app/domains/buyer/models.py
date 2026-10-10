@@ -178,8 +178,12 @@ class ItemInsightRecord(Base):
     """商品大模型综合点评历史记录：持久化保存，退出后再次进入仍可查看。"""
 
     __tablename__ = "item_insights"
+    # 每个用户各自一份：多人共用时互相看不到、也覆盖不了对方的点评
+    __table_args__ = (UniqueConstraint("owner_id", "item_id", name="uq_item_insights_owner_item"),)
 
-    item_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    item_id: Mapped[str] = mapped_column(String(32), index=True)
     ai_data: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     item_analysis: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     seller_analysis: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)

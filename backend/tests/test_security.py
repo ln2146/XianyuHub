@@ -120,3 +120,43 @@ async def test_signed_token_with_bad_payload_is_401_not_500(client):
         token = jwt.encode(payload, secret, algorithm="HS256")
         r = await client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
         assert r.status_code == 401, payload
+
+
+async def test_price_history_and_ai_insight_are_per_user(admin_client):
+    from datetime import UTC, datetime
+
+    from app.domains.buyer.models import ItemInsightRecord, PriceSnapshot, PriceWatch
+
+    now = datetime.now(UTC)
+    ai = {
+        "item_summary": "s",
+        "seller_summary": "s",
+        "ip_assessment": "s",
+        "comment_insight": "s",
+        "seller_type": "personal",
+        "trust_level": "high",
+        "advice": "可以买",
+        "questions_for_seller": [],
+    }
+    async with session_factory()() as s:
+        s.add(PriceSnapshot(item_id="880001", price=100, seen_at=now))
+        s.add(ItemInsightRecord(owner_id=1, item_id="880001", ai_data=ai, created_at=now, updated_at=now))
+        await s.commit()
+    h = await _member_headers(admin_client)
+    # 别人关注的商品：成员看不到价格走势，也看不到管理员保存的 AI 点评
+    assert (await admin_client.get("/api/v1/buyer/items/880001/prices", headers=h)).status_code == 404
+    assert (await admin_client.get("/api/v1/buyer/items/880001/insight", headers=h)).json() is None
+    from app.domains.buyer.router import _own_insight
+    from app.domains.system.models import User
+
+    async with session_factory()() as s:
+        admin, member = await s.get(User, 1), (await s.execute(User.__table__.select().where(User.id != 1))).first()
+        assert (await _own_insight(s, admin, "880001")).ai_data["advice"] == "可以买"
+        assert await _own_insight(s, await s.get(User, member.id), "880001") is None
+    # 成员自己也在价格监控里关注了这件：可以看价格走势
+    member_id = (await admin_client.get("/api/v1/auth/me", headers=h)).json()["id"]
+    async with session_factory()() as s:
+        s.add(PriceWatch(owner_id=member_id, item_id="880001", title="x", interval_minutes=60))
+        await s.commit()
+    r = await admin_client.get("/api/v1/buyer/items/880001/prices", headers=h)
+    assert r.status_code == 200 and r.json()[0]["price"] == 100
