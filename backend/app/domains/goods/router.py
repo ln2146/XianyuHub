@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select
 
 from app.core.deps import CurrentUser, SessionDep
+from app.domains.account.channel import with_fallback
 from app.domains.account.service import accessible_account_ids, get_account_for
 from app.domains.goods import service
 from app.domains.goods.ai_listing import Strategy, generate_listing
@@ -216,9 +217,12 @@ async def offline(item_pk: int, user: CurrentUser, session: SessionDep) -> dict[
 
 
 @router.get("/market")
-async def market(_: CurrentUser, keyword: str = Query(min_length=1), my_price: float | None = None) -> dict[str, Any]:
+async def market(
+    user: CurrentUser, session: SessionDep, keyword: str = Query(min_length=1), my_price: float | None = None
+) -> dict[str, Any]:
     try:
-        return (await service.market_for(keyword, my_price)).model_dump()
+        view, _ = await with_fallback(session, user, None, lambda aid: service.market_for(keyword, my_price, aid))
+        return view.model_dump()
     except GoofishError as e:
         raise goofish_http_error(e) from e
 
@@ -245,7 +249,7 @@ async def get_upload(image_id: str) -> Response:
 
 
 @router.post("/ai-copy")
-async def ai_copy(body: CopyIn, _: CurrentUser) -> dict[str, Any]:
+async def ai_copy(body: CopyIn, user: CurrentUser, session: SessionDep) -> dict[str, Any]:
     llm = get_llm()
     try:
         out = await service.ai_copy(llm, body.image_ids, body.hint)
@@ -257,7 +261,10 @@ async def ai_copy(body: CopyIn, _: CurrentUser) -> dict[str, Any]:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(e)) from e
     result: dict[str, Any] = out.model_dump()
     try:
-        result["market"] = (await service.market_for(out.search_keyword)).model_dump()
+        view, _ = await with_fallback(
+            session, user, None, lambda aid: service.market_for(out.search_keyword, None, aid)
+        )
+        result["market"] = view.model_dump()
     except GoofishError:
         result["market"] = None
     return result
@@ -285,7 +292,8 @@ async def ai_draft(body: AiDraftIn, user: CurrentUser, session: SessionDep) -> P
 
     async def lookup(keyword: str):  # noqa: ANN202
         try:
-            return await service.market_for(keyword)
+            view, _ = await with_fallback(session, user, None, lambda aid: service.market_for(keyword, None, aid))
+            return view
         except RiskBlockedError as e:
             raise RuntimeError("闲鱼风控保护中，暂停搜索") from e
         except GoofishError as e:

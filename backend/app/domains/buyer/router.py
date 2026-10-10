@@ -17,8 +17,9 @@ from sqlalchemy import func, select
 from app.core.deps import CurrentUser, SessionDep
 from app.core.events import Topics, bus
 from app.core.pagination import set_total
+from app.domains.account.channel import anon_paused, fallback_account, with_fallback
 from app.domains.account.models import XyAccount
-from app.domains.account.service import accessible_account_ids, get_account_for
+from app.domains.account.service import get_account_for
 from app.domains.buyer import scheduling
 from app.domains.buyer import watch as watch_service
 from app.domains.buyer.ai import draft_task
@@ -251,7 +252,9 @@ async def trigger_task(task_id: int, user: CurrentUser, session: SessionDep) -> 
     if waiting:  # 手动立即搜索：取消排队中的退避重试
         scheduling.sync_task(task)
         await bus.publish(Topics.BUYER_TASK_CHANGED, {"task_id": task.id})
-    bg = asyncio.create_task(run_task(task.id))
+    # 手动搜索与实时搜货一致：匿名通道受限时这一次改用绑定的账号（不改任务设置）
+    via = await fallback_account(session, user) if task.account_id is None and anon_paused() else None
+    bg = asyncio.create_task(run_task(task.id, account_id=via.id if via else None))
     _background.add(bg)
     bg.add_done_callback(_background.discard)
     return {"started": True}
@@ -408,24 +411,6 @@ def _channel_name(account_id: int | None) -> str:
     return "匿名通道" if account_id is None else "该账号"
 
 
-def _anon_paused() -> bool:
-    rt = get_runtime().gateway.guard.runtime(account_key(None))
-    return rt.state in ("cooldown", "circuit_open") and rt.cooldown_until > time.time()
-
-
-async def _fallback_account(session, user) -> XyAccount | None:  # noqa: ANN001
-    """匿名通道受限时可代为手动搜索的账号：用户可访问、已登录、当前未被限制。"""
-    stmt = select(XyAccount).where(XyAccount.status == "active").order_by(XyAccount.id)
-    allowed = await accessible_account_ids(session, user)
-    if allowed is not None:
-        stmt = stmt.where(XyAccount.id.in_(allowed))
-    guard = get_runtime().gateway.guard
-    for acc in (await session.execute(stmt)).scalars():
-        if guard.runtime(account_key(acc.id)).state == "active":
-            return acc
-    return None
-
-
 @contextmanager
 def _goofish_errors(action: str, account_id: int | None = None) -> Iterator[None]:
     try:
@@ -457,21 +442,19 @@ async def _goofish_call[T](
     *,
     fallback: bool = True,
 ) -> tuple[T, XyAccount | None]:
-    """页面上手动触发的闲鱼请求。未指定账号时走匿名通道；匿名受限则静默改用绑定的账号，
-    匿名已在暂停保护中就不再去试探（会延长闲鱼的限制）。返回 (结果, 代为请求的账号)。"""
-    used: XyAccount | None = None
-    channel = account_id
-    if account_id is None and fallback and _anon_paused():
-        used = await _fallback_account(session, user)
-        channel = used.id if used else None
-    with _goofish_errors(action, channel):
-        try:
-            return await fn(channel), used
-        except (RiskBlockedError, RiskControlError):
-            if channel is not None or not fallback or (used := await _fallback_account(session, user)) is None:
-                raise
-    with _goofish_errors(action, used.id):
-        return await fn(used.id), used
+    """页面上手动触发的闲鱼请求：匿名受限时静默改用绑定的账号（见 account.channel）。
+    返回 (结果, 代为请求的账号)；失败时按最后实际使用的通道给出提示。"""
+    tried: list[int | None] = []
+
+    async def run(aid: int | None) -> T:
+        tried.append(aid)
+        return await fn(aid)
+
+    try:
+        return await with_fallback(session, user, account_id, run, fallback=fallback)
+    except GoofishError as e:
+        with _goofish_errors(action, tried[-1] if tried else account_id):
+            raise e
 
 
 async def _fetch_detail(session, user, item_id: str, account_id: int | None) -> ItemDetail:  # noqa: ANN001
@@ -556,7 +539,7 @@ async def search_status(user: CurrentUser, session: SessionDep, account_id: int 
     if account_id is not None:
         await get_account_for(session, user, account_id)
     rt = get_runtime().gateway.guard.runtime(account_key(account_id))
-    fallback = await _fallback_account(session, user) if account_id is None and _anon_paused() else None
+    fallback = await fallback_account(session, user) if account_id is None and anon_paused() else None
     return {
         "state": rt.state,
         "cooldown_seconds": _cooldown_left(account_id),
@@ -907,9 +890,10 @@ async def delete_watch(watch_id: int, user: CurrentUser, session: SessionDep) ->
 
 @router.post("/watches/{watch_id}/check", response_model=WatchOut)
 async def check_watch_now(watch_id: int, user: CurrentUser, session: SessionDep) -> WatchOut:
-    await _own_watch(session, user, watch_id)
-    with _goofish_errors("获取商品详情"):
-        w = await watch_service.check_watch(watch_id)
+    watch = await _own_watch(session, user, watch_id)
+    w, _ = await _goofish_call(
+        session, user, watch.account_id, "获取商品详情", lambda aid: watch_service.check_watch(watch_id, aid)
+    )
     if w is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "监控不存在")
     return _watch_out(w)

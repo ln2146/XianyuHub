@@ -182,7 +182,8 @@ async def seller_profile(
 
 
 # ---------------------------------------------------------------- 主流程
-async def run_task(task_id: int) -> RunStats:
+async def run_task(task_id: int, account_id: int | None = None) -> RunStats:
+    """account_id：仅本次改用的请求账号（手动搜索时匿名受限的兜底），不改任务设置。"""
     lock = task_lock(task_id)
     if lock.locked():
         logger.info("任务 {} 正在运行，跳过本次触发", task_id)
@@ -196,13 +197,13 @@ async def run_task(task_id: int) -> RunStats:
             logger.info("任务 {} 正在其他进程运行，跳过本次触发", task_id)
             return RunStats(notes=["已在其他进程运行"])
         try:
-            return await _run(task_id)
+            return await _run(task_id, account_id)
         finally:
             if cluster and token:
                 await cluster.unlock(f"buyer.task.{task_id}", token)
 
 
-async def _run(task_id: int) -> RunStats:
+async def _run(task_id: int, account_id: int | None = None) -> RunStats:
     stats = RunStats()
     async with session_factory()() as s:
         task = await s.get(MonitorTask, task_id)
@@ -216,6 +217,9 @@ async def _run(task_id: int) -> RunStats:
             stats.notes.append("等待风控退避重试")
             return stats
         owner_id = task.owner_id
+    if account_id is not None:
+        task.account_id = account_id  # 会话已关闭，只影响本次运行，不会写回数据库
+    channel = task.account_id
     try:
         await _collect_and_evaluate(task, stats)
         status, error = "ok", None
@@ -242,7 +246,7 @@ async def _run(task_id: int) -> RunStats:
         else:
             task.consecutive_failures += 1
             if status == "risk":
-                delay = risk_retry_delay(task.consecutive_failures, _cooldown_left(task.account_id))
+                delay = risk_retry_delay(task.consecutive_failures, _cooldown_left(channel))
                 task.retry_at = datetime.now(UTC) + timedelta(seconds=delay)
             elif task.consecutive_failures >= MAX_FAILURES_BEFORE_PAUSE:
                 task.paused_reason = f"连续失败 {task.consecutive_failures} 次：{error}"

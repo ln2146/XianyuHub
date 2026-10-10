@@ -255,6 +255,27 @@ async def test_manual_search_falls_back_to_account_when_anonymous_is_limited(adm
     assert r.status_code == 200, r.text
     assert detail_calls == {"anon": 0, "acc": 1}
 
+    # 价格监控：加入与「立即检查」
+    w = await admin_client.post("/api/v1/buyer/watches", json={"item": "900000000001", "target_price": 1})
+    assert w.status_code == 201, w.text
+    assert (await admin_client.post(f"/api/v1/buyer/watches/{w.json()['id']}/check")).status_code == 200
+    assert detail_calls == {"anon": 0, "acc": 3}
+
+    # 卖家查同款行情
+    r = await admin_client.get("/api/v1/goods/market?keyword=macbook")
+    assert r.status_code == 200, r.text
+    assert calls == {"anon": 1, "acc": 3}
+
+    # 智能搜索「立即搜索」：本次用账号，任务设置仍是匿名
+    from app.domains.buyer.router import _background
+
+    task = (await admin_client.post("/api/v1/buyer/tasks", json={**TASK, "decision_mode": "rule"})).json()
+    assert (await admin_client.post(f"/api/v1/buyer/tasks/{task['id']}/run")).status_code == 202
+    await asyncio.gather(*list(_background))
+    assert calls["anon"] == 1 and calls["acc"] > 3
+    task = (await admin_client.get(f"/api/v1/buyer/tasks/{task['id']}")).json()
+    assert task["last_status"] == "ok" and task["account_id"] is None
+
 
 def test_sync_task_schedules_and_cancels_backoff_retry(monkeypatch):
     from datetime import UTC, datetime, timedelta

@@ -156,13 +156,13 @@ MARKET_CACHE_TTL = 600  # 秒：同一关键词 10 分钟内复用搜索结果�
 _market_cache: dict[str, tuple[float, list]] = {}
 
 
-async def _market_items(keyword: str) -> list:
+async def _market_items(keyword: str, account_id: int | None = None) -> list:
     key = keyword.strip().lower()
     now = time.monotonic()
     hit = _market_cache.get(key)
     if hit and now - hit[0] < MARKET_CACHE_TTL:
         return hit[1]
-    page = await get_runtime().gateway.search_items(SearchQuery(keyword=keyword, sort="default"))
+    page = await get_runtime().gateway.search_items(SearchQuery(keyword=keyword, sort="default"), account_id)
     _market_cache[key] = (now, page.items)
     if len(_market_cache) > 500:  # 简单的容量控制
         for k in sorted(_market_cache, key=lambda k: _market_cache[k][0])[:100]:
@@ -170,8 +170,8 @@ async def _market_items(keyword: str) -> list:
     return page.items
 
 
-async def market_for(keyword: str, my_price: float | None = None) -> MarketView:
-    items = await _market_items(keyword)
+async def market_for(keyword: str, my_price: float | None = None, account_id: int | None = None) -> MarketView:
+    items = await _market_items(keyword, account_id)
     prices = [i.price for i in items]
     stats = market_stats(prices)
     cheaper = [

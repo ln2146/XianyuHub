@@ -118,13 +118,15 @@ async def _send(owner_id: int, w: PriceWatch, kind: str, hit: str | None) -> Non
     )
 
 
-async def check_watch(watch_id: int) -> PriceWatch | None:
-    """检查单个监控项；风控异常向上抛出，由调用方决定是否中断本轮。"""
+async def check_watch(watch_id: int, account_id: int | None = None) -> PriceWatch | None:
+    """检查单个监控项；风控异常向上抛出，由调用方决定是否中断本轮。
+    account_id 用于手动检查时临时换通道（匿名受限改用账号），不改监控项的设置。"""
     async with session_factory()() as s:
         w = await s.get(PriceWatch, watch_id)
         if w is None:
             return None
-        item_id, account_id = w.item_id, w.account_id
+        item_id = w.item_id
+        account_id = account_id if account_id is not None else w.account_id
     try:
         detail = await get_runtime().gateway.get_item_detail(item_id, account_id=account_id)
     except BizError as e:
