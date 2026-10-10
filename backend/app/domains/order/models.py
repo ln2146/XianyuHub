@@ -50,7 +50,7 @@ TRANSITIONS: dict[str, set[str]] = {
         OrderState.MANUAL,
     },
     OrderState.RISK_HOLD: {OrderState.PAID, OrderState.CLOSED, OrderState.REFUNDING, OrderState.DELIVERED},
-    OrderState.DELIVERING: {OrderState.DELIVERED, OrderState.DELIVER_FAILED, OrderState.REFUNDING},
+    OrderState.DELIVERING: {OrderState.DELIVERED, OrderState.DELIVER_FAILED, OrderState.MANUAL, OrderState.REFUNDING},
     OrderState.DELIVER_FAILED: {OrderState.DELIVERING, OrderState.MANUAL, OrderState.REFUNDING, OrderState.DELIVERED},
     OrderState.MANUAL: {OrderState.DELIVERING, OrderState.DELIVERED, OrderState.REFUNDING, OrderState.CLOSED},
     OrderState.DELIVERED: {OrderState.COMPLETED, OrderState.REFUNDING},

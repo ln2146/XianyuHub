@@ -12,7 +12,7 @@ from typing import Any
 
 import httpx
 from loguru import logger
-from sqlalchemy import func, select, update
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.crypto import get_vault
@@ -45,6 +45,7 @@ RETRY_DELAYS = [60, 120, 300, 600]  # 秒
 DEFAULT_TEMPLATE = "您好，订单已发货，内容如下：\n{content}\n如有问题请随时联系～"
 NO_BINDING_REASON = "该商品还没有关联发货内容，请在「订单发货 → 自动发货 → 商品关联」中设置后再发货"
 _order_locks: dict[int, asyncio.Lock] = {}
+_precheck_lock = asyncio.Lock()
 _push_tasks: set[asyncio.Task] = set()
 
 
@@ -256,8 +257,14 @@ async def precheck(s: AsyncSession, order: Order, owner_id: int, binding: CardBi
                         XyAccount.owner_id == owner_id,
                         Order.buyer_id == order.buyer_id,
                         Order.item_id == order.item_id,
-                        Order.status.in_([OrderState.DELIVERED, OrderState.COMPLETED]),
-                        Order.delivered_at >= since,
+                        or_(
+                            and_(
+                                Order.status.in_([OrderState.DELIVERED, OrderState.COMPLETED]),
+                                Order.delivered_at >= since,
+                            ),
+                            # 正在发货的也算：同一买家同时付款的两单不能都放行
+                            and_(Order.status == OrderState.DELIVERING, Order.id != order.id),
+                        ),
                     )
                 )
             ).scalar_one()
@@ -392,19 +399,20 @@ async def _deliver(order_pk: int, *, force: bool, user_id: int | None) -> bool:
                     "订单已转为待人工，请在「订单发货 → 自动发货 → 商品关联」中设置后手动发货。",
                 )
             return False
-        if not force:
-            reason = await precheck(s, order, owner_id, binding)
+        # 限购检查到标记「发货中」之间串行：否则同一买家并发的两单会同时通过检查
+        async with _precheck_lock:
+            reason = None if force else await precheck(s, order, owner_id, binding)
             if reason:
                 await transition(s, order, OrderState.RISK_HOLD, reason=reason)
-                await s.commit()
-                await _notify_owner(
-                    order.account_id, NotifyEvents.DELIVERY_FAILED, f"🛑 订单 {order.order_id} 暂停自动发货", reason
-                )
-                return False
-        if not await transition(s, order, OrderState.DELIVERING):
+            moved = reason is None and await transition(s, order, OrderState.DELIVERING)
             await s.commit()
+        if reason:
+            await _notify_owner(
+                order.account_id, NotifyEvents.DELIVERY_FAILED, f"🛑 订单 {order.order_id} 暂停自动发货", reason
+            )
             return False
-        await s.commit()
+        if not moved:
+            return False
         pool = await s.get(CardPool, binding.pool_id)
         record = DeliveryRecord(order_pk=order.id, pool_id=pool.id if pool else None, mode=settings.delivery_mode)
         # 重试时：之前已经发给买家的内容 / 已完成的确认发货不再重复
@@ -469,13 +477,24 @@ async def _deliver(order_pk: int, *, force: bool, user_id: int | None) -> bool:
         for step in steps
         if not (step is send_message and record.message_sent) and not (step is consign and record.consigned)
     ]
+    current = None
     try:
         for step in steps:
+            current = step
             await step()
-    except (DeliveryError, GoofishError, ConnectionError, ValueError) as e:
+    except Exception as e:  # noqa: BLE001  任何异常都要落到失败处理，订单不能卡在「发货中」
+        if current is send_message and not record.message_sent and _maybe_sent(e):
+            # 发出去了但没等到回执：可能已经送达，不退回卡密、不自动重试（否则会再发一张）
+            return await _fail(
+                order_pk,
+                f"发送发货消息时{_describe(e)}，消息可能已送达买家，请先在聊天里核对后再处理",
+                record,
+                release_card=None,
+                manual=True,
+            )
         # 内容尚未送达买家时释放卡密；已送达则保留占用，避免同一卡密发给两个人
         release = record.card_item_id if not record.message_sent else None
-        return await _fail(order_pk, str(e), record, release_card=release)
+        return await _fail(order_pk, _describe(e), record, release_card=release)
 
     async with session_factory()() as s:
         order = await s.get(Order, order_pk)
@@ -506,7 +525,27 @@ async def _deliver(order_pk: int, *, force: bool, user_id: int | None) -> bool:
     return True
 
 
-async def _fail(order_pk: int, error: str, record: DeliveryRecord, *, release_card: int | None) -> bool:
+# 能确定消息没有发出去的错误（发送前就被拒绝）；其余如超时、发出后断线都算「可能已送达」
+_NOT_SENT_ERRORS = ("IM 未连接", "该账号 IM 未连接", "IM 网关未运行", "发送失败")
+
+
+def _maybe_sent(e: BaseException) -> bool:
+    if isinstance(e, DeliveryError | ValueError | GoofishError):
+        return False
+    if isinstance(e, ConnectionError | RuntimeError) and str(e).startswith(_NOT_SENT_ERRORS):
+        return False
+    return True
+
+
+def _describe(e: BaseException) -> str:
+    if isinstance(e, TimeoutError):
+        return "等待闲鱼回执超时"
+    return str(e) or type(e).__name__
+
+
+async def _fail(
+    order_pk: int, error: str, record: DeliveryRecord, *, release_card: int | None, manual: bool = False
+) -> bool:
     async with session_factory()() as s:
         order = await s.get(Order, order_pk)
         if release_card:
@@ -517,7 +556,7 @@ async def _fail(order_pk: int, error: str, record: DeliveryRecord, *, release_ca
         s.add(record)
         await transition(s, order, OrderState.DELIVER_FAILED, reason=error[:500])
         order.retry_count += 1
-        manual = order.retry_count > len(RETRY_DELAYS) or "库存不足" in error
+        manual = manual or order.retry_count > len(RETRY_DELAYS) or "库存不足" in error
         if manual:
             await transition(s, order, OrderState.MANUAL)
             order.next_retry_at = None
@@ -534,7 +573,35 @@ async def _fail(order_pk: int, error: str, record: DeliveryRecord, *, release_ca
     return False
 
 
+STUCK_AFTER = timedelta(minutes=10)
+
+
+async def recover_stuck_deliveries() -> int:
+    """「发货中」超过 10 分钟仍未结束（进程重启 / 异常中断）：转人工并提醒核对，卡密保持占用不复用。"""
+    cutoff = datetime.now(UTC) - STUCK_AFTER
+    moved: list[tuple[int, str]] = []
+    async with session_factory()() as s:
+        rows = (await s.execute(select(Order).where(Order.status == OrderState.DELIVERING))).scalars()
+        for order in rows:
+            lock = _order_locks.get(order.id)
+            if (lock and lock.locked()) or _aware(order.updated_at) > cutoff:
+                continue  # 本进程正在发这一单，或还没到超时
+            reason = "发货过程中断（服务重启或异常），消息可能已发出，请在聊天里核对后再处理"
+            if await transition(s, order, OrderState.MANUAL, reason=reason):
+                moved.append((order.account_id, order.order_id))
+        await s.commit()
+    for account_id, order_id in moved:
+        await _notify_owner(
+            account_id,
+            NotifyEvents.DELIVERY_FAILED,
+            f"⚠️ 订单 {order_id} 发货中断",
+            "发货过程中断，消息可能已发给买家。已转为人工处理，请先在聊天里核对。",
+        )
+    return len(moved)
+
+
 async def retry_failed() -> None:
+    await recover_stuck_deliveries()
     now = datetime.now(UTC)
     async with session_factory()() as s:
         rows = (await s.execute(select(Order).where(Order.status == OrderState.DELIVER_FAILED))).scalars()

@@ -240,3 +240,82 @@ def test_delivery_template_always_carries_the_content():
     # 模板没有占位符：内容附在末尾，买家一定能收到
     assert order_service._render("感谢购买！", order, "CARD-1") == "感谢购买！\nCARD-1"
     assert order_service._render("感谢购买！", order, "") == "感谢购买！"
+
+
+async def _stock(client):
+    return (await client.get("/api/v1/cards/pools")).json()[0]["stock"]
+
+
+@respx.mock
+async def test_uncertain_send_keeps_card_locked_and_goes_manual(admin_client, im):  # noqa: F811
+    # 发出后没等到回执：消息可能已送达，不能退回卡密再发给下一个人，也不能自动重试
+    account_id, fake = im
+    await setup_delivery(admin_client, account_id, cards="C1\nC2")
+    mock_trade()
+    await receive(account_id, chat("在吗"))
+
+    async def timeout(*_):
+        raise TimeoutError
+
+    fake.send_text = timeout
+    await paid(account_id, "4400101")
+    order = (await admin_client.get("/api/v1/orders")).json()[0]
+    assert order["status"] == "manual" and "可能已送达" in order["fail_reason"]
+    assert await _stock(admin_client) == {"available": 1, "locked": 1, "used": 0}
+
+
+@respx.mock
+async def test_definitely_not_sent_releases_card_and_retries(admin_client, im):  # noqa: F811
+    account_id, fake = im
+    await setup_delivery(admin_client, account_id, cards="C1")
+    mock_trade()
+    await receive(account_id, chat("在吗"))
+
+    async def offline(*_):
+        raise ConnectionError("该账号 IM 未连接")
+
+    fake.send_text = offline
+    await paid(account_id, "4400102")
+    order = (await admin_client.get("/api/v1/orders")).json()[0]
+    assert order["status"] == "deliver_failed"  # 稍后自动重试
+    assert await _stock(admin_client) == {"available": 1, "locked": 0, "used": 0}
+
+
+@respx.mock
+async def test_unexpected_error_does_not_leave_order_delivering(admin_client, im):  # noqa: F811
+    account_id, fake = im
+    await setup_delivery(admin_client, account_id, cards="C1")
+    consign = mock_trade()
+    consign.side_effect = KeyError("boom")  # 确认发货时出了意料之外的错
+    await receive(account_id, chat("在吗"))
+    await paid(account_id, "4400103")
+    order = (await admin_client.get("/api/v1/orders")).json()[0]
+    assert order["status"] == "deliver_failed" and len(fake.sent) == 1
+
+
+@respx.mock
+async def test_stuck_delivering_order_goes_manual(admin_client, im):  # noqa: F811
+    account_id, _ = im
+    await receive(account_id, chat("在吗"))
+    async with session_factory()() as s:
+        order = Order(account_id=account_id, order_id="4400104", status="delivering")
+        s.add(order)
+        await s.commit()
+        order.updated_at = datetime.now(UTC) - timedelta(minutes=30)
+        await s.commit()
+    assert await order_service.recover_stuck_deliveries() == 1
+    order = (await admin_client.get("/api/v1/orders")).json()[0]
+    assert order["status"] == "manual" and "中断" in order["fail_reason"]
+
+
+@respx.mock
+async def test_buyer_limit_holds_under_concurrent_payments(admin_client, im):  # noqa: F811
+    import asyncio
+
+    account_id, fake = im
+    await setup_delivery(admin_client, account_id, cards="C1\nC2", max_per_buyer=1)
+    mock_trade()
+    await receive(account_id, chat("在吗"))
+    await asyncio.gather(paid(account_id, "4400105"), paid(account_id, "4400106"))
+    statuses = sorted(o["status"] for o in (await admin_client.get("/api/v1/orders")).json())
+    assert statuses == ["delivered", "risk_hold"] and len(fake.sent) == 1
