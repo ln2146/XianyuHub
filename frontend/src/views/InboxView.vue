@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft, Cpu, Document, Goods, Promotion, Refresh, Search, UserFilled } from '@element-plus/icons-vue'
+import { ArrowDown, ArrowLeft, Cpu, Document, Goods, Promotion, Refresh, Search, UserFilled } from '@element-plus/icons-vue'
 import {
   conversationEvidence,
   handleSuggestion,
@@ -384,9 +384,11 @@ const showThread = computed(() => !isMobile.value || !!currentId.value)
               :icon="Goods"
               @click="toggleContextSidebar"
             >
-              {{ showContextSidebar && !isMobile ? '收起商品' : '商品与订单' }}
+              {{ showContextSidebar && !isMobile ? '收起看板' : '商品与订单' }}
             </el-button>
-            <el-button v-if="current.in_takeover" size="small" @click="applyTakeover(0)">恢复自动回复</el-button>
+            <el-button v-if="current.in_takeover" size="small" type="success" plain @click="applyTakeover(0)">
+              恢复自动回复
+            </el-button>
             <el-popover v-else v-model:visible="takeoverOpen" trigger="click" :width="240">
               <template #reference>
                 <el-button size="small" type="warning" plain>人工接管</el-button>
@@ -398,9 +400,19 @@ const showThread = computed(() => !isMobile.value || !!currentId.value)
               </div>
               <el-button size="small" type="primary" class="full" @click="applyTakeover(takeoverMinutes)">确定接管</el-button>
             </el-popover>
-            <el-button size="small" type="danger" plain :icon="UserFilled" @click="buyerRiskOpen = true">买家分析</el-button>
-            <el-button size="small" :icon="Document" title="售后 / 纠纷时提交给闲鱼客服或小法庭" @click="openEvidence">举证材料</el-button>
-            <el-button size="small" :icon="Cpu" @click="openTrial">试运行</el-button>
+            <el-button size="small" type="danger" plain :icon="UserFilled" @click="buyerRiskOpen = true">买家画像</el-button>
+            <el-dropdown trigger="click">
+              <el-button size="small">
+                更多
+                <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item :icon="Document" @click="openEvidence">导出举证材料</el-dropdown-item>
+                  <el-dropdown-item :icon="Cpu" @click="openTrial">AI 回复试运行</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </div>
         </header>
 
