@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, h, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Delete, Edit, Plus, Refresh, Upload } from '@element-plus/icons-vue'
 import QRCode from 'qrcode'
@@ -28,7 +28,7 @@ import StatusTag from '@/components/StatusTag.vue'
 import { useAccountsStore } from '@/stores/accounts'
 import { useAuthStore } from '@/stores/auth'
 import { useMobile } from '@/composables/useMobile'
-import { accountStatusMap, fmtTime, roleMap } from '@/utils/format'
+import { accountStatusMap, fmtTime, friendlyError, roleMap } from '@/utils/format'
 
 const store = useAccountsStore()
 const auth = useAuthStore()
@@ -128,11 +128,30 @@ async function toggleEnabled(a: Account) {
 }
 
 async function remove(a: Account) {
-  await ElMessageBox.confirm(
-    `将删除账号「${a.nickname || a.unb}」及其本地会话、商品、订单数据（不影响闲鱼上的真实数据），此操作不可恢复。`,
-    '删除账号',
-    { type: 'error', confirmButtonText: '删除', confirmButtonClass: 'el-button--danger' },
-  )
+  const name = a.remark || a.nickname || a.unb
+  const expired = isSessionExpired(a)
+  const lines = [
+    `删除「${name}」会清除本地的：`,
+    '· 会话与聊天记录、商品、订单和发货记录',
+    '· 这个账号的自动回复 / 自动发货等设置',
+    '· 只作用于这个账号的回复规则和商品发货关联',
+    '不可恢复（闲鱼上的真实数据不受影响）。',
+    expired
+      ? '只是登录失效的话，点「改为重新登录」即可保留全部数据。'
+      : '暂时不用的话，可以在「更多」里停用账号，数据都会保留。',
+  ]
+  try {
+    await ElMessageBox.confirm(h('div', { style: 'white-space: pre-line' }, lines.join('\n')), '删除账号', {
+      type: 'error',
+      confirmButtonText: '确认删除',
+      confirmButtonClass: 'el-button--danger',
+      cancelButtonText: expired ? '改为重新登录' : '取消',
+      distinguishCancelAndClose: true,
+    })
+  } catch (action) {
+    if (action === 'cancel' && expired) openReLogin(a)
+    return
+  }
   await withBusy(`del-${a.id}`, async () => {
     await deleteAccount(a.id)
     ElMessage.success('已删除')
@@ -200,7 +219,7 @@ async function pollQr() {
     qr.message = r.message || ''
     qr.verifyUrl = r.verify_url || ''
     if (r.status === 'SUCCESS') {
-      ElMessage.success('扫码登录成功，账号已添加')
+      ElMessage.success(r.relogin ? '已重新登录，原有设置和数据都已保留' : '扫码登录成功，账号已添加')
       qr.open = false
       await load()
       return
@@ -275,16 +294,8 @@ let reloginTimer: number | undefined
 
 function isSessionExpired(row: any): boolean {
   if (!row) return false
-  if (row.status === 'need_login' || row.status === 'inactive') return true
-  const err = row.last_error || ''
-  return (
-    err.includes('FAIL_SYS_SESSION_EXPIRED') ||
-    err.includes('FAIL_SYS_LOGIN') ||
-    err.includes('FAIL_SYS_USER_NOT_LOGIN') ||
-    err.toLowerCase().includes('session expired') ||
-    err.includes('登录已失效') ||
-    err.includes('未登录')
-  )
+  // 只看当前状态：重新登录后 last_error 里可能还留着上次的「Session 过期」
+  return row.status === 'need_login'
 }
 
 function openReLogin(a: Account) {
@@ -378,7 +389,8 @@ async function submitReLoginCookie() {
   }
   relogin.submitting = true
   try {
-    const proxyVal = relogin.useExistingProxy ? null : relogin.proxy.trim() || null
+    // null = 沿用原代理；空字符串 = 改为直连（null 会被后端当成「沿用」）
+    const proxyVal = relogin.useExistingProxy ? null : relogin.proxy.trim()
     const acc = await importCookies({
       cookies: relogin.cookies.trim(),
       proxy: proxyVal,
@@ -641,10 +653,9 @@ onBeforeUnmount(() => {
               <div class="small">{{ fmtTime(row.last_probe_at) }}</div>
               <div v-if="isSessionExpired(row)" class="session-expired-hint">
                 <el-tag size="small" type="danger" effect="plain" class="expired-tag">登录已失效</el-tag>
-                <el-link type="danger" :underline="false" class="small relogin-link" @click="openReLogin(row as Account)">重新登录</el-link>
               </div>
-              <el-tooltip v-if="row.last_error" :content="row.last_error" placement="top">
-                <div class="small err ellipsis">{{ row.last_error }}</div>
+              <el-tooltip v-if="row.last_error && row.status !== 'active'" :content="row.last_error" placement="top">
+                <div class="small err ellipsis">{{ friendlyError(row.last_error) }}</div>
               </el-tooltip>
               <el-link v-if="row.punish_url" :href="row.punish_url" target="_blank" type="danger" class="small">打开验证页面</el-link>
             </template>
@@ -652,12 +663,9 @@ onBeforeUnmount(() => {
           <el-table-column label="操作" :width="isMobile ? 120 : 360" :fixed="isMobile ? undefined : 'right'">
             <template #default="{ row }">
               <div class="ops">
-                <el-button
-                  size="small"
-                  :type="isSessionExpired(row) ? 'danger' : 'warning'"
-                  plain
-                  @click="openReLogin(row as Account)"
-                >重新登录</el-button>
+                <el-button v-if="isSessionExpired(row)" size="small" type="danger" @click="openReLogin(row as Account)">
+                  重新登录
+                </el-button>
                 <el-button size="small" type="primary" plain @click="openSettings(row as Account)">设置</el-button>
                 <el-tooltip content="用一次只读请求确认账号仍处于登录状态" placement="top">
                   <el-button size="small" :loading="busy[`probe-${row.id}`]" @click="probe(row as Account)">检查登录</el-button>
@@ -673,7 +681,7 @@ onBeforeUnmount(() => {
                   <el-button size="small">更多</el-button>
                   <template #dropdown>
                     <el-dropdown-menu>
-                      <el-dropdown-item @click="openReLogin(row as Account)">重新登录</el-dropdown-item>
+                      <el-dropdown-item v-if="!isSessionExpired(row)" @click="openReLogin(row as Account)">重新登录</el-dropdown-item>
                       <el-dropdown-item @click="openRisk(row as Account)">风控记录</el-dropdown-item>
                       <el-dropdown-item v-if="isAdmin" @click="openGrants(row as Account)">授权</el-dropdown-item>
                       <el-dropdown-item @click="toggleEnabled(row as Account)">{{ row.status === 'disabled' ? '启用账号' : '停用账号' }}</el-dropdown-item>

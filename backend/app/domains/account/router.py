@@ -4,13 +4,17 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
 
 from app.core.crypto import get_vault
 from app.core.deps import AdminUser, CurrentUser, SessionDep
+from app.core.events import Topics, bus
 from app.domains.account import service
 from app.domains.account.models import AccountGrant, AccountSettings, RiskEvent, XyAccount
 from app.domains.account.store import DbSessionStore
+from app.domains.message.models import ReplyRule
+from app.domains.order.models import CardBinding
 from app.domains.system.audit import record_audit
 from app.domains.system.models import User
 from app.goofish.gateway import account_key
@@ -107,6 +111,14 @@ async def list_accounts(user: CurrentUser, session: SessionDep) -> list[AccountO
 @router.post("/import", response_model=AccountOut, status_code=201)
 async def import_cookies(body: ImportIn, user: CurrentUser, session: SessionDep) -> AccountOut:
     cookies = service.parse_cookie_input(body.cookies)
+    if body.account_id:
+        # 重新登录：Cookie 必须属于这个账号，否则会悄悄新增另一个账号
+        target = await service.get_account_for(session, user, body.account_id)
+        if cookies.get("unb") and cookies["unb"] != target.unb:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                service.wrong_account_message(target.remark or target.nickname or target.unb),
+            )
     proxy = body.proxy
     if proxy is None and body.account_id:
         proxy = await DbSessionStore().get_proxy(body.account_id)
@@ -122,11 +134,12 @@ async def import_cookies(body: ImportIn, user: CurrentUser, session: SessionDep)
 
 
 @router.post("/qr")
-async def qr_start(body: QrStartIn, user: CurrentUser) -> dict[str, str]:
+async def qr_start(body: QrStartIn, user: CurrentUser, session: SessionDep) -> dict[str, str]:
+    target = await service.get_account_for(session, user, body.account_id) if body.account_id else None
     proxy = body.proxy
     if proxy is None and body.account_id:
         proxy = await DbSessionStore().get_proxy(body.account_id)
-    qr_id, content = await service.qr_manager.start(user, proxy)
+    qr_id, content = await service.qr_manager.start(user, proxy, expect=target)
     return {"qr_id": qr_id, "qr_content": content}
 
 
@@ -136,6 +149,7 @@ async def qr_poll(qr_id: str, user: CurrentUser) -> dict[str, Any]:
     return {
         "status": entry.status,
         "account_id": entry.account_id,
+        "relogin": entry.relogin,
         "verify_url": entry.verify_url,
         "message": entry.message,
     }
@@ -175,8 +189,16 @@ async def update_account(account_id: int, body: AccountUpdate, user: CurrentUser
 
 @router.delete("/{account_id}", status_code=204)
 async def delete_account(account_id: int, user: CurrentUser, session: SessionDep) -> None:
+    """删除账号：会话、商品、订单与发货记录随之删除。另外：
+    - 先断开它的 IM 长连接（否则删除后仍在线收消息、不停重连）
+    - 只作用于这个账号的回复规则与发货关联一并删除：重新添加账号会换新 ID，它们再也不会生效"""
     acc = await service.get_account_for(session, user, account_id)
+    await bus.publish(
+        Topics.ACCOUNT_STATUS_CHANGED, {"account_id": acc.id, "state": AccountState.DISABLED, "reason": "账号已删除"}
+    )
     await get_runtime().gateway.invalidate(acc.id)
+    await session.execute(sa_delete(ReplyRule).where(ReplyRule.account_id == acc.id))
+    await session.execute(sa_delete(CardBinding).where(CardBinding.account_id == acc.id))
     await session.delete(acc)
     await session.commit()
     await record_audit("account.delete", user_id=user.id, actor_type="human", account_id=account_id)

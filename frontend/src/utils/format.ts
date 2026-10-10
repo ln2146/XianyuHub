@@ -178,3 +178,19 @@ export async function copyText(text: string) {
 export function itemUrl(itemId: string | null | undefined): string {
   return `https://www.goofish.com/item?id=${itemId ?? ''}`
 }
+
+/** 闲鱼接口错误码 → 用户能看懂的说明（原文放在悬浮提示里） */
+const GOOFISH_ERRORS: [RegExp, string][] = [
+  [/SESSION_EXPIRED|FAIL_SYS_LOGIN|NOT_LOGIN/i, '登录已过期，需要重新登录'],
+  [/RGV587|USER_VALIDATE|punish|滑块/i, '触发闲鱼风控，需要到闲鱼完成验证'],
+  [/TOKEN_EXOIRED|TOKEN_EXPIRED|TOKEN_EMPTY/i, '登录凭证需要刷新，稍后会自动重试'],
+  [/FLOW_LIMIT|被挤爆|请稍后重试/i, '闲鱼临时限流，稍后会自动恢复'],
+]
+
+export function friendlyError(raw: string | null | undefined): string {
+  if (!raw) return ''
+  for (const [re, text] of GOOFISH_ERRORS) if (re.test(raw)) return text
+  // 「CODE::说明」只保留说明
+  const m = raw.match(/^[A-Z0-9_]+::(.+)$/)
+  return m ? m[1] : raw
+}

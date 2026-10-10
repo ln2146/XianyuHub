@@ -172,7 +172,9 @@ async function togglePool(p: PoolOut, enabled: boolean) {
 }
 
 async function removePool(p: PoolOut) {
-  await ElMessageBox.confirm(`删除发货内容「${p.name}」？其中的卡密和关联的商品也会一并删除，此操作不可恢复。`, '删除发货内容', {
+  const linked = bindings.value.filter((b) => b.pool_id === p.id).length
+  const tail = linked ? `${linked} 个商品的自动发货关联也会移除（商品本身不受影响），之后这些商品付款会转为人工发货。` : ''
+  await ElMessageBox.confirm(`删除发货内容「${p.name}」？其中的卡密会一并删除，不可恢复。${tail}`, '删除发货内容', {
     type: 'error',
     confirmButtonText: '删除',
     confirmButtonClass: 'el-button--danger',

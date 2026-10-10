@@ -60,6 +60,8 @@ export type QrStatus = 'NEW' | 'SCANED' | 'CONFIRMED' | 'EXPIRED' | 'CANCELED' |
 export interface QrPoll {
   status: QrStatus
   account_id: number | null
+  /** 登录的是已有账号（设置与数据保留），而不是新增 */
+  relogin?: boolean
   verify_url: string | null
   message: string | null
 }

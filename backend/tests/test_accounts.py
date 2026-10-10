@@ -1,3 +1,5 @@
+import asyncio
+
 import httpx
 import respx
 from sqlalchemy import select
@@ -136,6 +138,21 @@ async def test_qr_login_flow(admin_client):
     assert r["status"] == "SUCCESS" and r["account_id"]
     cookies = await DbSessionStore().load_cookies(r["account_id"])
     assert cookies["unb"] == "2200999" and cookies["_m_h5_tk"] == "new_1"
+    assert r["relogin"] is False  # 新增的账号
+
+    # 给已有账号重新登录：同一个号 → 标明是重新登录；扫了别的号 → 拒绝，不新增也不覆盖
+    mock_probe()
+    mine = (await admin_client.post("/api/v1/accounts/import", json={"cookies": COOKIES})).json()  # unb 2200888
+    for target, expect_status in ((r["account_id"], "SUCCESS"), (mine["id"], "ERROR")):
+        statuses = iter(["CONFIRMED"])
+        qr = (await admin_client.post("/api/v1/accounts/qr", json={"account_id": target})).json()
+        res = (await admin_client.get(f"/api/v1/accounts/qr/{qr['qr_id']}")).json()
+        assert res["status"] == expect_status
+        if expect_status == "SUCCESS":
+            assert res["relogin"] is True and res["account_id"] == target
+        else:
+            assert "另一个闲鱼账号" in res["message"]
+    assert len((await admin_client.get("/api/v1/accounts")).json()) == 2
 
 
 @respx.mock
@@ -152,6 +169,7 @@ async def test_account_relogin_clears_error(admin_client: httpx.AsyncClient):
     # 模拟发生过期错误
     from app.goofish.gateway import account_key
     from app.runtime import get_runtime
+
     guard_rt = get_runtime().guard.runtime(account_key(account_id))
     guard_rt.last_error = "FAIL_SYS_SESSION_EXPIRED::Session expired"
 
@@ -172,3 +190,44 @@ async def test_account_relogin_clears_error(admin_client: httpx.AsyncClient):
     assert updated_acc["last_error"] is None
     assert updated_acc["has_proxy"] is True
 
+
+@respx.mock
+async def test_relogin_with_another_accounts_cookie_is_refused(admin_client):
+    mock_probe()
+    acc = (await admin_client.post("/api/v1/accounts/import", json={"cookies": COOKIES})).json()
+    other = "unb=2200999; cookie2=x; _m_h5_tk=tk_2; tracknick=别人"
+    r = await admin_client.post("/api/v1/accounts/import", json={"cookies": other, "account_id": acc["id"]})
+    assert r.status_code == 409 and "另一个闲鱼账号" in r.json()["detail"]
+    assert len((await admin_client.get("/api/v1/accounts")).json()) == 1  # 没有悄悄新增账号
+
+
+async def test_delete_account_stops_im_and_removes_its_rules_and_bindings(admin_client):
+    from app.core.events import Topics, bus
+
+    with respx.mock:
+        mock_probe()
+        acc = (await admin_client.post("/api/v1/accounts/import", json={"cookies": COOKIES})).json()
+    rule = {"name": "r", "account_id": acc["id"], "keywords": ["在吗"], "reply": "在"}
+    assert (await admin_client.post("/api/v1/messages/rules", json=rule)).status_code == 201
+    shared = {**rule, "account_id": None, "name": "全部账号"}
+    assert (await admin_client.post("/api/v1/messages/rules", json=shared)).status_code == 201
+    pool = (await admin_client.post("/api/v1/cards/pools", json={"name": "p", "kind": "pool"})).json()
+    binding = {"pool_id": pool["id"], "account_id": acc["id"], "item_id": "1"}
+    assert (await admin_client.post("/api/v1/cards/bindings", json=binding)).status_code == 201
+
+    events: list[dict] = []
+
+    async def record(payload):
+        events.append(payload)
+
+    bus.subscribe(Topics.ACCOUNT_STATUS_CHANGED, record)
+    try:
+        assert (await admin_client.delete(f"/api/v1/accounts/{acc['id']}")).status_code == 204
+        await asyncio.sleep(0.05)  # 事件总线异步分发
+    finally:
+        bus._handlers[Topics.ACCOUNT_STATUS_CHANGED].remove(record)
+    # IM 管理器收到「停用」就会断开连接（否则删除后仍在线收消息、不停重连）
+    assert {"account_id": acc["id"], "state": AccountState.DISABLED}.items() <= events[-1].items()
+    rules = (await admin_client.get("/api/v1/messages/rules")).json()
+    assert [r["name"] for r in rules] == ["全部账号"]  # 只删这个账号专属的
+    assert (await admin_client.get("/api/v1/cards/bindings")).json() == []

@@ -254,6 +254,14 @@ class _QrEntry:
     account_id: int | None = None
     verify_url: str | None = None
     message: str = ""
+    # 重新登录时：要登录回去的账号（扫了别的号不能覆盖 / 新增）
+    expect_unb: str | None = None
+    expect_name: str = ""
+    relogin: bool = False  # 登录的是已有账号（保留设置与数据），而不是新增
+
+
+def wrong_account_message(name: str) -> str:
+    return f"登录的是另一个闲鱼账号，不是「{name}」。请用「{name}」登录的手机扫码 / 导出 Cookie"
 
 
 class QrLoginManager:
@@ -268,12 +276,19 @@ class QrLoginManager:
             entry = self._entries.pop(key)
             await entry.client.aclose()
 
-    async def start(self, owner: User, proxy: str | None = None) -> tuple[str, str]:
+    async def start(self, owner: User, proxy: str | None = None, expect: XyAccount | None = None) -> tuple[str, str]:
         await self._gc()
         client = QrLoginClient(proxy=proxy)
         sess = await get_runtime().guard.run("login", Action.LOGIN, client.start)
         qr_id = secrets.token_urlsafe(12)
-        self._entries[qr_id] = _QrEntry(owner_id=owner.id, proxy=proxy, client=client, session=sess)
+        self._entries[qr_id] = _QrEntry(
+            owner_id=owner.id,
+            proxy=proxy,
+            client=client,
+            session=sess,
+            expect_unb=expect.unb if expect else None,
+            expect_name=(expect.remark or expect.nickname or expect.unb) if expect else "",
+        )
         return qr_id, sess.qr_content
 
     async def poll(self, qr_id: str, user: User) -> _QrEntry:
@@ -285,10 +300,17 @@ class QrLoginManager:
         result = await entry.client.poll(entry.session)
         entry.status, entry.verify_url, entry.message = result.status, result.verify_url, result.message
         if result.status == QrStatus.SUCCESS:
+            await entry.client.aclose()
+            unb = result.cookies.get("unb")
+            if entry.expect_unb and unb != entry.expect_unb:
+                entry.status, entry.message = QrStatus.ERROR, wrong_account_message(entry.expect_name)
+                return entry
             async with session_factory()() as s:
+                entry.relogin = (
+                    await s.execute(select(XyAccount.id).where(XyAccount.unb == unb))
+                ).scalar_one_or_none() is not None
                 acc = await upsert_account(s, user, result.cookies, entry.proxy)
                 entry.account_id = acc.id
-            await entry.client.aclose()
             asyncio.create_task(probe_account(acc.id))
         return entry
 
