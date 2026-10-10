@@ -3,7 +3,7 @@ import csv
 import io
 import math
 import time
-from collections.abc import Iterator
+from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -440,6 +440,40 @@ def _goofish_errors(action: str, account_id: int | None = None) -> Iterator[None
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"{action}失败：{e}") from e
 
 
+async def _goofish_call[T](
+    session,  # noqa: ANN001
+    user,  # noqa: ANN001
+    account_id: int | None,
+    action: str,
+    fn: Callable[[int | None], Awaitable[T]],
+    *,
+    fallback: bool = True,
+) -> tuple[T, XyAccount | None]:
+    """页面上手动触发的闲鱼请求。未指定账号时走匿名通道；匿名受限则静默改用绑定的账号，
+    匿名已在暂停保护中就不再去试探（会延长闲鱼的限制）。返回 (结果, 代为请求的账号)。"""
+    used: XyAccount | None = None
+    channel = account_id
+    if account_id is None and fallback and _anon_paused():
+        used = await _fallback_account(session, user)
+        channel = used.id if used else None
+    with _goofish_errors(action, channel):
+        try:
+            return await fn(channel), used
+        except (RiskBlockedError, RiskControlError):
+            if channel is not None or not fallback or (used := await _fallback_account(session, user)) is None:
+                raise
+    with _goofish_errors(action, used.id):
+        return await fn(used.id), used
+
+
+async def _fetch_detail(session, user, item_id: str, account_id: int | None) -> ItemDetail:  # noqa: ANN001
+    gateway = get_runtime().gateway
+    detail, _ = await _goofish_call(
+        session, user, account_id, "获取商品详情", lambda aid: gateway.get_item_detail(item_id, account_id=aid)
+    )
+    return detail
+
+
 async def _save_detail(session, detail: ItemDetail) -> MarketItemRecord:  # noqa: ANN001
     rec, _ = await upsert_market_item(session, detail.item)
     rec.seller_zhima = detail.seller.zhima_level or rec.seller_zhima
@@ -487,21 +521,14 @@ async def live_search(
         quick_filters=quick,
     )
     gateway = get_runtime().gateway
-    used: XyAccount | None = None
-    channel_id = account_id
-    # 匿名通道已在暂停保护中：不再去试探（会延长闲鱼的限制），直接改用账号
-    if account_id is None and fallback and _anon_paused():
-        used = await _fallback_account(session, user)
-        channel_id = used.id if used else None
-    with _goofish_errors("搜索", channel_id):
-        try:
-            res = await gateway.search_items(query, account_id=channel_id)
-        except (RiskBlockedError, RiskControlError):
-            # 匿名搜索这一次被限制：手动搜索换账号重试一次
-            if channel_id is not None or not fallback or (used := await _fallback_account(session, user)) is None:
-                raise
-            channel_id = used.id
-            res = await gateway.search_items(query, account_id=channel_id)
+    res, used = await _goofish_call(
+        session,
+        user,
+        account_id,
+        "搜索",
+        lambda aid: gateway.search_items(query, account_id=aid),
+        fallback=fallback,
+    )
     # 入市场商品库：给商品分析提供同类价格样本与价格走势
     for item in res.items:
         await upsert_market_item(session, item)
@@ -544,8 +571,7 @@ async def get_item_detail(
 ) -> dict[str, Any]:
     if account_id is not None:
         await get_account_for(session, user, account_id)
-    with _goofish_errors("获取商品详情", account_id):
-        detail = await get_runtime().gateway.get_item_detail(item_id, account_id=account_id)
+    detail = await _fetch_detail(session, user, item_id, account_id)
     await _save_detail(session, detail)
     return detail.model_dump()
 
@@ -591,9 +617,7 @@ async def _item_analysis(
     rec = await session.get(MarketItemRecord, item_id)
     if rec is None or rec.detail_fetched_at is None:
         try:
-            with _goofish_errors("获取商品详情", account_id):
-                detail = await get_runtime().gateway.get_item_detail(item_id, account_id=account_id)
-            rec = await _save_detail(session, detail)
+            rec = await _save_detail(session, await _fetch_detail(session, user, item_id, account_id))
         except HTTPException:
             if rec is None:
                 raise
@@ -621,6 +645,7 @@ async def _item_analysis(
 
 async def _seller_analysis(
     session,  # noqa: ANN001
+    user,  # noqa: ANN001
     rec: MarketItemRecord,
     *,
     account_id: int | None,
@@ -630,16 +655,16 @@ async def _seller_analysis(
 ) -> SellerAnalysis:
     if not (rec.seller_id or "").isdigit():
         # 搜索结果只有加密卖家 ID，补一次详情拿到数字 ID
-        with _goofish_errors("获取商品详情", account_id):
-            detail = await get_runtime().gateway.get_item_detail(rec.item_id, account_id=account_id)
+        detail = await _fetch_detail(session, user, rec.item_id, account_id)
         rec = await _save_detail(session, detail)
         sold_cnt = sold_cnt if sold_cnt is not None else detail.seller.sold_cnt
         ip_location = ip_location or detail.seller.ip_location
     seller_id = rec.seller_id
     if not seller_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "未获取到卖家信息")
-    with _goofish_errors("获取卖家主页", account_id):
-        profile = await load_seller_profile(seller_id, account_id, refresh=refresh)
+    profile, _ = await _goofish_call(
+        session, user, account_id, "获取卖家主页", lambda aid: load_seller_profile(seller_id, aid, refresh=refresh)
+    )
     cached = await session.get(SellerProfileCache, seller_id)
     analysis = analyze_seller(
         profile,
@@ -685,11 +710,9 @@ async def seller_analysis(
         await get_account_for(session, user, account_id)
     rec = await session.get(MarketItemRecord, item_id)
     if rec is None:
-        with _goofish_errors("获取商品详情", account_id):
-            detail = await get_runtime().gateway.get_item_detail(item_id, account_id=account_id)
-        rec = await _save_detail(session, detail)
+        rec = await _save_detail(session, await _fetch_detail(session, user, item_id, account_id))
     return await _seller_analysis(
-        session, rec, account_id=account_id, refresh=refresh, ip_location=ip_location, sold_cnt=sold_cnt
+        session, user, rec, account_id=account_id, refresh=refresh, ip_location=ip_location, sold_cnt=sold_cnt
     )
 
 
@@ -716,7 +739,7 @@ async def item_insight(item_id: str, body: InsightIn, user: CurrentUser, session
     seller = None
     if rec.seller_id:
         seller = await _seller_analysis(
-            session, rec, account_id=body.account_id, ip_location=body.ip_location, sold_cnt=body.sold_cnt
+            session, user, rec, account_id=body.account_id, ip_location=body.ip_location, sold_cnt=body.sold_cnt
         )
     criteria = (await _own_task(session, user, body.task_id)).criteria if body.task_id else ""
     try:
@@ -818,8 +841,7 @@ async def create_watch(body: WatchIn, user: CurrentUser, session: SessionDep) ->
     if exists is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, "这件商品已经在价格监控中")
     # 立即查一次详情：确认商品可访问，并记录加入时的价格作为降幅基准
-    with _goofish_errors("获取商品详情", body.account_id):
-        detail = await get_runtime().gateway.get_item_detail(item_id, account_id=body.account_id)
+    detail = await _fetch_detail(session, user, item_id, body.account_id)
     if watch_service.ended_reason(detail):
         raise HTTPException(422, f"该商品当前不在售（{detail.status}），无法监控")
     data = body.model_dump(exclude={"item"})

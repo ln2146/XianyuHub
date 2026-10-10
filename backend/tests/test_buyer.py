@@ -205,3 +205,16 @@ async def test_manual_search_falls_back_to_account_when_anonymous_is_limited(adm
     # 仅匿名：不借用账号
     r = await admin_client.get("/api/v1/buyer/search?keyword=iphone&fallback=false")
     assert r.status_code == 423 and calls["acc"] == 2
+
+    # 商品详情 / 商品分析 / 商家分析同样静默改用账号
+    detail_calls = {"anon": 0, "acc": 0}
+
+    def detail_handler(request):
+        key = "acc" if "unb=2200888" in request.headers.get("cookie", "") else "anon"
+        detail_calls[key] += 1
+        return httpx.Response(200, json=load("detail_response.json"))
+
+    respx.post(url__regex=r".*mtop\.taobao\.idle\.pc\.detail.*").mock(side_effect=detail_handler)
+    r = await admin_client.get("/api/v1/buyer/items/900000000001/detail")
+    assert r.status_code == 200, r.text
+    assert detail_calls == {"anon": 0, "acc": 1}

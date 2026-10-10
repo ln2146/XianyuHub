@@ -536,13 +536,8 @@ onActivated(() => {
           到「账号配置」点该账号的「打开验证页面」，在闲鱼完成滑块 / 安全验证后点「我已完成验证」。也可以先把「请求通道」切回匿名通道。
         </div>
       </el-alert>
-      <el-alert v-else-if="cooldown > 0 && fallbackName" type="info" show-icon :closable="false" class="cooldown">
-        <template #title>
-          匿名通道受限（约 {{ cooldownText }}后恢复），{{ usedChannel?.fallback ? '本次' : '手动搜索会' }}改用账号「{{ fallbackName }}」搜索
-        </template>
-        <div class="error-tip">账号搜索也有频率限制，请避免短时间内连续大量搜索；不想占用账号可以在下方「请求通道」选「仅匿名」。</div>
-      </el-alert>
-      <el-alert v-else-if="cooldown > 0" type="warning" show-icon :closable="false" class="cooldown">
+      <!-- 「自动」通道下匿名受限会静默改用账号，只有确实没法搜时才提示 -->
+      <el-alert v-else-if="cooldown > 0 && !fallbackName" type="warning" show-icon :closable="false" class="cooldown">
         <template #title>闲鱼临时限制了{{ searchForm.account_id > 0 ? '该账号' : '匿名通道' }}的搜索，{{ cooldownText }}后可以再试</template>
         <div class="error-tip">
           这是闲鱼的频率保护，系统已自动暂停这个通道，到点后再搜即可；连续被限制时暂停时间会逐步加长。
