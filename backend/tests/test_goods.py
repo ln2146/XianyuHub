@@ -179,6 +179,16 @@ async def test_pick_item_location_and_reuse_it(admin_client):
     assert "B00155FAKE" in dict(httpx.QueryParams(publish.calls[-1].request.content.decode()))["data"]
     assert poi.call_count == before
 
+    # 账号没通过闲鱼发布认证：给出能照着做的提示，而不是接口原文
+    d3 = (await admin_client.post("/api/v1/goods/drafts", json=draft)).json()
+    publish.mock(
+        return_value=httpx.Response(
+            200, json={"ret": ["FAIL_BIZ_STRONG_VALID_VERIFY_INFO::用户未通过认证"], "data": {}}
+        )
+    )
+    r = await admin_client.post(f"/api/v1/goods/drafts/{d3['id']}/publish")
+    assert r.status_code == 502 and "刷脸认证" in r.json()["detail"] and "FAIL_BIZ" not in r.json()["detail"]
+
 
 @respx.mock
 async def test_ai_copy_with_market(admin_client):

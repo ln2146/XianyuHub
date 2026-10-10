@@ -265,7 +265,17 @@ class GoofishGateway:
         category = await self.recommend_category(account_id, draft.title, draft.desc, draft.images)
         address = location or await self.default_address(account_id)
         payload = build_publish_payload(draft, category, address)
-        data = await self._call(account_id, Action.PUBLISH, "mtop.idle.pc.idleitem.publish", payload)
+        try:
+            data = await self._call(account_id, Action.PUBLISH, "mtop.idle.pc.idleitem.publish", payload)
+        except BizError as e:
+            if "VERIFY_INFO" in str(e) or "未通过认证" in str(e):
+                # 闲鱼要求发布前完成身份认证（实名 / 刷脸），只能在 App 里做
+                raise BizError(
+                    "账号还没通过闲鱼的发布认证：请在闲鱼 App 里点「卖闲置」发布一次，按提示完成实名或刷脸认证后再试",
+                    ret=e.ret,
+                    api=e.api,
+                ) from e
+            raise
         item_id = str(data.get("itemId") or dig(data, "item", "itemId", default="") or "")
         if not item_id:
             raise BizError(f"发布未返回商品 ID：{str(data)[:200]}")
