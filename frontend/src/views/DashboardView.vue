@@ -551,9 +551,39 @@ function fmtJobNextRun(v: string | null | undefined): string {
                 </div>
 
                 <div class="panel-body">
-                  <div v-if="!data?.risk_events.length" class="risk-empty">
-                    <el-icon class="risk-empty-icon"><CircleCheck /></el-icon>
-                    <div class="risk-empty-title">暂无风控记录</div>
+                  <!-- 安全平稳运行态势展示 (告别死白与巨大空洞) -->
+                  <div v-if="!data?.risk_events.length" class="shield-active-state">
+                    <div class="shield-banner">
+                      <div class="shield-icon-circle">
+                        <el-icon :size="20"><CircleCheck /></el-icon>
+                      </div>
+                      <div class="shield-banner-info">
+                        <span class="shield-banner-title">全域安全防护运行正常</span>
+                        <span class="shield-banner-sub">近 7 天未触发平台限制，拟人化安全机制全天候值守</span>
+                      </div>
+                    </div>
+
+                    <div class="shield-guard-grid">
+                      <div class="guard-metric-card">
+                        <div class="gm-label">拟人化访问控频</div>
+                        <div class="gm-val mono">1.5s ~ 3.5s</div>
+                        <div class="gm-tag ok">动态随机延迟</div>
+                      </div>
+                      <div class="guard-metric-card">
+                        <div class="gm-label">平台限流自愈</div>
+                        <div class="gm-val mono">自动梯级冷却</div>
+                        <div class="gm-tag info">阻断重试保护</div>
+                      </div>
+                      <div class="guard-metric-card">
+                        <div class="gm-label">多账号隔离</div>
+                        <div class="gm-val mono">{{ data?.accounts.length || 0 }} 个独立环境</div>
+                        <div class="gm-tag ok">Session 指纹沙箱</div>
+                      </div>
+                    </div>
+
+                    <div class="shield-footer-tip">
+                      <span>💡 实时监听闲鱼滑块与登录状态，如遇风控将在此自动生成人工解除链接并即时通知。</span>
+                    </div>
                   </div>
 
                   <!-- 发生风控记录时的时间线 -->
@@ -646,33 +676,105 @@ function fmtJobNextRun(v: string | null | undefined): string {
               </div>
             </div>
 
-            <!-- 下方 3 大核心玩法赋能卡片 -->
+            <!-- 3 大核心业务入口卡片 (紧凑精致，带明确操作指引) -->
             <div class="radar-workflow-grid">
               <div class="workflow-card" @click="router.push('/radar/search')">
-                <div class="wf-icon-wrap icon-blue">⚡</div>
+                <div class="wf-icon-wrap icon-blue">
+                  <el-icon :size="20"><Search /></el-icon>
+                </div>
                 <div class="wf-content">
                   <div class="wf-name">实时搜货</div>
-                  <div class="wf-desc">实时秒级抓取闲鱼一手货源与底价</div>
+                  <div class="wf-desc">秒级同步闲鱼一手货源、底价与卖家信誉</div>
                 </div>
-                <el-icon class="wf-arrow"><Right /></el-icon>
+                <div class="wf-action-pill">
+                  <span>立即搜货</span>
+                  <el-icon><Right /></el-icon>
+                </div>
               </div>
 
               <div class="workflow-card" @click="router.push('/radar/smart')">
-                <div class="wf-icon-wrap icon-purple">🎯</div>
-                <div class="wf-content">
-                  <div class="wf-name">智能搜索 · 价格监控</div>
-                  <div class="wf-desc">定时搜货与 AI 质检，到价自动提醒</div>
+                <div class="wf-icon-wrap icon-purple">
+                  <el-icon :size="20"><Aim /></el-icon>
                 </div>
-                <el-icon class="wf-arrow"><Right /></el-icon>
+                <div class="wf-content">
+                  <div class="wf-name">智能搜索 · 盯价</div>
+                  <div class="wf-desc">定时自动巡检好货并 AI 深度分析，到价即提醒</div>
+                </div>
+                <div class="wf-action-pill">
+                  <span>管理任务</span>
+                  <el-icon><Right /></el-icon>
+                </div>
               </div>
 
               <div class="workflow-card" @click="router.push('/radar/smart')">
-                <div class="wf-icon-wrap icon-emerald">💎</div>
-                <div class="wf-content">
-                  <div class="wf-name">好货一键转手发品</div>
-                  <div class="wf-desc">一键带入低价货源快速转手发品</div>
+                <div class="wf-icon-wrap icon-emerald">
+                  <el-icon :size="20"><Promotion /></el-icon>
                 </div>
-                <el-icon class="wf-arrow"><Right /></el-icon>
+                <div class="wf-content">
+                  <div class="wf-name">一键转手发品</div>
+                  <div class="wf-desc">从搜索结果中捕捉套利差价，带加价率生成文案</div>
+                </div>
+                <div class="wf-action-pill">
+                  <span>去挑选</span>
+                  <el-icon><Right /></el-icon>
+                </div>
+              </div>
+            </div>
+
+            <!-- 下半部分：热门类目探索矩阵与捡漏技巧 (充满视口，丰富实用) -->
+            <div class="radar-discover-board">
+              <div class="discover-col category-col">
+                <div class="discover-head">
+                  <span class="d-title">🔥 热门货源分类探索</span>
+                  <span class="d-sub">点击关键词直达全网最新挂牌底价</span>
+                </div>
+                <div class="category-matrix">
+                  <div class="cat-group">
+                    <span class="cat-group-name">数码轻奢：</span>
+                    <div class="cat-chips">
+                      <span v-for="it in ['MacBook Air M1', 'iPhone 15 Pro', 'iPad Air 5', 'AirPods Pro 2']" :key="it" class="d-chip" @click="searchByKeyword(it)">{{ it }}</span>
+                    </div>
+                  </div>
+                  <div class="cat-group">
+                    <span class="cat-group-name">游戏电竞：</span>
+                    <div class="cat-chips">
+                      <span v-for="it in ['Switch OLED', 'PS5 光驱版', 'Steam Deck', 'RTX 4070']" :key="it" class="d-chip" @click="searchByKeyword(it)">{{ it }}</span>
+                    </div>
+                  </div>
+                  <div class="cat-group">
+                    <span class="cat-group-name">外设潮物：</span>
+                    <div class="cat-chips">
+                      <span v-for="it in ['机械键盘 客制化', '索尼微单', '佳能 G7X', '大疆无人机']" :key="it" class="d-chip" @click="searchByKeyword(it)">{{ it }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="discover-col tips-col">
+                <div class="discover-head">
+                  <span class="d-title">💡 闲鱼选品捡漏指南</span>
+                  <span class="d-sub">提升选品成功率与防踩坑小贴士</span>
+                </div>
+                <div class="tips-list">
+                  <div class="tip-item">
+                    <span class="tip-dot" />
+                    <div class="tip-content">
+                      <span class="tip-strong">善用「仅看个人闲置」</span>：过滤 90% 批量加价铺货与引流号，直达一手卖家原装自用。
+                    </div>
+                  </div>
+                  <div class="tip-item">
+                    <span class="tip-dot" />
+                    <div class="tip-content">
+                      <span class="tip-strong">设置合理价格区间</span>：过滤超低价钓鱼与配件引流品，例如 M1 笔记本锁定在 2500~3800 元。
+                    </div>
+                  </div>
+                  <div class="tip-item">
+                    <span class="tip-dot" />
+                    <div class="tip-content">
+                      <span class="tip-strong">结合「价格监控」</span>：遇到心仪商品先加监控盯价，卖家多次降价时系统秒级提醒，把握最佳入手时机。
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -746,6 +848,25 @@ function fmtJobNextRun(v: string | null | undefined): string {
                       :show-text="false"
                       class="budget-bar"
                     />
+                  </div>
+
+                  <!-- AI 赋能核心链路状态 (与右侧常驻调度高度平衡对齐) -->
+                  <div class="llm-features-banner">
+                    <div class="llm-features-title">✨ 当前 AI 引擎赋能场景</div>
+                    <div class="llm-features-grid">
+                      <div class="llm-feature-pill">
+                        <span class="feature-dot" />
+                        <span class="feature-text">买家意图识别与拟人应答</span>
+                      </div>
+                      <div class="llm-feature-pill">
+                        <span class="feature-dot" />
+                        <span class="feature-text">闲鱼好货多模态深度质检</span>
+                      </div>
+                      <div class="llm-feature-pill">
+                        <span class="feature-dot" />
+                        <span class="feature-text">转手套利文案自动创作</span>
+                      </div>
+                    </div>
                   </div>
                   <el-alert v-if="llm.error" :title="llm.error" type="error" :closable="false" show-icon class="mt-s" />
                 </template>
@@ -1796,9 +1917,100 @@ function fmtJobNextRun(v: string | null | undefined): string {
   font-weight: 500;
 }
 
-/* 玩法卡片网格 */
+/* 风控平稳运行态势卡片 (替代原死白空状态) */
+.shield-active-state {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: 100%;
+}
+.shield-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #ecfdf5;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  border-radius: 8px;
+  padding: 10px 14px;
+}
+.shield-icon-circle {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #10b981;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.shield-banner-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.shield-banner-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #065f46;
+}
+.shield-banner-sub {
+  font-size: 11px;
+  color: #047857;
+}
+.shield-guard-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.guard-metric-card {
+  background: #f8fafc;
+  border: 1px solid #eef2f6;
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.gm-label {
+  font-size: 11px;
+  color: #64748b;
+  font-weight: 500;
+}
+.gm-val {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e293b;
+}
+.gm-tag {
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  display: inline-block;
+  width: fit-content;
+  font-weight: 500;
+}
+.gm-tag.ok {
+  background: #ecfdf5;
+  color: #059669;
+}
+.gm-tag.info {
+  background: #eff6ff;
+  color: #2563eb;
+}
+.shield-footer-tip {
+  margin-top: auto;
+  padding: 8px 12px;
+  background: #fafbfc;
+  border: 1px dashed #e2e8f0;
+  border-radius: 8px;
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+/* 玩法卡片网格与发现大盘 */
 .radar-workflow-grid {
-  flex: 1;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 12px;
@@ -1806,14 +2018,13 @@ function fmtJobNextRun(v: string | null | undefined): string {
 .workflow-card {
   background: #ffffff;
   border: 1px solid #e2e8f0;
-  border-radius: 9px;
-  padding: 16px;
+  border-radius: 10px;
+  padding: 14px 16px;
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
   cursor: pointer;
-  transition: all 0.18s ease;
-  height: 100%;
+  transition: all 0.2s ease;
   box-sizing: border-box;
 }
 .workflow-card:hover {
@@ -1822,41 +2033,142 @@ function fmtJobNextRun(v: string | null | undefined): string {
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.05);
 }
 .wf-icon-wrap {
-  width: 44px;
-  height: 44px;
-  border-radius: 10px;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 22px;
   flex-shrink: 0;
 }
-.icon-blue { background: #eff6ff; }
-.icon-purple { background: #f5f3ff; }
-.icon-emerald { background: #ecfdf5; }
+.icon-blue { background: #eff6ff; color: #2563eb; }
+.icon-purple { background: #f5f3ff; color: #7c3aed; }
+.icon-emerald { background: #ecfdf5; color: #059669; }
 
 .wf-content {
   flex: 1;
+  min-width: 0;
 }
 .wf-name {
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 600;
   color: #1e293b;
-  margin-bottom: 3px;
+  margin-bottom: 2px;
 }
 .wf-desc {
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wf-action-pill {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  color: #10b981;
+  background: #ecfdf5;
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+/* 热门货源分类探索与捡漏技巧 */
+.radar-discover-board {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 3fr 2fr;
+  gap: 12px;
+  min-height: 0;
+}
+.discover-col {
+  background: #ffffff;
+  border: 1px solid #eef2f6;
+  border-radius: 10px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+}
+.discover-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.d-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e293b;
+}
+.d-sub {
+  font-size: 11px;
+  color: #94a3b8;
+}
+.category-matrix {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cat-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cat-group-name {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #475569;
+  flex-shrink: 0;
+  width: 66px;
+}
+.cat-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.d-chip {
+  font-size: 11px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  color: #334155;
+  padding: 3px 9px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.d-chip:hover {
+  background: #ecfdf5;
+  border-color: #10b981;
+  color: #059669;
+}
+.tips-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.tip-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
   font-size: 11.5px;
   color: #64748b;
-  line-height: 1.45;
+  line-height: 1.5;
 }
-.wf-arrow {
-  color: #cbd5e1;
-  font-size: 14px;
-  transition: transform 0.15s;
+.tip-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #10b981;
+  margin-top: 6px;
+  flex-shrink: 0;
 }
-.workflow-card:hover .wf-arrow {
-  transform: translateX(3px);
-  color: #10b981;
+.tip-strong {
+  color: #1e293b;
+  font-weight: 600;
 }
 
 /* Tab 3 大模型与系统服务 */
@@ -1919,7 +2231,7 @@ function fmtJobNextRun(v: string | null | undefined): string {
 .tier-val { color: #0f172a; font-size: 11px; }
 
 .budget-progress-box {
-  margin-top: auto;
+  margin-top: 8px;
   padding-top: 8px;
   border-top: 1px dashed #f1f5f9;
 }
@@ -1930,6 +2242,38 @@ function fmtJobNextRun(v: string | null | undefined): string {
 }
 .small-muted { font-size: 11px; color: #94a3b8; }
 .small-bold { font-size: 11px; font-weight: 600; }
+
+.llm-features-banner {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: #f8fafc;
+  border: 1px solid #eef2f6;
+  border-radius: 8px;
+}
+.llm-features-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #475569;
+  margin-bottom: 6px;
+}
+.llm-features-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.llm-feature-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: #334155;
+}
+.feature-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #10b981;
+}
 
 /* 核心后台长连接与扫描守护卡片 (双列平铺) */
 .daemon-cards-grid {

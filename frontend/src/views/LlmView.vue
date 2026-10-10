@@ -31,10 +31,6 @@ const providers = ref<LlmProvider[]>([])
 const presets = ref<LlmPreset[]>([])
 const busy = reactive<Record<string, boolean>>({})
 
-const kindMap: Record<string, string> = {
-  anthropic: 'Claude（官方 SDK）',
-  openai_compatible: '兼容接口（/chat/completions）',
-}
 
 const tierLabels: Record<string, string> = {
   vision: '多模态判定 / 文案',
@@ -99,16 +95,14 @@ const needsNewKey = computed(
     (!edit.api_key.trim() || edit.api_key.includes('***')) &&
     (edit.kind !== edit.orig_kind || normUrl(edit.base_url) !== normUrl(edit.orig_base_url)),
 )
-const KEY_REBIND_TIP = '修改了接口地址或接口类型，请重新填写 API Key（已保存的 Key 不会发往新的地址）'
+const KEY_REBIND_TIP = '修改了接口地址，请重新填写 API Key（已保存的 Key 不会发往新的地址）'
 
-const baseUrlPlaceholder = computed(() =>
-  edit.kind === 'anthropic' ? '留空使用官方地址 https://api.anthropic.com' : '例如 https://api.deepseek.com/v1',
-)
+const baseUrlPlaceholder = '例如 https://api.deepseek.com/v1'
 
 function applyPreset(id: string) {
   const p = presets.value.find((x) => x.id === id)
   if (!p) return
-  edit.kind = p.kind
+  edit.kind = (p.kind || 'openai_compatible') as LlmKind
   edit.base_url = p.base_url
   edit.model_vision = p.models.vision
   edit.model_chat = p.models.chat
@@ -189,11 +183,11 @@ function validate(): boolean {
     ElMessage.warning('请填写名称')
     return false
   }
-  if (edit.kind === 'openai_compatible' && !edit.base_url.trim()) {
-    ElMessage.warning('兼容接口需要填写接口地址')
+  if (!edit.base_url.trim()) {
+    ElMessage.warning('请填写接口地址')
     return false
   }
-  if (!edit.id && !edit.api_key.trim() && edit.kind === 'openai_compatible') {
+  if (!edit.id && !edit.api_key.trim()) {
     ElMessage.warning('请填写 API Key')
     return false
   }
@@ -240,7 +234,7 @@ async function probe() {
 }
 
 async function pullModels() {
-  if (!edit.base_url.trim() && edit.kind !== 'anthropic') return ElMessage.warning('请先填写接口地址')
+  if (!edit.base_url.trim()) return ElMessage.warning('请先填写接口地址')
   if (needsNewKey.value) return ElMessage.warning(KEY_REBIND_TIP)
   edit.fetching = true
   try {
@@ -347,7 +341,6 @@ async function remove(p: LlmProvider) {
           <el-tag v-if="status.using_env" size="small" type="warning" effect="plain">环境变量（.env）</el-tag>
           <el-tag v-else size="small" type="success" effect="plain">{{ status.active_source }}</el-tag>
         </el-descriptions-item>
-        <el-descriptions-item label="接口类型">{{ kindMap[status.config.kind] || status.config.kind }}</el-descriptions-item>
         <el-descriptions-item label="接口地址">
           <span class="mono small">{{ status.config.base_url || '默认地址' }}</span>
         </el-descriptions-item>
@@ -387,13 +380,10 @@ async function remove(p: LlmProvider) {
       <div v-loading="loading" class="grid">
         <el-card v-for="p in providers" :key="p.id" shadow="never" class="prov" :class="{ active: p.is_active }">
           <div class="prov-head">
-            <div>
-              <div class="prov-name">
-                {{ p.name }}
-                <el-tag v-if="p.is_active" size="small" type="success" class="ml">使用中</el-tag>
-                <el-tag v-else-if="!p.enabled" size="small" type="info" class="ml">已停用</el-tag>
-              </div>
-              <div class="muted small">{{ kindMap[p.kind] || p.kind }}</div>
+            <div class="prov-title-wrap">
+              <span class="prov-name">{{ p.name }}</span>
+              <el-tag v-if="p.is_active" size="small" type="success" class="ml">使用中</el-tag>
+              <el-tag v-else-if="!p.enabled" size="small" type="info" class="ml">已停用</el-tag>
             </div>
             <el-switch :model-value="p.enabled" @change="(v: string | number | boolean) => toggle(p, !!v)" />
           </div>
@@ -444,32 +434,19 @@ async function remove(p: LlmProvider) {
       </div>
     </template>
 
-    <el-dialog v-model="edit.open" :title="edit.id ? `编辑接入 · ${edit.name}` : '添加模型接入'" :width="isMobile ? '92%' : '640px'">
-      <el-form label-width="120px" :label-position="isMobile ? 'top' : 'right'">
+    <el-dialog v-model="edit.open" :title="edit.id ? `编辑接入 · ${edit.name}` : '添加模型接入'" :width="isMobile ? '92%' : '600px'">
+      <el-form label-width="110px" :label-position="isMobile ? 'top' : 'right'">
         <el-form-item v-if="!edit.id" label="快速预设">
           <el-select v-model="edit.preset" class="w260" @change="applyPreset">
             <el-option v-for="p in presets" :key="p.id" :value="p.id" :label="p.name" />
           </el-select>
-          <div v-if="presets.find((x) => x.id === edit.preset)" class="form-tip">
-            {{ presets.find((x) => x.id === edit.preset)?.note }}
-          </div>
         </el-form-item>
 
         <el-form-item label="名称" required>
           <el-input v-model="edit.name" maxlength="64" placeholder="例如：DeepSeek 主力" />
         </el-form-item>
 
-        <el-form-item label="接口类型" required>
-          <el-radio-group v-model="edit.kind">
-            <el-radio-button value="openai_compatible">兼容接口</el-radio-button>
-            <el-radio-button value="anthropic">Claude 官方</el-radio-button>
-          </el-radio-group>
-          <div class="form-tip">
-            兼容接口指实现 <span class="mono">/chat/completions</span> 的服务：DeepSeek、通义、Kimi、Ollama、vLLM 等都适用
-          </div>
-        </el-form-item>
-
-        <el-form-item label="接口地址" :required="edit.kind === 'openai_compatible'">
+        <el-form-item label="接口地址" required>
           <el-input v-model="edit.base_url" :placeholder="baseUrlPlaceholder" />
         </el-form-item>
 
@@ -482,7 +459,6 @@ async function remove(p: LlmProvider) {
             autocomplete="off"
           />
           <div v-if="needsNewKey" class="form-tip warn">{{ KEY_REBIND_TIP }}</div>
-          <div v-if="edit.kind === 'anthropic'" class="form-tip">也可以只依赖服务器的 ANTHROPIC_API_KEY 环境变量，这里留空即可</div>
         </el-form-item>
 
         <el-form-item label="模型名">
@@ -505,15 +481,9 @@ async function remove(p: LlmProvider) {
               <el-option v-for="m in edit.models" :key="m" :value="m" :label="m" />
             </el-select>
           </div>
-          <div class="form-tip">
+          <div class="model-action-row">
             <el-button size="small" :loading="edit.fetching" @click="pullModels">从接口拉取模型列表</el-button>
-            <span class="ml">多模态用于商品判定与文案（需支持图片），快速档用于意图分类与粗筛</span>
           </div>
-        </el-form-item>
-
-        <el-form-item v-if="edit.kind === 'anthropic'" label="拒答回退">
-          <el-switch v-model="edit.anthropic_fallbacks" />
-          <div class="form-tip">仅官方地址生效：模型拒答时由服务端自动换模型重试</div>
         </el-form-item>
 
         <el-form-item label="超时（秒）">
@@ -522,7 +492,6 @@ async function remove(p: LlmProvider) {
 
         <el-form-item label="每日 Token 上限">
           <el-input-number v-model="edit.daily_token_budget" :min="0" :step="100000" controls-position="right" placeholder="留空沿用全局" />
-          <div class="form-tip">留空表示沿用 .env 中的 LLM_DAILY_TOKEN_BUDGET；超出后 AI 功能自动降级为仅规则</div>
         </el-form-item>
 
         <el-form-item label="启用">
@@ -531,7 +500,6 @@ async function remove(p: LlmProvider) {
 
         <el-form-item v-if="!edit.id" label="保存后启用">
           <el-switch v-model="edit.activate" />
-          <div class="form-tip">打开后保存即切换为当前使用的模型配置</div>
         </el-form-item>
       </el-form>
       <template #footer>

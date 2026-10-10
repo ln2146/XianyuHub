@@ -512,7 +512,7 @@ onBeforeUnmount(stopTimer)
           <div class="t-meta ellipsis">
             {{ cronText(t) }}<template v-if="t.last_run_at"> · {{ statusLabel[t.last_status || '']?.label && t.last_status !== 'ok' ? statusLabel[t.last_status || ''].label + ' · ' : '' }}{{ fmtRelative(t.last_run_at) }}</template>
           </div>
-          <div v-if="t.paused_reason" class="t-paused">已暂停：{{ t.paused_reason }}</div>
+          <div v-if="t.paused_reason" class="t-paused" :title="`已暂停：${t.paused_reason}`">已暂停：{{ t.paused_reason }}</div>
           <div class="t-ops" @click.stop>
             <el-button size="small" link type="primary" :icon="CaretRight" :loading="busy[`run-${t.id}`]" :disabled="t.running" @click="run(t)">搜索</el-button>
             <el-button size="small" link :icon="Edit" @click="openEdit(t)">编辑</el-button>
@@ -565,15 +565,27 @@ onBeforeUnmount(stopTimer)
         </div>
 
         <div v-loading="loading" class="grid">
-          <el-empty
-            v-if="!loading && !results.length"
-            class="empty"
-            :image-size="80"
-            :description="tasks.length ? (currentTask?.running ? '正在搜索中…' : '暂无符合条件的商品') : '暂无搜索结果'"
-          >
-            <el-button v-if="currentTask && !currentTask.running" type="primary" :icon="CaretRight" @click="run(currentTask)">立即搜索</el-button>
-            <el-button v-else-if="!tasks.length" @click="router.push('/radar/search')">先去实时搜货看看</el-button>
-          </el-empty>
+          <div v-if="!loading && !results.length" class="empty-state-wrap">
+            <el-empty
+              class="empty"
+              :image-size="80"
+              :description="tasks.length ? (currentTask?.running ? '正在搜索中…' : '暂无符合条件的商品') : '暂无搜索结果'"
+            >
+              <template #description>
+                <div class="empty-desc-box">
+                  <p class="empty-main-text">{{ tasks.length ? (currentTask?.running ? '正在搜索中，稍候出结果…' : '暂无符合筛选条件的商品') : '输入关键词，开始你的第一个智能搜索' }}</p>
+                  <p v-if="currentTask?.paused_reason" class="empty-paused-hint">
+                    ⚠️ 当前任务已暂停：{{ currentTask.paused_reason }}
+                  </p>
+                </div>
+              </template>
+              <div class="empty-actions-row">
+                <el-button v-if="currentTask && !currentTask.running" type="primary" :icon="CaretRight" @click="run(currentTask)">立即搜索</el-button>
+                <el-button v-if="filters.verdict !== 'all' || filters.q" @click="filters.verdict = 'all'; filters.q = ''; load()">查看全部状态</el-button>
+                <el-button @click="router.push('/radar/search')">先去实时搜货看看</el-button>
+              </div>
+            </el-empty>
+          </div>
           <ItemCard
             v-for="r in results"
             :key="r.id"
@@ -832,6 +844,9 @@ onBeforeUnmount(stopTimer)
   padding-left: 16px;
   font-size: var(--xh-fs-xs);
   color: var(--xh-danger);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .t-ops {
   display: flex;
@@ -884,6 +899,45 @@ onBeforeUnmount(stopTimer)
   grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
   gap: var(--xh-space-4);
   min-height: 160px;
+}
+.empty-state-wrap {
+  grid-column: 1 / -1;
+  background: var(--xh-card);
+  border: 1px solid var(--xh-border);
+  border-radius: var(--xh-radius-lg);
+  padding: var(--xh-space-8) var(--xh-space-4);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 360px;
+}
+.empty-desc-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--xh-space-1);
+}
+.empty-main-text {
+  margin: 0;
+  font-size: var(--xh-fs-base);
+  color: var(--xh-text-2);
+}
+.empty-paused-hint {
+  margin: var(--xh-space-2) 0 0;
+  padding: var(--xh-space-2) var(--xh-space-3);
+  background: var(--xh-danger-soft);
+  color: var(--xh-danger);
+  border-radius: var(--xh-radius-sm);
+  font-size: var(--xh-fs-xs);
+  max-width: 520px;
+}
+.empty-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--xh-space-2);
+  margin-top: var(--xh-space-2);
 }
 .empty {
   grid-column: 1 / -1;

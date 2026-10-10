@@ -991,8 +991,35 @@ onActivated(() => {
   gap: var(--xh-space-3);
   min-height: 240px;
 }
+.cooldown {
+  background: var(--xh-fill) !important;
+  border: 1px solid var(--xh-border) !important;
+  border-radius: var(--xh-radius-md) !important;
+  padding: 10px 14px !important;
+}
+.cooldown.el-alert--info {
+  background: #f0f9ff !important;
+  border-color: #bae6fd !important;
+}
+.cooldown.el-alert--warning {
+  background: #fffbeb !important;
+  border-color: #fde68a !important;
+}
+.cooldown.el-alert--error {
+  background: #fef2f2 !important;
+  border-color: #fecaca !important;
+}
+.cooldown :deep(.el-alert__title) {
+  font-size: var(--xh-fs-sm);
+  font-weight: 600;
+  color: var(--xh-text);
+}
+.cooldown :deep(.el-alert__description) {
+  margin: 4px 0 0;
+  color: var(--xh-text-2);
+}
 .error-tip {
-  margin-top: 6px;
+  margin-top: 4px;
   font-size: var(--xh-fs-xs);
   line-height: 1.6;
 }
