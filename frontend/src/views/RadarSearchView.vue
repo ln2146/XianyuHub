@@ -701,7 +701,9 @@ onActivated(() => {
 
 <style scoped>
 .radar-search {
-  min-height: calc(100vh - 96px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--xh-space-3);
 }
 
 /* ---------------- 搜索与筛选面板 */

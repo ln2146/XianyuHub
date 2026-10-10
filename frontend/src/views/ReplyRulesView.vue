@@ -535,38 +535,25 @@ async function quickEnableTemplate(tpl: PresetTemplate) {
   color: var(--xh-muted);
 }
 
-/* 页面满高弹性布局 */
+/* 页面自然流式布局：避免少数据时卡片拉伸产生大片空白 */
 .rules-page {
-  min-height: calc(100vh - 96px);
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 .table-card {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
   border-radius: 10px;
   border-color: var(--xh-border);
-  min-height: 0;
 }
 .table-card :deep(.el-card__body) {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
   padding: 14px 16px;
 }
 .table-wrap {
-  flex: 1;
   display: flex;
   flex-direction: column;
-  min-height: 0;
-  height: 100%;
 }
 .rules-table {
-  flex: 1;
-  min-height: 0;
+  width: 100%;
 }
 .table-footer-bar {
   display: flex;

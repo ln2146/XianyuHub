@@ -35,7 +35,7 @@ const realtime = useRealtimeStore()
 const prefs = usePrefsStore()
 const data = ref<Dashboard | null>(null)
 const loading = ref(false)
-const activeTab = ref<'accounts' | 'system'>('accounts')
+const activeTab = ref<'all' | 'accounts' | 'system'>('all')
 let timer: number | undefined
 
 async function load() {
@@ -203,7 +203,17 @@ const jobMetaMap: Record<string, JobMeta> = {
 }
 
 function getJobMeta(id: string): JobMeta {
-  return jobMetaMap[id] || {
+  if (jobMetaMap[id]) return jobMetaMap[id]
+  if (id.startsWith('buyer.')) {
+    const taskNum = id.replace(/^buyer\.task\.?/, '')
+    return {
+      title: taskNum ? `选品监控巡检 · 任务 #${taskNum}` : '选品降价监控巡检',
+      desc: '定时轮询闲鱼一手好货与价格变动',
+      category: '监控',
+      tagType: 'primary',
+    }
+  }
+  return {
     title: id,
     desc: '系统常规后台调度任务',
     category: '调度',
@@ -296,6 +306,18 @@ function fmtJobNextRun(v: string | null | undefined): string {
           <button
             type="button"
             class="seg-nav-item"
+            :class="{ 'is-active': activeTab === 'all' }"
+            role="tab"
+            :aria-selected="activeTab === 'all'"
+            @click="activeTab = 'all'"
+          >
+            <el-icon class="seg-icon"><DataLine /></el-icon>
+            <span class="seg-label">全部看台</span>
+          </button>
+
+          <button
+            type="button"
+            class="seg-nav-item"
             :class="{ 'is-active': activeTab === 'accounts' }"
             role="tab"
             :aria-selected="activeTab === 'accounts'"
@@ -333,7 +355,7 @@ function fmtJobNextRun(v: string | null | undefined): string {
       <!-- 标签页视口容器 -->
       <div class="dash-tabs-viewport">
         <!-- 页面 1: 闲鱼账号与风控防护 -->
-        <div v-show="activeTab === 'accounts'" class="tab-pane-view">
+        <div v-show="activeTab === 'all' || activeTab === 'accounts'" class="tab-pane-view">
           <div class="tab-grid-layout two-cols">
             <!-- 左侧：账号管理与自动化运行大盘 -->
             <div class="panel-box accounts-panel">
@@ -599,8 +621,8 @@ function fmtJobNextRun(v: string | null | undefined): string {
         </div>
 
 
-        <!-- 页面 3: AI 引擎与系统底座服务 -->
-        <div v-show="activeTab === 'system'" class="tab-pane-view">
+        <!-- 页面 2: AI 引擎与系统底座服务 -->
+        <div v-show="activeTab === 'all' || activeTab === 'system'" class="tab-pane-view">
           <div class="tab-grid-layout two-cols">
             <!-- 左侧：AI 大模型算力与分工 -->
             <div class="panel-box llm-panel">
@@ -649,7 +671,7 @@ function fmtJobNextRun(v: string | null | undefined): string {
                     <div class="tier-title">模型三层分工调度：</div>
                     <div class="tier-row">
                       <div v-for="(m, tier) in llm.models" :key="tier" class="tier-chip">
-                        <span class="tier-name">{{ tier === 'chat' ? '对话模型' : tier === 'vision' ? '视觉模型' : '快速模型' }}</span>
+                        <span class="tier-name">{{ tier === 'chat' ? '对话客服' : tier === 'vision' ? '多模视觉' : '极速意图' }}</span>
                         <span class="tier-val mono">{{ m || '-' }}</span>
                       </div>
                     </div>
@@ -658,32 +680,40 @@ function fmtJobNextRun(v: string | null | undefined): string {
                   <div v-if="llm.usage_today.budget" class="budget-progress-box">
                     <div class="budget-header">
                       <span class="small-muted">每日 Token 消耗安全预算进度</span>
-                      <span class="small-bold mono">{{ tokenPercent }}%</span>
+                      <span class="small-bold mono">{{ tokenPercent }}% ({{ tokenUsed.toLocaleString() }} / {{ (llm.usage_today.budget || 0).toLocaleString() }})</span>
                     </div>
                     <el-progress
                       :percentage="tokenPercent"
                       :status="tokenPercent > 90 ? 'exception' : undefined"
-                      :stroke-width="7"
+                      :stroke-width="6"
                       :show-text="false"
                       class="budget-bar"
                     />
                   </div>
+                  <div v-else class="token-dist-row">
+                    <span class="small-muted">今日消耗明细：</span>
+                    <span class="dist-chip">输入 <b>{{ (llm.usage_today.input_tokens || 0).toLocaleString() }}</b> tokens</span>
+                    <span class="dist-chip">输出 <b>{{ (llm.usage_today.output_tokens || 0).toLocaleString() }}</b> tokens</span>
+                  </div>
 
-                  <!-- AI 赋能核心链路状态 (与右侧常驻调度高度平衡对齐) -->
+                  <!-- AI 赋能核心链路状态 -->
                   <div class="llm-features-banner">
-                    <div class="llm-features-title"><el-icon><Cpu /></el-icon> 当前 AI 引擎赋能场景</div>
+                    <div class="llm-features-title"><el-icon><Cpu /></el-icon> AI 核心业务链路赋能</div>
                     <div class="llm-features-grid">
                       <div class="llm-feature-pill">
                         <span class="feature-dot" />
-                        <span class="feature-text">买家意图识别与拟人应答</span>
+                        <span class="feature-text">买家意图精准识别与拟人应答</span>
+                        <span class="feature-badge">智能客服</span>
                       </div>
                       <div class="llm-feature-pill">
                         <span class="feature-dot" />
-                        <span class="feature-text">闲鱼好货多模态深度质检</span>
+                        <span class="feature-text">闲鱼一手好货多模态深度质检</span>
+                        <span class="feature-badge">选品雷达</span>
                       </div>
                       <div class="llm-feature-pill">
                         <span class="feature-dot" />
-                        <span class="feature-text">转手套利文案自动创作</span>
+                        <span class="feature-text">转手套利文案带加价率自动创作</span>
+                        <span class="feature-badge">一键发品</span>
                       </div>
                     </div>
                   </div>
@@ -714,11 +744,11 @@ function fmtJobNextRun(v: string | null | undefined): string {
               </div>
 
               <div class="panel-body">
-                <!-- 核心长连接与扫描守护卡片 (双列平铺) -->
+                <!-- 核心长连接与扫描守护卡片 (2x2 四矩阵) -->
                 <div class="daemon-cards-grid">
                   <div class="daemon-card" :class="{ active: data?.system.im_running }">
                     <div class="daemon-icon-wrap im-theme">
-                      <el-icon :size="18"><ChatDotRound /></el-icon>
+                      <el-icon :size="16"><ChatDotRound /></el-icon>
                     </div>
                     <div class="daemon-info">
                       <div class="daemon-title-row">
@@ -731,9 +761,9 @@ function fmtJobNextRun(v: string | null | undefined): string {
                     </div>
                   </div>
 
-                  <div class="daemon-card active">
+                  <div class="daemon-card active" @click="router.push('/radar/smart')">
                     <div class="daemon-icon-wrap radar-theme">
-                      <el-icon :size="18"><Aim /></el-icon>
+                      <el-icon :size="16"><Aim /></el-icon>
                     </div>
                     <div class="daemon-info">
                       <div class="daemon-title-row">
@@ -741,6 +771,36 @@ function fmtJobNextRun(v: string | null | undefined): string {
                         <span class="daemon-status-pill running">
                           <span class="dot" />
                           {{ data?.monitor_tasks ?? 0 }} 个生效
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="daemon-card" :class="{ active: autoDeliveryOn }" @click="router.push('/orders/cards')">
+                    <div class="daemon-icon-wrap delivery-theme">
+                      <el-icon :size="16"><Box /></el-icon>
+                    </div>
+                    <div class="daemon-info">
+                      <div class="daemon-title-row">
+                        <span class="daemon-name">自动发货守护</span>
+                        <span class="daemon-status-pill" :class="autoDeliveryOn ? 'running' : 'stopped'">
+                          <span class="dot" />
+                          {{ autoDeliveryOn ? '全天候待命' : '未开启' }}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="daemon-card" :class="{ active: autoReplyOn }" @click="router.push('/messages/rules')">
+                    <div class="daemon-icon-wrap reply-theme">
+                      <el-icon :size="16"><Promotion /></el-icon>
+                    </div>
+                    <div class="daemon-info">
+                      <div class="daemon-title-row">
+                        <span class="daemon-name">智能回复规则引擎</span>
+                        <span class="daemon-status-pill" :class="autoReplyOn ? 'running' : 'stopped'">
+                          <span class="dot" />
+                          {{ autoReplyOn ? '实时应答就绪' : '未开启' }}
                         </span>
                       </div>
                     </div>
@@ -758,7 +818,7 @@ function fmtJobNextRun(v: string | null | undefined): string {
                   </div>
 
                   <div class="jobs-scroll-container">
-                    <div v-for="j in data.system.jobs.slice(0, 6)" :key="j.id" class="job-item-card">
+                    <div v-for="j in data.system.jobs" :key="j.id" class="job-item-card">
                       <div class="job-main-info">
                         <span class="job-category-tag" :class="getJobMeta(j.id).tagType">
                           {{ getJobMeta(j.id).category }}
@@ -782,14 +842,13 @@ function fmtJobNextRun(v: string | null | undefined): string {
 </template>
 
 <style scoped>
-/* 全局页面视口高度自适应：占满可用高度，消除外部滚动条 */
+/* 全局页面流式布局：避免视口强行拉伸产生多余空白 */
 .dashboard-page {
-  height: calc(100vh - 56px - 40px);
   display: flex;
   flex-direction: column;
+  gap: 12px;
   box-sizing: border-box;
   animation: fadeIn 0.22s ease-out;
-  overflow: hidden;
 }
 
 @keyframes fadeIn {
@@ -958,12 +1017,11 @@ function fmtJobNextRun(v: string | null | undefined): string {
   transform: translateX(2px);
 }
 
-/* 主工作区满高 Flex-1 布局 */
+/* 主工作区弹性流式布局 */
 .dash-main-container {
-  flex: 1;
-  min-height: 0;
   display: flex;
   flex-direction: column;
+  gap: 12px;
 }
 
 /* 现代化分段药丸导航栏 (Segmented Capsule Navigation) */
@@ -1111,40 +1169,33 @@ function fmtJobNextRun(v: string | null | undefined): string {
 
 /* 视口容器 */
 .dash-tabs-viewport {
-  flex: 1;
-  min-height: 0;
   display: flex;
   flex-direction: column;
+  gap: 12px;
 }
 .tab-pane-view {
-  flex: 1;
-  min-height: 0;
   display: flex;
   flex-direction: column;
-  height: 100%;
+  gap: 12px;
 }
 
-/* 网格双列撑满布局 */
+/* 网格双列自适应布局 */
 .tab-grid-layout.two-cols {
   display: grid;
   grid-template-columns: 1.55fr 1fr;
   gap: 12px;
-  height: 100%;
-  flex: 1;
-  min-height: 0;
+  align-items: stretch;
 }
 
-/* 模块面板卡片通用样式 (撑满高度) */
+/* 模块面板卡片通用样式 */
 .panel-box {
   background: #ffffff;
   border: 1px solid #eef2f6;
   border-radius: 10px;
-  padding: 12px 16px;
+  padding: 14px 16px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  height: 100%;
-  min-height: 0;
 }
 .panel-header {
   display: flex;
@@ -1271,11 +1322,8 @@ function fmtJobNextRun(v: string | null | undefined): string {
 
 
 .panel-body {
-  flex: 1;
-  min-height: 0;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
 }
 
 /* 表格容器弹性撑满 */
@@ -1526,8 +1574,6 @@ function fmtJobNextRun(v: string | null | undefined): string {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  height: 100%;
-  min-height: 0;
 }
 .orders-pending-panel {
   flex-shrink: 0;
@@ -1816,6 +1862,33 @@ function fmtJobNextRun(v: string | null | undefined): string {
   border-radius: 50%;
   background: #10b981;
 }
+.feature-badge {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: #059669;
+  background: #ecfdf5;
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+.token-dist-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 11px;
+}
+.dist-chip {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  padding: 2px 7px;
+  color: #475569;
+}
+.dist-chip b {
+  color: #0f172a;
+}
 
 /* 核心后台长连接与扫描守护卡片 (双列平铺) */
 .daemon-cards-grid {
@@ -1823,6 +1896,14 @@ function fmtJobNextRun(v: string | null | undefined): string {
   grid-template-columns: repeat(2, 1fr);
   gap: 10px;
   margin-bottom: 12px;
+}
+.daemon-icon-wrap.delivery-theme {
+  background: rgba(245, 158, 11, 0.1);
+  color: #d97706;
+}
+.daemon-icon-wrap.reply-theme {
+  background: rgba(99, 102, 241, 0.1);
+  color: #4f46e5;
 }
 .daemon-card {
   display: flex;
@@ -1918,10 +1999,8 @@ function fmtJobNextRun(v: string | null | undefined): string {
 
 /* 常驻自动化巡检队列 (Cron 任务卡片化) */
 .jobs-block {
-  flex: 1;
   display: flex;
   flex-direction: column;
-  min-height: 0;
   background: #ffffff;
   border: 1px solid #eef2f6;
   border-radius: 8px;
@@ -1958,11 +2037,11 @@ function fmtJobNextRun(v: string | null | undefined): string {
   font-weight: 500;
 }
 .jobs-scroll-container {
-  flex: 1;
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 5px;
+  max-height: 250px;
+  overflow-y: auto;
   padding-right: 2px;
 }
 .job-item-card {
