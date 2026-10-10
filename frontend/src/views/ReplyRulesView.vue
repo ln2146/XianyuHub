@@ -476,13 +476,13 @@ onMounted(() => {
                 inline-prompt
                 active-text="开"
                 inactive-text="关"
-                size="small"
+                size="default"
                 @change="(v: string | number | boolean) => toggleAccountAutoReply(a, !!v)"
               />
             </div>
 
             <div class="ctrl-group">
-              <span class="ctrl-label">关键词</span>
+              <span class="ctrl-label">精准回复</span>
               <el-switch
                 :model-value="a.settings?.keyword_reply ?? false"
                 :loading="busyAccount[`kw-${a.id}`]"
@@ -490,17 +490,17 @@ onMounted(() => {
                 inline-prompt
                 active-text="开"
                 inactive-text="关"
-                size="small"
+                size="default"
                 @change="(v: string | number | boolean) => toggleAccountKeywordReply(a, !!v)"
               />
             </div>
 
             <div class="ctrl-group ctrl-ai">
-              <span class="ctrl-label">AI 模式</span>
+              <span class="ctrl-label">AI 智能回复</span>
               <el-segmented
                 :model-value="a.settings?.ai_mode ?? 'off'"
                 :options="aiModeOptions"
-                size="small"
+                size="default"
                 :disabled="busyAccount[`ai-${a.id}`]"
                 @change="(v: string | number | boolean) => setAiMode(a, v as 'off' | 'suggest' | 'auto')"
               />
@@ -524,6 +524,40 @@ onMounted(() => {
           </template>
 
           <div class="tab-body">
+            <!-- 精准回复功能状态与控制栏 -->
+            <div class="feature-status-banner">
+              <div class="banner-left">
+                <div class="status-indicator" :class="{ active: currentAccount?.settings?.keyword_reply && currentAccount?.settings?.auto_reply }">
+                  <span class="status-dot" />
+                  <span class="status-title">精准回复功能：</span>
+                </div>
+                <el-switch
+                  :model-value="currentAccount?.settings?.keyword_reply ?? false"
+                  :loading="currentAccount ? busyAccount[`kw-${currentAccount.id}`] : false"
+                  :disabled="!currentAccount || !currentAccount.settings?.auto_reply"
+                  inline-prompt
+                  active-text="开"
+                  inactive-text="关"
+                  size="default"
+                  @change="(v: string | number | boolean) => currentAccount && toggleAccountKeywordReply(currentAccount, !!v)"
+                />
+                <span class="banner-desc">
+                  <template v-if="!currentAccount?.settings?.auto_reply">
+                    <span class="desc-warning"><el-icon><WarningFilled /></el-icon> 账号总开关已关，精准回复暂不执行</span>
+                    <el-button link type="primary" size="small" @click="currentAccount && toggleAccountAutoReply(currentAccount, true)">开启总开关</el-button>
+                  </template>
+                  <template v-else-if="currentAccount?.settings?.keyword_reply">
+                    <span class="desc-success">已开启</span> · 买家发消息时，只要命中下方任一规则即自动回复；未命中时由 AI 兜底
+                  </template>
+                  <template v-else>
+                    <span class="desc-muted">已停用</span> · 暂停按关键词自动回复买家
+                  </template>
+                </span>
+              </div>
+              <div v-if="accounts.list.length > 1 && currentAccount" class="banner-right">
+                <span class="muted smaller">当前配置账号：<b>{{ currentAccount.remark || currentAccount.nickname || currentAccount.unb }}</b></span>
+              </div>
+            </div>
             <!-- 搜索与筛选工具条 -->
             <div class="table-toolbar">
               <div class="toolbar-left">
@@ -676,7 +710,44 @@ onMounted(() => {
           </template>
 
           <div class="tab-body">
-            <!-- 账号切换器（多账号时置顶展示） -->
+            <!-- AI 回复状态与模式切换条 -->
+            <div class="feature-status-banner ai-feature-banner">
+              <div class="banner-left">
+                <div class="status-indicator" :class="{ active: currentAccount?.settings?.ai_mode !== 'off' && (currentAccount?.settings?.auto_reply || currentAccount?.settings?.ai_mode === 'suggest') }">
+                  <span class="status-dot" />
+                  <span class="status-title">AI 智能回复功能：</span>
+                </div>
+                <el-segmented
+                  :model-value="currentAccount?.settings?.ai_mode ?? 'off'"
+                  :options="[
+                    { label: '关闭 AI 回复', value: 'off' },
+                    { label: '建议模式（人工在收件箱确认）', value: 'suggest' },
+                    { label: '全自动发送（关键词未命中直接答复）', value: 'auto' },
+                  ]"
+                  size="default"
+                  :disabled="!currentAccount || busyAccount[`ai-${currentAccount.id}`]"
+                  @change="(v: string | number | boolean) => currentAccount && setAiMode(currentAccount, v as 'off' | 'suggest' | 'auto')"
+                />
+              </div>
+
+              <div class="banner-desc-row">
+                <span v-if="!currentAccount?.settings?.auto_reply && currentAccount?.settings?.ai_mode === 'auto'" class="desc-warning">
+                  <el-icon><WarningFilled /></el-icon> 提示：该账号自动回复总开关已关，AI 自动发送不会执行
+                  <el-button link type="primary" size="small" @click="currentAccount && toggleAccountAutoReply(currentAccount, true)">开启总开关</el-button>
+                </span>
+                <span v-else-if="currentAccount?.settings?.ai_mode === 'auto'" class="desc-success">
+                  已开启全自动发送 · 当买家消息未命中关键词规则时，AI 自动结合下方的店铺人设与知识库资料直接回复买家
+                </span>
+                <span v-else-if="currentAccount?.settings?.ai_mode === 'suggest'" class="desc-info">
+                  建议模式 · AI 不会直接向买家发送消息，而是在「收件箱」聊天窗口生成建议卡片，由您一键采纳后发送
+                </span>
+                <span v-else class="desc-muted">
+                  已关闭 · 仅由关键词规则回复，不启用大模型生成
+                </span>
+              </div>
+            </div>
+
+            <!-- 账号切换器（多账号时展示） -->
             <div v-if="accounts.list.length > 1" class="tab-account-selector">
               <span class="selector-label">当前配置账号：</span>
               <el-radio-group v-model="selectedAccountId" size="small">
@@ -1087,6 +1158,99 @@ onMounted(() => {
 
 .tab-body {
   padding: 16px;
+}
+
+/* Tab 顶部功能控制条 */
+.feature-status-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  background: var(--xh-fill);
+  border: 1px solid var(--xh-border);
+  border-radius: var(--xh-radius-md);
+  padding: 12px 16px;
+  margin-bottom: 14px;
+}
+
+.ai-feature-banner {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.banner-left {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.banner-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--xh-disabled);
+  transition: all 0.2s ease;
+}
+
+.status-indicator.active .status-dot {
+  background: var(--xh-success);
+  box-shadow: 0 0 0 3px rgba(30, 158, 106, 0.2);
+}
+
+.status-title {
+  font-size: var(--xh-fs-sm);
+  font-weight: 600;
+  color: var(--xh-text);
+}
+
+.banner-desc,
+.banner-desc-row {
+  font-size: var(--xh-fs-xs);
+  color: var(--xh-muted);
+  line-height: 1.5;
+}
+
+.banner-desc-row {
+  padding-top: 4px;
+  border-top: 1px dashed var(--xh-border);
+}
+
+.desc-success {
+  color: var(--xh-success);
+  font-weight: 600;
+}
+
+.desc-info {
+  color: var(--xh-primary);
+  font-weight: 500;
+}
+
+.desc-warning {
+  color: var(--xh-warning-text);
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.desc-muted {
+  color: var(--xh-muted);
+  font-weight: 500;
 }
 
 /* 工具条 */
