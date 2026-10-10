@@ -40,7 +40,14 @@ ORDER_STATE_LABELS: dict[str, str] = {
 
 # 允许的状态迁移（其余迁移会被拒绝，保证状态机一致）
 TRANSITIONS: dict[str, set[str]] = {
-    OrderState.PENDING_PAY: {OrderState.PAID, OrderState.CLOSED, OrderState.REFUNDED},
+    OrderState.PENDING_PAY: {
+        OrderState.PAID,
+        OrderState.DELIVERING,
+        OrderState.DELIVERED,
+        OrderState.COMPLETED,
+        OrderState.CLOSED,
+        OrderState.REFUNDED,
+    },
     OrderState.PAID: {
         OrderState.DELIVERING,
         OrderState.RISK_HOLD,

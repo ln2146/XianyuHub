@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
@@ -164,12 +164,47 @@ async def list_orders(
     if q:
         stmt = stmt.where(Order.order_id.contains(q) | Order.item_title.contains(q) | Order.buyer_nick.contains(q))
     await set_total(response, session, stmt)
-    return list((await session.execute(stmt.limit(limit).offset(offset))).scalars())
+    orders = list((await session.execute(stmt.limit(limit).offset(offset))).scalars())
+    healed = False
+    now = datetime.now(UTC)
+    for o in orders:
+        if o.remote_status and o.status == OrderState.PENDING_PAY:
+            if any(k in o.remote_status for k in ("发货", "shipped", "收货")):
+                o.status = OrderState.DELIVERED
+                o.paid_at = o.paid_at or o.created_at or now
+                o.delivered_at = o.delivered_at or now
+                healed = True
+            elif any(k in o.remote_status for k in ("成功", "completed", "完成")):
+                o.status = OrderState.COMPLETED
+                o.paid_at = o.paid_at or o.created_at or now
+                o.delivered_at = o.delivered_at or now
+                healed = True
+            elif any(k in o.remote_status for k in ("关闭", "closed", "退款")):
+                o.status = OrderState.CLOSED
+                healed = True
+    if healed:
+        await session.commit()
+    return orders
 
 
 @router.get("/orders/{order_pk}")
 async def get_order(order_pk: int, user: CurrentUser, session: SessionDep) -> dict[str, Any]:
     order = await _own_order(session, user, order_pk)
+    if order.remote_status and order.status == OrderState.PENDING_PAY:
+        now = datetime.now(UTC)
+        if any(k in order.remote_status for k in ("发货", "shipped", "收货")):
+            order.status = OrderState.DELIVERED
+            order.paid_at = order.paid_at or order.created_at or now
+            order.delivered_at = order.delivered_at or now
+            await session.commit()
+        elif any(k in order.remote_status for k in ("成功", "completed", "完成")):
+            order.status = OrderState.COMPLETED
+            order.paid_at = order.paid_at or order.created_at or now
+            order.delivered_at = order.delivered_at or now
+            await session.commit()
+        elif any(k in order.remote_status for k in ("关闭", "closed", "退款")):
+            order.status = OrderState.CLOSED
+            await session.commit()
     records = await session.execute(
         select(DeliveryRecord).where(DeliveryRecord.order_pk == order.id).order_by(DeliveryRecord.id)
     )

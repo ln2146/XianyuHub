@@ -178,13 +178,14 @@ onBeforeUnmount(() => {
 })
 
 async function sync() {
-  if (!filter.account_id) {
-    ElMessage.warning('请先选择要同步的账号')
+  const targetId = filter.account_id || accounts.list[0]?.id
+  if (!targetId) {
+    ElMessage.warning('暂无可用的闲鱼账号')
     return
   }
   syncing.value = true
   try {
-    const r = await syncOrders(filter.account_id)
+    const r = await syncOrders(targetId)
     const names: Record<string, string> = { created: '新增', paid: '新付款' }
     ElMessage.success(`同步完成：${Object.entries(r).map(([k, v]) => `${names[k] || k} ${v}`).join('，') || '无变化'}`)
     await load()

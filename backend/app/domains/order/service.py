@@ -68,12 +68,22 @@ async def transition(s: AsyncSession, order: Order, to: str, *, reason: str | No
     if to not in TRANSITIONS.get(order.status, set()):
         logger.debug("忽略非法状态迁移 order={} {}->{}", order.order_id, order.status, to)
         return False
-    result = await s.execute(update(Order).where(Order.id == order.id, Order.status == order.status).values(status=to))
+    values: dict[str, Any] = {"status": to}
+    now = datetime.now(UTC)
+    if to in (OrderState.DELIVERED, OrderState.COMPLETED):
+        if not order.paid_at:
+            order.paid_at = order.created_at or now
+            values["paid_at"] = order.paid_at
+        if to == OrderState.DELIVERED and not order.delivered_at:
+            order.delivered_at = now
+            values["delivered_at"] = order.delivered_at
+    if reason is not None:
+        order.fail_reason = reason
+        values["fail_reason"] = reason
+    result = await s.execute(update(Order).where(Order.id == order.id, Order.status == order.status).values(**values))
     if result.rowcount != 1:
         return False  # 并发下已被其他流程改变
     order.status = to
-    if reason is not None:
-        order.fail_reason = reason
     _spawn_push({"id": order.id, "order_id": order.order_id, "status": to}, order.account_id)
     return True
 
