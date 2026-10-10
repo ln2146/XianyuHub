@@ -75,3 +75,15 @@ class LlmProvider(IdMixin, TimestampMixin, Base):
     last_test_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_test_ok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    custom_models: Mapped[list[str]] = mapped_column(JSON, default=list)
+
+
+class LlmTierBinding(IdMixin, TimestampMixin, Base):
+    """场景模型配置：客服问答 (chat)、看图视觉 (vision)、意图快筛 (fast) 分别绑定的供应商与模型。"""
+
+    __tablename__ = "llm_tier_bindings"
+
+    tier: Mapped[str] = mapped_column(String(32), unique=True, index=True)  # chat / vision / fast
+    provider_id: Mapped[int | None] = mapped_column(ForeignKey("llm_providers.id", ondelete="SET NULL"), nullable=True)
+    model: Mapped[str] = mapped_column(String(128), default="")
+

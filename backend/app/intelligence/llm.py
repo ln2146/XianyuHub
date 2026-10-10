@@ -107,6 +107,7 @@ class LlmConfig:
     daily_token_budget: int = 0  # 0 表示不限制
     max_images: int = 4
     source: str = "env"  # env 或 接入名称，仅用于界面展示
+    tier_targets: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     @classmethod
     def from_settings(cls, s: Settings) -> "LlmConfig":
@@ -125,7 +126,10 @@ class LlmConfig:
         )
 
     def model_for(self, tier: Tier) -> str:
-        return {Tier.VISION: self.model_vision, Tier.CHAT: self.model_chat, Tier.FAST: self.model_fast}[tier]
+        tier_key = tier.value if isinstance(tier, Tier) else str(tier)
+        if tier_key in self.tier_targets and self.tier_targets[tier_key].get("model"):
+            return self.tier_targets[tier_key]["model"]
+        return {Tier.VISION: self.model_vision, Tier.CHAT: self.model_chat, Tier.FAST: self.model_fast}.get(tier, "")
 
 
 class Provider(Protocol):
@@ -343,17 +347,25 @@ class LLMGateway:
         # 进程默认网关共享同一份用量统计：切换 / 编辑模型配置不会清零当日用量，也就不能借此绕过每日预算
         self.usage = usage if usage is not None else Usage()
         self._provider = provider
+        self._tier_providers: dict[str, Provider] = {}
         self._init_error: str | None = None
         if provider is None:
             try:
-                self._provider = self._build_provider()
+                self._provider = self._build_provider_from_config(self.config)
             except LLMUnavailable as e:
                 self._init_error = str(e)
             except Exception as e:  # noqa: BLE001
                 self._init_error = f"LLM 初始化失败：{e}"
 
-    def _build_provider(self) -> Provider:
-        c = self.config
+            for tier_name, target in self.config.tier_targets.items():
+                try:
+                    p = self._build_provider_from_target(target)
+                    if p is not None:
+                        self._tier_providers[tier_name] = p
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("Tier {} 提供商初始化失败: {}", tier_name, e)
+
+    def _build_provider_from_config(self, c: LlmConfig) -> Provider:
         if c.kind == "anthropic":
             if not (c.api_key or os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
                 raise LLMUnavailable("未配置 LLM_API_KEY")
@@ -362,17 +374,44 @@ class LLMGateway:
             return ChatCompletionsProvider(c.api_key, c.base_url, c.timeout)
         raise LLMUnavailable(f"未知的 LLM 供应商：{c.kind}")
 
+    def _build_provider_from_target(self, target: dict[str, Any]) -> Provider | None:
+        kind = target.get("kind") or "openai_compatible"
+        api_key = target.get("api_key") or ""
+        base_url = target.get("base_url") or ""
+        timeout = float(target.get("timeout") or self.config.timeout)
+        fallbacks = bool(target.get("fallbacks", True))
+        if kind == "anthropic":
+            if not (api_key or os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
+                return None
+            return AnthropicProvider(api_key, base_url or None, timeout, fallbacks)
+        if kind == "openai_compatible":
+            if not base_url:
+                return None
+            return ChatCompletionsProvider(api_key, base_url, timeout)
+        return None
+
+    def _provider_for(self, tier: Tier) -> Provider | None:
+        tier_key = tier.value if isinstance(tier, Tier) else str(tier)
+        return self._tier_providers.get(tier_key) or self._provider
+
     async def aclose(self) -> None:
-        close = getattr(self._provider, "aclose", None)
-        if close is not None:
-            try:
-                await close()
-            except Exception:  # noqa: BLE001
-                logger.debug("关闭模型客户端失败", exc_info=True)
+        providers = set()
+        if self._provider is not None:
+            providers.add(self._provider)
+        for p in self._tier_providers.values():
+            providers.add(p)
+        for p in providers:
+            close = getattr(p, "aclose", None)
+            if close is not None:
+                try:
+                    await close()
+                except Exception:  # noqa: BLE001
+                    logger.debug("关闭模型客户端失败", exc_info=True)
 
     @property
     def available(self) -> bool:
-        return self._provider is not None and not self._over_budget()
+        has_any = self._provider is not None or bool(self._tier_providers)
+        return has_any and not self._over_budget()
 
     def status(self) -> dict[str, Any]:
         return {
@@ -381,6 +420,14 @@ class LLMGateway:
             "source": self.config.source,
             "error": self._init_error,
             "models": {t.value: self.model_for(t) for t in Tier},
+            "tier_sources": {
+                t.value: (
+                    f"{self.config.tier_targets[t.value].get('provider_name', '')} ({self.model_for(t)})"
+                    if t.value in self.config.tier_targets and self.config.tier_targets[t.value].get("provider_name")
+                    else f"{self.config.source} ({self.model_for(t)})"
+                )
+                for t in Tier
+            },
             "usage_today": {
                 "calls": self.usage.calls,
                 "input_tokens": self.usage.input_tokens,
@@ -408,12 +455,16 @@ class LLMGateway:
         max_tokens: int,
         effort: Effort | None,
     ) -> LLMResult:
-        if self._provider is None:
-            raise LLMUnavailable(self._init_error or "未配置大模型")
+        provider = self._provider_for(tier)
+        if provider is None:
+            raise LLMUnavailable(self._init_error or f"未配置 {tier.value} 对应的大模型接入")
         if self._over_budget():
             raise LLMUnavailable("今日大模型 token 预算已用完")
-        result = await self._provider.complete(
-            model=self.model_for(tier),
+        model = self.model_for(tier)
+        if not model:
+            raise LLMUnavailable(f"未配置 {tier.value} 场景的模型名称")
+        result = await provider.complete(
+            model=model,
             system=system,
             messages=messages,
             images=list(images)[: self.config.max_images],
@@ -428,6 +479,7 @@ class LLMGateway:
         if result.refused:
             raise LLMError("模型拒绝回答该请求")
         return result
+
 
     async def complete_json(
         self,

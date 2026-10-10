@@ -276,3 +276,99 @@ async def test_saved_key_never_sent_to_new_endpoint(admin_client):
         f"/api/v1/llm/providers/{pid}", json={"base_url": "https://new.example.com/v1/", "model_chat": "x"}
     )
     assert r.status_code == 200
+
+
+@respx.mock
+async def test_tier_configuration_and_multi_provider_routing(admin_client):
+    from app.intelligence.llm import Message, Tier
+
+    # 接入两个不同的供应商
+    p_deepseek = (
+        await admin_client.post(
+            "/api/v1/llm/providers",
+            json={
+                "name": "DeepSeek",
+                "kind": "openai_compatible",
+                "base_url": "https://api.deepseek.com/v1",
+                "api_key": "sk-deepseek-123456",
+                "model_chat": "deepseek-chat",
+                "model_fast": "deepseek-chat",
+                "model_vision": "",
+            },
+        )
+    ).json()
+
+    p_ali = (
+        await admin_client.post(
+            "/api/v1/llm/providers",
+            json={
+                "name": "Ali",
+                "kind": "openai_compatible",
+                "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                "api_key": "sk-ali-654321",
+                "model_vision": "qwen-vl-max",
+                "model_chat": "qwen-plus",
+                "model_fast": "qwen-turbo",
+            },
+        )
+    ).json()
+
+    # 配置场景绑定：chat -> DeepSeek, vision -> Ali, fast -> DeepSeek
+    r = await admin_client.put(
+        "/api/v1/llm/tiers",
+        json={
+            "chat": {"provider_id": p_deepseek["id"], "model": "deepseek-chat"},
+            "vision": {"provider_id": p_ali["id"], "model": "qwen-vl-max"},
+            "fast": {"provider_id": p_deepseek["id"], "model": "deepseek-chat"},
+        },
+    )
+    assert r.status_code == 200
+    tiers = r.json()["tiers"]
+    assert tiers["chat"]["provider_id"] == p_deepseek["id"]
+    assert tiers["vision"]["provider_id"] == p_ali["id"]
+
+    # 检查 status 接口
+    status = (await admin_client.get("/api/v1/llm/status")).json()
+    assert status["tiers"]["vision"]["provider_id"] == p_ali["id"]
+    assert status["gateway"]["models"]["vision"] == "qwen-vl-max"
+    assert status["gateway"]["models"]["chat"] == "deepseek-chat"
+
+    # 检查 list providers 返回每个供应商关联的激活场景
+    providers = (await admin_client.get("/api/v1/llm/providers")).json()
+    prov_map = {p["name"]: p for p in providers}
+    assert "chat" in prov_map["DeepSeek"]["active_tiers"]
+    assert "fast" in prov_map["DeepSeek"]["active_tiers"]
+    assert "vision" in prov_map["Ali"]["active_tiers"]
+
+    # Mock 外部请求并验证多路由分发
+    ds_mock = respx.post("https://api.deepseek.com/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"role": "assistant", "content": "你好，我是DeepSeek客服"}}],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 8},
+            },
+        )
+    )
+    ali_mock = respx.post("https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"role": "assistant", "content": "你好，我是通义万相视觉"}}],
+                "usage": {"prompt_tokens": 15, "completion_tokens": 12},
+            },
+        )
+    )
+
+    gw = get_llm()
+    # 场景1：客服对话 -> 应分发到 DeepSeek
+    reply = await gw.complete_text(Tier.CHAT, "系统提示", [Message("user", "你好")])
+    assert reply == "你好，我是DeepSeek客服"
+    assert ds_mock.called
+    assert not ali_mock.called
+
+    # 场景2：看图视觉 -> 应分发到 Ali
+    vision_reply = await gw.complete_text(Tier.VISION, "系统提示", [Message("user", "看图")])
+    assert vision_reply == "你好，我是通义万相视觉"
+    assert ali_mock.called
+

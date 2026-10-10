@@ -31,6 +31,7 @@ class ProviderIn(BaseModel):
     model_vision: str = ""
     model_chat: str = ""
     model_fast: str = ""
+    custom_models: list[str] = Field(default_factory=list)
     timeout_seconds: float = Field(default=90, gt=0, le=600)
     anthropic_fallbacks: bool = True
     daily_token_budget: int | None = Field(default=None, ge=0)
@@ -46,10 +47,22 @@ class ProviderUpdate(BaseModel):
     model_vision: str | None = None
     model_chat: str | None = None
     model_fast: str | None = None
+    custom_models: list[str] | None = None
     timeout_seconds: float | None = Field(default=None, gt=0, le=600)
     anthropic_fallbacks: bool | None = None
     daily_token_budget: int | None = Field(default=None, ge=0)
     enabled: bool | None = None
+
+
+class TierItem(BaseModel):
+    provider_id: int | None = None
+    model: str = ""
+
+
+class TierConfigIn(BaseModel):
+    chat: TierItem | None = None
+    vision: TierItem | None = None
+    fast: TierItem | None = None
 
 
 class TestIn(BaseModel):
@@ -77,6 +90,8 @@ class ProviderOut(BaseModel):
     model_vision: str
     model_chat: str
     model_fast: str
+    custom_models: list[str] = Field(default_factory=list)
+    active_tiers: list[str] = Field(default_factory=list)
     timeout_seconds: float
     anthropic_fallbacks: bool
     daily_token_budget: int | None
@@ -87,7 +102,7 @@ class ProviderOut(BaseModel):
     last_error: str | None
 
 
-def _out(row: LlmProvider) -> ProviderOut:
+def _out(row: LlmProvider, active_tiers: list[str] | None = None) -> ProviderOut:
     key = get_vault().decrypt(row.api_key_enc) or ""
     return ProviderOut(
         id=row.id,
@@ -99,6 +114,8 @@ def _out(row: LlmProvider) -> ProviderOut:
         model_vision=row.model_vision,
         model_chat=row.model_chat,
         model_fast=row.model_fast,
+        custom_models=row.custom_models or [],
+        active_tiers=active_tiers or [],
         timeout_seconds=row.timeout_seconds,
         anthropic_fallbacks=row.anthropic_fallbacks,
         daily_token_budget=row.daily_token_budget,
@@ -165,9 +182,10 @@ async def meta(_: CurrentUser) -> dict[str, Any]:
 
 
 @router.get("/status")
-async def llm_status(_: CurrentUser) -> dict[str, Any]:
+async def llm_status(_: CurrentUser, session: SessionDep) -> dict[str, Any]:
     """当前生效的模型配置与今日用量（总览页与设置页共用）。"""
     config = get_config()
+    tier_bindings = await llm_service.get_tier_bindings(session)
     return {
         "active_source": config.source,
         "using_env": config.source == "env",
@@ -178,14 +196,49 @@ async def llm_status(_: CurrentUser) -> dict[str, Any]:
             "model_chat": config.model_chat,
             "model_fast": config.model_fast,
         },
+        "tiers": tier_bindings,
         "gateway": get_llm().status(),
     }
 
 
+@router.get("/tiers")
+async def get_tiers(_: CurrentUser, session: SessionDep) -> dict[str, Any]:
+    """获取当前分场景模型绑定（客服回复、看图发品、快速意图）。"""
+    return {"tiers": await llm_service.get_tier_bindings(session)}
+
+
+@router.put("/tiers")
+async def update_tiers(body: TierConfigIn, admin: AdminUser, session: SessionDep) -> dict[str, Any]:
+    """更新分场景模型绑定。"""
+    payload: dict[str, dict[str, Any]] = {}
+    if body.chat is not None:
+        payload["chat"] = {"provider_id": body.chat.provider_id, "model": body.chat.model}
+    if body.vision is not None:
+        payload["vision"] = {"provider_id": body.vision.provider_id, "model": body.vision.model}
+    if body.fast is not None:
+        payload["fast"] = {"provider_id": body.fast.provider_id, "model": body.fast.model}
+    await llm_service.set_tier_bindings(session, payload)
+    await llm_service.refresh()
+    await record_audit(
+        "llm.tiers.update",
+        user_id=admin.id,
+        actor_type="human",
+        target_type="llm_tiers",
+        detail=payload,
+    )
+    return {"tiers": await llm_service.get_tier_bindings(session)}
+
+
 @router.get("/providers", response_model=list[ProviderOut])
 async def list_providers(_: AdminUser, session: SessionDep) -> list[ProviderOut]:
-    rows = await session.execute(select(LlmProvider).order_by(LlmProvider.is_active.desc(), LlmProvider.id))
-    return [_out(r) for r in rows.scalars()]
+    rows = (await session.execute(select(LlmProvider).order_by(LlmProvider.is_active.desc(), LlmProvider.id))).scalars().all()
+    bindings = await llm_service.get_tier_bindings(session)
+    tier_map: dict[int, list[str]] = {}
+    for tier_name, item in bindings.items():
+        pid = item.get("provider_id")
+        if pid:
+            tier_map.setdefault(pid, []).append(tier_name)
+    return [_out(r, tier_map.get(r.id, [])) for r in rows]
 
 
 @router.post("/providers", response_model=ProviderOut, status_code=201)
@@ -202,6 +255,7 @@ async def create_provider(body: ProviderIn, admin: AdminUser, session: SessionDe
         model_vision=body.model_vision,
         model_chat=body.model_chat,
         model_fast=body.model_fast,
+        custom_models=body.custom_models or [],
         timeout_seconds=body.timeout_seconds,
         anthropic_fallbacks=body.anthropic_fallbacks,
         daily_token_budget=body.daily_token_budget,
@@ -211,9 +265,23 @@ async def create_provider(body: ProviderIn, admin: AdminUser, session: SessionDe
     session.add(row)
     await session.commit()
     await session.refresh(row)
+
+    # 自动填补：把可用模型自动填补到尚未绑定的场景，或显式激活时覆盖
+    current_bindings = await llm_service.get_tier_bindings(session)
+    auto_bind: dict[str, dict[str, Any]] = {}
+    for tier in ("chat", "vision", "fast"):
+        m = getattr(row, f"model_{tier}", "")
+        has_binding = bool(current_bindings.get(tier, {}).get("provider_id"))
+        if m and (not has_binding or body.activate):
+            auto_bind[tier] = {"provider_id": row.id, "model": m}
+    if auto_bind:
+        await llm_service.set_tier_bindings(session, auto_bind)
+
     if body.activate:
         await llm_service.activate(session, row)
-        await llm_service.refresh()
+
+    await llm_service.refresh()
+
     await record_audit(
         "llm.provider.create",
         user_id=admin.id,
@@ -222,7 +290,9 @@ async def create_provider(body: ProviderIn, admin: AdminUser, session: SessionDe
         target_id=row.id,
         detail={"name": row.name, "kind": row.kind, "activate": body.activate},
     )
-    return _out(row)
+    bindings_after = await llm_service.get_tier_bindings(session)
+    active_tiers = [t for t, item in bindings_after.items() if item.get("provider_id") == row.id]
+    return _out(row, active_tiers)
 
 
 @router.patch("/providers/{provider_id}", response_model=ProviderOut)
@@ -248,6 +318,8 @@ async def update_provider(provider_id: int, body: ProviderUpdate, admin: AdminUs
     # 显式传 null 表示清空覆盖、回退到全局预算
     if "daily_token_budget" in body.model_fields_set:
         row.daily_token_budget = body.daily_token_budget
+    if body.custom_models is not None:
+        row.custom_models = body.custom_models
     if body.enabled is not None:
         row.enabled = body.enabled
         if not row.enabled and row.is_active:
@@ -269,7 +341,9 @@ async def update_provider(provider_id: int, body: ProviderUpdate, admin: AdminUs
         target_id=row.id,
         detail={"name": row.name, "enabled": row.enabled},
     )
-    return _out(row)
+    bindings_after = await llm_service.get_tier_bindings(session)
+    active_tiers = [t for t, item in bindings_after.items() if item.get("provider_id") == row.id]
+    return _out(row, active_tiers)
 
 
 @router.post("/providers/{provider_id}/activate", response_model=ProviderOut)
@@ -288,16 +362,27 @@ async def activate_provider(provider_id: int, admin: AdminUser, session: Session
         target_id=row.id,
         detail={"name": row.name},
     )
-    return _out(row)
+    bindings_after = await llm_service.get_tier_bindings(session)
+    active_tiers = [t for t, item in bindings_after.items() if item.get("provider_id") == row.id]
+    return _out(row, active_tiers)
 
 
 @router.delete("/providers/{provider_id}", status_code=204)
 async def delete_provider(provider_id: int, admin: AdminUser, session: SessionDep) -> None:
     row = await _get(session, provider_id)
     was_active = row.is_active
+    bindings = await llm_service.get_tier_bindings(session)
+    rebind = False
+    for tier, item in bindings.items():
+        if item.get("provider_id") == provider_id:
+            item["provider_id"] = None
+            item["model"] = ""
+            rebind = True
+    if rebind:
+        await llm_service.set_tier_bindings(session, bindings)
     await session.delete(row)
     await session.commit()
-    if was_active:
+    if was_active or rebind:
         await llm_service.refresh()
     await record_audit(
         "llm.provider.delete",

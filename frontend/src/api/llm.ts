@@ -8,6 +8,7 @@ export interface LlmPreset {
   kind: LlmKind
   base_url: string
   models: { vision: string; chat: string; fast: string }
+  suggested_models?: string[]
   note: string
 }
 
@@ -26,6 +27,8 @@ export interface LlmProvider {
   model_vision: string
   model_chat: string
   model_fast: string
+  custom_models?: string[]
+  active_tiers?: string[]
   timeout_seconds: number
   anthropic_fallbacks: boolean
   daily_token_budget: number | null
@@ -41,9 +44,10 @@ export interface LlmProviderIn {
   kind: LlmKind
   base_url: string
   api_key: string
-  model_vision: string
-  model_chat: string
-  model_fast: string
+  model_vision?: string
+  model_chat?: string
+  model_fast?: string
+  custom_models?: string[]
   timeout_seconds: number
   anthropic_fallbacks: boolean
   daily_token_budget: number | null
@@ -56,6 +60,17 @@ export interface LlmProbeIn extends Omit<LlmProviderIn, 'enabled' | 'activate' |
   id?: number
 }
 
+export interface TierItem {
+  provider_id: number | null
+  model: string
+}
+
+export interface LlmTiers {
+  chat?: TierItem
+  vision?: TierItem
+  fast?: TierItem
+}
+
 export interface LlmStatus {
   active_source: string
   using_env: boolean
@@ -66,18 +81,23 @@ export interface LlmStatus {
     model_chat: string
     model_fast: string
   }
+  tiers?: Record<string, TierItem>
   gateway: {
     available: boolean
     provider: string
     source: string
     error: string | null
     models: Record<string, string>
+    tier_sources?: Record<string, string>
     usage_today: { calls: number; input_tokens: number; output_tokens: number; budget: number }
   }
 }
 
 export const getLlmMeta = () => http.get<LlmMeta>('/llm/meta').then((r) => r.data)
 export const getLlmStatus = () => http.get<LlmStatus>('/llm/status').then((r) => r.data)
+export const getLlmTiers = () => http.get<{ tiers: Record<string, TierItem> }>('/llm/tiers').then((r) => r.data.tiers)
+export const updateLlmTiers = (body: LlmTiers) =>
+  http.put<{ tiers: Record<string, TierItem> }>('/llm/tiers', body).then((r) => r.data.tiers)
 export const listLlmProviders = () => http.get<LlmProvider[]>('/llm/providers').then((r) => r.data)
 export const createLlmProvider = (body: LlmProviderIn) =>
   http.post<LlmProvider>('/llm/providers', body).then((r) => r.data)

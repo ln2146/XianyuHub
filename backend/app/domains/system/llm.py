@@ -16,7 +16,7 @@ from app.core.config import get_settings
 from app.core.crypto import get_vault
 from app.core.db import session_factory
 from app.core.events import Topics, bus
-from app.domains.system.models import AuditLog, LlmProvider
+from app.domains.system.models import AuditLog, LlmProvider, LlmTierBinding
 from app.intelligence.llm import (
     LlmConfig,
     LLMError,
@@ -34,7 +34,8 @@ PRESETS: list[dict[str, Any]] = [
         "kind": "openai_compatible",
         "base_url": "https://api.deepseek.com/v1",
         "models": {"vision": "", "chat": "deepseek-chat", "fast": "deepseek-chat"},
-        "note": "适合客服回复与意图分类",
+        "suggested_models": ["deepseek-chat", "deepseek-reasoner"],
+        "note": "适合客服回复与意图分类（高性价比）",
     },
     {
         "id": "dashscope",
@@ -42,7 +43,8 @@ PRESETS: list[dict[str, Any]] = [
         "kind": "openai_compatible",
         "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
         "models": {"vision": "qwen-vl-max", "chat": "qwen-plus", "fast": "qwen-turbo"},
-        "note": "国内直连，支持多模态与对话（百炼）",
+        "suggested_models": ["qwen-plus", "qwen-max", "qwen-turbo", "qwen-vl-max", "qwen-vl-plus", "qwen-flash"],
+        "note": "国内直连，支持多模态看图与对话（百炼平台）",
     },
     {
         "id": "zhipu",
@@ -50,7 +52,8 @@ PRESETS: list[dict[str, Any]] = [
         "kind": "openai_compatible",
         "base_url": "https://open.bigmodel.cn/api/paas/v4",
         "models": {"vision": "glm-4v-plus", "chat": "glm-4-plus", "fast": "glm-4-flash"},
-        "note": "glm-4v 支持图片，glm-4-flash 免费额度较宽松",
+        "suggested_models": ["glm-4-plus", "glm-4-flash", "glm-4-air", "glm-4v-plus", "glm-4v"],
+        "note": "glm-4v 支持图片，glm-4-flash 免费额度宽松",
     },
     {
         "id": "moonshot",
@@ -58,6 +61,7 @@ PRESETS: list[dict[str, Any]] = [
         "kind": "openai_compatible",
         "base_url": "https://api.moonshot.cn/v1",
         "models": {"vision": "moonshot-v1-8k-vision-preview", "chat": "moonshot-v1-32k", "fast": "moonshot-v1-8k"},
+        "suggested_models": ["moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k", "moonshot-v1-8k-vision-preview"],
         "note": "长文本理解好，适合商品描述与知识库问答",
     },
     {
@@ -70,7 +74,8 @@ PRESETS: list[dict[str, Any]] = [
             "chat": "Qwen/Qwen2.5-72B-Instruct",
             "fast": "Qwen/Qwen2.5-7B-Instruct",
         },
-        "note": "聚合多种开源模型，可按价格挑模型",
+        "suggested_models": ["Qwen/Qwen2.5-72B-Instruct", "deepseek-ai/DeepSeek-V3", "Qwen/Qwen2.5-VL-72B-Instruct"],
+        "note": "聚合多种开源模型，按需低成本调用",
     },
     {
         "id": "openrouter",
@@ -82,7 +87,8 @@ PRESETS: list[dict[str, Any]] = [
             "chat": "anthropic/claude-sonnet-4.5",
             "fast": "openai/gpt-4o-mini",
         },
-        "note": "一个 Key 调用多家模型，便于对比效果",
+        "suggested_models": ["anthropic/claude-sonnet-4.5", "openai/gpt-4o", "google/gemini-2.5-flash", "openai/gpt-4o-mini"],
+        "note": "一个 Key 调用全球多家顶级模型",
     },
     {
         "id": "ollama",
@@ -90,6 +96,7 @@ PRESETS: list[dict[str, Any]] = [
         "kind": "openai_compatible",
         "base_url": "http://127.0.0.1:11434/v1",
         "models": {"vision": "qwen2.5vl:7b", "chat": "qwen2.5:14b", "fast": "qwen2.5:7b"},
+        "suggested_models": ["qwen2.5:14b", "qwen2.5:7b", "qwen2.5vl:7b"],
         "note": "本机运行，数据不出内网；API Key 随意填",
     },
     {
@@ -98,7 +105,8 @@ PRESETS: list[dict[str, Any]] = [
         "kind": "openai_compatible",
         "base_url": "http://127.0.0.1:8000/v1",
         "models": {"vision": "", "chat": "", "fast": ""},
-        "note": "兼容 /chat/completions 的任意自建服务",
+        "suggested_models": [],
+        "note": "兼容 /chat/completions 的自建模型服务",
     },
     {
         "id": "custom",
@@ -106,7 +114,8 @@ PRESETS: list[dict[str, Any]] = [
         "kind": "openai_compatible",
         "base_url": "",
         "models": {"vision": "", "chat": "", "fast": ""},
-        "note": "手动填写接口地址与模型名",
+        "suggested_models": [],
+        "note": "手动填写任意接口地址与模型名",
     },
 ]
 
@@ -154,10 +163,85 @@ async def active_row(session: AsyncSession) -> LlmProvider | None:
     return (await session.execute(stmt)).scalars().first()
 
 
+async def get_tier_bindings(session: AsyncSession) -> dict[str, dict[str, Any]]:
+    rows = (await session.execute(select(LlmTierBinding))).scalars().all()
+    return {r.tier: {"provider_id": r.provider_id, "model": r.model} for r in rows}
+
+
+async def set_tier_bindings(session: AsyncSession, bindings: dict[str, dict[str, Any]]) -> None:
+    for tier_name in ("chat", "vision", "fast"):
+        item = bindings.get(tier_name)
+        if item is None:
+            continue
+        provider_id = item.get("provider_id")
+        model = item.get("model") or ""
+        row = (
+            await session.execute(select(LlmTierBinding).where(LlmTierBinding.tier == tier_name))
+        ).scalar_one_or_none()
+        if row is None:
+            row = LlmTierBinding(tier=tier_name, provider_id=provider_id, model=model)
+            session.add(row)
+        else:
+            row.provider_id = provider_id
+            row.model = model
+    await session.commit()
+
+
 async def load_active_config() -> LlmConfig | None:
     async with session_factory()() as session:
-        row = await active_row(session)
-        return row_config(row) if row is not None else None
+        tier_targets: dict[str, dict[str, Any]] = {}
+        bindings = (await session.execute(select(LlmTierBinding))).scalars().all()
+        if bindings:
+            prov_ids = [b.provider_id for b in bindings if b.provider_id]
+            if prov_ids:
+                p_rows = (
+                    await session.execute(
+                        select(LlmProvider).where(LlmProvider.id.in_(prov_ids), LlmProvider.enabled.is_(True))
+                    )
+                ).scalars().all()
+                prov_map = {p.id: p for p in p_rows}
+                for b in bindings:
+                    if b.provider_id and b.provider_id in prov_map:
+                        p = prov_map[b.provider_id]
+                        key = get_vault().decrypt(p.api_key_enc) or ""
+                        model = b.model or getattr(p, f"model_{b.tier}", "")
+                        if model:
+                            tier_targets[b.tier] = {
+                                "provider_id": p.id,
+                                "provider_name": p.name,
+                                "kind": p.kind,
+                                "base_url": p.base_url,
+                                "api_key": key,
+                                "model": model,
+                                "timeout": p.timeout_seconds,
+                                "fallbacks": p.anthropic_fallbacks,
+                            }
+
+        active_p = await active_row(session)
+        if active_p is not None:
+            base = row_config(active_p)
+            base.tier_targets = tier_targets
+            return base
+
+        if tier_targets:
+            first = tier_targets.get("chat") or next(iter(tier_targets.values()))
+            settings = get_settings()
+            return LlmConfig(
+                kind=first["kind"],
+                api_key=first["api_key"],
+                base_url=first["base_url"],
+                model_vision=tier_targets.get("vision", {}).get("model", ""),
+                model_chat=tier_targets.get("chat", {}).get("model", ""),
+                model_fast=tier_targets.get("fast", {}).get("model", ""),
+                timeout=float(first.get("timeout", settings.llm_timeout_seconds)),
+                fallbacks=bool(first.get("fallbacks", True)),
+                daily_token_budget=settings.llm_daily_token_budget,
+                max_images=settings.llm_max_images,
+                source="场景自选模型",
+                tier_targets=tier_targets,
+            )
+
+        return None
 
 
 async def apply_active_config() -> LlmConfig | None:
@@ -180,6 +264,18 @@ async def activate(session: AsyncSession, row: LlmProvider) -> None:
     await session.execute(update(LlmProvider).values(is_active=False))
     row.is_active = True
     row.enabled = True
+    for tier in ("chat", "vision", "fast"):
+        model = getattr(row, f"model_{tier}", "")
+        if model:
+            b = (
+                await session.execute(select(LlmTierBinding).where(LlmTierBinding.tier == tier))
+            ).scalar_one_or_none()
+            if b is None:
+                b = LlmTierBinding(tier=tier, provider_id=row.id, model=model)
+                session.add(b)
+            else:
+                b.provider_id = row.id
+                b.model = model
     await session.commit()
 
 
@@ -293,11 +389,13 @@ __all__ = [
     "active_row",
     "apply_active_config",
     "encode_key",
+    "get_tier_bindings",
     "list_remote_models",
     "load_active_config",
     "mask_key",
     "refresh",
     "row_config",
     "seed_from_env",
+    "set_tier_bindings",
     "test_connection",
 ]
