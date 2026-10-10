@@ -50,6 +50,10 @@ def account_key(account_id: int | None) -> str:
     return ANON if account_id is None else f"acc:{account_id}"
 
 
+# 网页版发布页的 spm：所在地接口据此返回附近地点
+PUBLISH_SPM = "a21ybx.publish.0.0"
+
+
 class GoofishGateway:
     def __init__(
         self,
@@ -106,12 +110,14 @@ class GoofishGateway:
         data: dict[str, Any],
         *,
         version: str = "1.0",
+        extra_params: dict[str, str] | None = None,
+        extra_headers: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         async def _do() -> dict[str, Any]:
             client = await self._client(account_id)
             if account_id is None:
                 await client.ensure_token()
-            return await client.call(api, data, version=version)
+            return await client.call(api, data, version=version, extra_params=extra_params, extra_headers=extra_headers)
 
         return await self.guard.run(account_key(account_id), action, _do)
 
@@ -232,21 +238,32 @@ class GoofishGateway:
             version="2.0",
         )
 
-    async def default_address(self, account_id: int) -> dict[str, Any]:
+    async def locations(self, account_id: int, longitude: float, latitude: float) -> dict[str, list[dict[str, Any]]]:
+        """宝贝所在地候选：账号常用地址 + 坐标附近的地点（与网页版发布页同一接口）。
+        坐标为高德 GCJ-02；接口要求带发布页的 spm 标识，否则只返回空对象。"""
         data = await self._call(
             account_id,
             Action.CATEGORY,
             "mtop.taobao.idle.local.poi.get",
-            {"longitude": 121.4737, "latitude": 31.2304},
+            {"longitude": round(longitude, 6), "latitude": round(latitude, 6)},
+            extra_params={"spm_cnt": PUBLISH_SPM},
+            extra_headers={"eagleeye-userdata": f"spm-cnt={PUBLISH_SPM.split('.')[0]}"},
         )
-        addresses = data.get("commonAddresses") or []
-        if not addresses:
-            raise BizError("账号没有可用的默认发货地址，请先在闲鱼 App 中设置")
-        return addresses[0]
+        return {
+            "common": list(data.get("commonAddresses") or []),
+            "nearby": list(data.get("nearbyAddresses") or []),
+        }
 
-    async def publish_item(self, account_id: int, draft: PublishDraft) -> str:
+    async def default_address(self, account_id: int) -> dict[str, Any]:
+        """未选择所在地时的兜底：账号在闲鱼 App 里的常用地址。"""
+        common = (await self.locations(account_id, 121.4737, 31.2304))["common"]
+        if not common:
+            raise BizError("请先选择宝贝所在地（账号在闲鱼 App 里也没有常用地址）")
+        return common[0]
+
+    async def publish_item(self, account_id: int, draft: PublishDraft, location: dict[str, Any] | None = None) -> str:
         category = await self.recommend_category(account_id, draft.title, draft.desc, draft.images)
-        address = await self.default_address(account_id)
+        address = location or await self.default_address(account_id)
         payload = build_publish_payload(draft, category, address)
         data = await self._call(account_id, Action.PUBLISH, "mtop.idle.pc.idleitem.publish", payload)
         item_id = str(data.get("itemId") or dig(data, "item", "itemId", default="") or "")

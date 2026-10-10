@@ -14,7 +14,7 @@ from app.domains.goods.ai_listing import Strategy, generate_listing
 from app.domains.goods.models import DraftStatus, MyItem, PublishDraftRecord
 from app.domains.system.audit import record_audit
 from app.goofish.errors import GoofishError, RiskBlockedError
-from app.goofish.publish import ShippingMode
+from app.goofish.publish import ItemLocation, ShippingMode
 from app.intelligence.llm import LLMError, LLMUnavailable, get_llm
 from app.runtime import get_runtime
 
@@ -76,6 +76,7 @@ class DraftIn(BaseModel):
     floor_price: float | None = None
     knowledge: str = ""
     is_virtual: bool = False
+    location: ItemLocation | None = None  # 宝贝所在地；为空时沿用账号上次使用的所在地
     scheduled_at: datetime | None = None
 
     @model_validator(mode="after")
@@ -104,6 +105,7 @@ class DraftOut(BaseModel):
     floor_price: float | None
     knowledge: str
     is_virtual: bool
+    location: dict[str, Any] | None = None
     scheduled_at: datetime | None
     status: str
     item_id: str | None
@@ -225,6 +227,36 @@ async def market(
         return view.model_dump()
     except GoofishError as e:
         raise goofish_http_error(e) from e
+
+
+# ---------------------------------------------------------------- 宝贝所在地
+@router.get("/locations")
+async def locations(
+    user: CurrentUser,
+    session: SessionDep,
+    account_id: int,
+    longitude: float | None = Query(default=None, ge=73, le=136),
+    latitude: float | None = Query(default=None, ge=3, le=54),
+) -> dict[str, Any]:
+    """宝贝所在地候选：账号常用地址、坐标附近的地点，以及上次发布用的所在地。坐标为 GCJ-02。"""
+    acc = await get_account_for(session, user, account_id)
+    out: dict[str, Any] = {"saved": (acc.settings or {}).get("publish_location"), "common": [], "nearby": []}
+    if longitude is None or latitude is None:
+        return out
+    try:
+        found = await get_runtime().gateway.locations(account_id, longitude, latitude)
+    except GoofishError as e:
+        raise goofish_http_error(e) from e
+    for key in ("common", "nearby"):
+        out[key] = [_location(x) for x in found[key] if _location(x)]
+    return out
+
+
+def _location(raw: dict[str, Any]) -> dict[str, Any] | None:
+    try:
+        return ItemLocation.model_validate(raw).model_dump()
+    except ValueError:
+        return None
 
 
 # ---------------------------------------------------------------- 图片与 AI 文案

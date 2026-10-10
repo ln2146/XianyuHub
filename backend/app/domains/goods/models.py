@@ -81,6 +81,8 @@ class PublishDraftRecord(IdMixin, TimestampMixin, Base):
     floor_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     knowledge: Mapped[str] = mapped_column(Text, default="")
     is_virtual: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 宝贝所在地（ItemLocation）；为空时沿用账号上次使用的所在地
+    location: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     status: Mapped[str] = mapped_column(String(16), default=DraftStatus.DRAFT, index=True)
     scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     item_id: Mapped[str | None] = mapped_column(String(32), nullable=True)

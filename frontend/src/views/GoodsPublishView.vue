@@ -5,14 +5,15 @@
  * 2. 确认页：逐项核对 AI 标出的待确认事项，按需修改 → 确认发布
  * 也可以切换为“手动填写”。
  */
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Check, EditPen, Loading, MagicStick, Refresh, Warning } from '@element-plus/icons-vue'
+import { Check, EditPen, Loading, Location, MagicStick, Refresh, Warning } from '@element-plus/icons-vue'
 import {
   aiDraft,
   createDraft,
   deleteDraft,
+  getLocations,
   listDrafts,
   publishDraft,
   updateDraft,
@@ -20,10 +21,12 @@ import {
   type AiMeta,
   type DraftIn,
   type DraftOut,
+  type ItemLocation,
   type PriceStrategy,
   type ShippingMode,
 } from '@/api/goods'
 import ImageUploader from '@/components/ImageUploader.vue'
+import LocationPicker from '@/components/LocationPicker.vue'
 import MarketPanel from '@/components/MarketPanel.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import { useAccountsStore } from '@/stores/accounts'
@@ -53,6 +56,7 @@ interface FormState {
   floor_price: number | null
   knowledge: string
   is_virtual: boolean
+  location: ItemLocation | null
   scheduled_at: Date | null
   delivery_pool_id: number | null
 }
@@ -71,6 +75,7 @@ const emptyForm = (): FormState => ({
   floor_price: null,
   knowledge: '',
   is_virtual: false,
+  location: null,
   scheduled_at: null,
   delivery_pool_id: null,
 })
@@ -149,6 +154,7 @@ function fillFromDraft(d: DraftOut) {
     floor_price: d.floor_price,
     knowledge: d.knowledge,
     is_virtual: d.is_virtual,
+    location: d.location,
     scheduled_at: d.scheduled_at ? new Date(d.scheduled_at) : null,
   })
   editingId.value = d.id
@@ -232,8 +238,35 @@ function toBody(): DraftIn | null {
     floor_price: form.floor_price,
     knowledge: form.knowledge,
     is_virtual: form.is_virtual,
+    location: form.location,
     scheduled_at: form.scheduled_at ? form.scheduled_at.toISOString() : null,
   }
+}
+
+// ---------------------------------------------------------------- 宝贝所在地
+// 草稿未单独选择时，发布沿用该账号上次使用的所在地
+const savedLocation = ref<ItemLocation | null>(null)
+const locationOpen = ref(false)
+const effectiveLocation = computed(() => form.location || savedLocation.value)
+const locationText = (l: ItemLocation) => `${l.city}${l.area ? ` ${l.area}` : ''} · ${l.poi || l.address}`
+watch(
+  () => form.account_id,
+  async (id) => {
+    savedLocation.value = null
+    if (!id) return
+    try {
+      savedLocation.value = (await getLocations(id)).saved
+    } catch {
+      /* 拦截器已提示 */
+    }
+  },
+  { immediate: true },
+)
+function needLocation(): boolean {
+  if (effectiveLocation.value) return false
+  ElMessage.warning('请先选择宝贝所在地')
+  locationOpen.value = true
+  return true
 }
 
 async function persist(body: DraftIn): Promise<DraftOut> {
@@ -271,6 +304,7 @@ function publishConfirmText(title: string, price: number, accountId: number, pen
 async function confirmAndPublish() {
   const body = toBody()
   if (!body) return
+  if (needLocation()) return
   if (body.scheduled_at) return saveDraft()
   await ElMessageBox.confirm(
     publishConfirmText(body.title, body.price, body.account_id, unconfirmedCount.value),
@@ -615,6 +649,17 @@ onBeforeUnmount(() => window.clearInterval(timer))
               <div v-if="aiMeta?.shipping_reason" class="form-tip">AI 建议：{{ aiMeta.shipping_reason }}</div>
               <el-checkbox v-model="form.self_pickup" class="mt-s">支持自提</el-checkbox>
             </el-form-item>
+            <el-form-item label="宝贝所在地" required>
+              <div class="location-field">
+                <template v-if="effectiveLocation">
+                  <el-icon class="muted"><Location /></el-icon>
+                  <span class="ellipsis">{{ locationText(effectiveLocation) }}</span>
+                  <span v-if="!form.location" class="muted small">（沿用上次）</span>
+                </template>
+                <span v-else class="muted">未选择</span>
+                <el-button link type="primary" @click="locationOpen = true">{{ effectiveLocation ? '更换' : '选择' }}</el-button>
+              </div>
+            </el-form-item>
             <el-form-item label="客服知识库">
               <el-input v-model="form.knowledge" type="textarea" :rows="aiMeta ? 8 : 3" placeholder="可选：FAQ、参数、瑕疵说明等，发布后供 AI 客服回答买家" />
             </el-form-item>
@@ -751,10 +796,23 @@ onBeforeUnmount(() => window.clearInterval(timer))
         </div>
       </el-col>
     </el-row>
+    <LocationPicker
+      v-model="locationOpen"
+      :account-id="form.account_id"
+      :current="effectiveLocation"
+      @select="(l: ItemLocation) => (form.location = l)"
+    />
   </div>
 </template>
 
 <style scoped>
+.location-field {
+  display: flex;
+  align-items: center;
+  gap: var(--xh-space-2);
+  min-width: 0;
+  max-width: 100%;
+}
 /* ---------- 通用 ---------- */
 .card-head {
   display: flex;

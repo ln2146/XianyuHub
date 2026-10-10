@@ -121,6 +121,65 @@ async def test_upload_draft_and_publish(admin_client):
         assert log.success and log.target_id == "880001"
 
 
+NEARBY = {
+    "address": "南京东路 1 号",
+    "area": "黄浦区",
+    "city": "上海",
+    "divisionId": 310101,
+    "latitude": "31.234",
+    "longitude": "121.475",
+    "poi": "人民广场",
+    "poiId": "B00155FAKE",
+    "prov": "上海",
+}
+
+
+@respx.mock
+async def test_pick_item_location_and_reuse_it(admin_client):
+    acc_id = await make_account(admin_client)
+    poi = respx.post(url__regex=r".*local\.poi\.get.*").mock(
+        return_value=ok({"commonAddresses": [], "nearbyAddresses": [NEARBY, {"poi": "缺字段"}]})
+    )
+    r = await admin_client.get(f"/api/v1/goods/locations?account_id={acc_id}&longitude=121.47&latitude=31.23")
+    assert r.status_code == 200, r.text
+    assert r.json()["saved"] is None and r.json()["nearby"][0]["poiId"] == "B00155FAKE"
+    assert len(r.json()["nearby"]) == 1  # 字段不全的地点被丢弃
+    req = poi.calls[0].request
+    # 不带发布页 spm 时闲鱼只返回空对象
+    assert req.headers["eagleeye-userdata"] == "spm-cnt=a21ybx" and "spm_cnt=a21ybx.publish.0.0" in str(req.url)
+
+    image_id = (await admin_client.post("/api/v1/goods/uploads", files={"file": ("a.png", PNG, "image/png")})).json()[
+        "id"
+    ]
+    draft = {"account_id": acc_id, "title": "测试", "desc": "测试", "image_ids": [image_id], "price": 10}
+    location = r.json()["nearby"][0]
+    d1 = (await admin_client.post("/api/v1/goods/drafts", json={**draft, "location": location})).json()
+    assert d1["location"]["poi"] == "人民广场"
+
+    respx.post("https://stream-upload.goofish.com/api/upload.api").mock(
+        return_value=httpx.Response(200, json={"object": {"url": "https://img.alicdn.com/x.png", "pix": "800x600"}})
+    )
+    respx.post(url__regex=r".*kgraph\.property\.recommend.*").mock(
+        return_value=ok({"categoryPredictResult": {"catId": 1, "catName": "x", "channelCatId": 2, "tbCatId": 3}})
+    )
+    publish = respx.post(url__regex=r".*idleitem\.publish.*").mock(return_value=ok({"itemId": "880002"}))
+    before = poi.call_count
+    assert (await admin_client.post(f"/api/v1/goods/drafts/{d1['id']}/publish")).status_code == 200
+    sent = json.loads(dict(httpx.QueryParams(publish.calls[0].request.content.decode()))["data"])
+    addr = json.dumps(sent, ensure_ascii=False)
+    assert "B00155FAKE" in addr and "310101" in addr and "121.475,31.234" in addr
+    assert poi.call_count == before  # 选了所在地就不再去查常用地址
+
+    # 下一份草稿不选所在地：沿用上次的
+    saved = (await admin_client.get(f"/api/v1/goods/locations?account_id={acc_id}")).json()["saved"]
+    assert saved["poiId"] == "B00155FAKE"
+    d2 = (await admin_client.post("/api/v1/goods/drafts", json=draft)).json()
+    publish.mock(return_value=ok({"itemId": "880003"}))
+    assert (await admin_client.post(f"/api/v1/goods/drafts/{d2['id']}/publish")).status_code == 200
+    assert "B00155FAKE" in dict(httpx.QueryParams(publish.calls[-1].request.content.decode()))["data"]
+    assert poi.call_count == before
+
+
 @respx.mock
 async def test_ai_copy_with_market(admin_client):
     image_id = (await admin_client.post("/api/v1/goods/uploads", files={"file": ("a.png", PNG, "image/png")})).json()[

@@ -28,6 +28,8 @@ class AccountSettings(BaseModel):
     rate_text: str = "感谢支持，欢迎再来～"
     # 运营
     auto_polish: bool = False
+    # 发布：上次使用的宝贝所在地，新草稿默认沿用
+    publish_location: dict[str, Any] | None = None
 
 
 class XyAccount(IdMixin, TimestampMixin, Base):

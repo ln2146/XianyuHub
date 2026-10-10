@@ -16,6 +16,22 @@ class ShippingMode(StrEnum):
     NO_SHIPPING = "no_shipping"  # 无需邮寄（虚拟商品）
 
 
+class ItemLocation(BaseModel):
+    """宝贝所在地：所在地接口返回的一条地址（字段名与闲鱼一致，坐标为 GCJ-02）。"""
+
+    model_config = {"extra": "ignore"}
+
+    prov: str
+    city: str
+    area: str = ""
+    divisionId: int  # noqa: N815
+    poiId: str = ""  # noqa: N815
+    poi: str = ""
+    address: str = ""
+    longitude: float
+    latitude: float
+
+
 class UploadedImage(BaseModel):
     url: str
     width: int

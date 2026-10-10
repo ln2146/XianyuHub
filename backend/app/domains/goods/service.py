@@ -244,8 +244,13 @@ async def publish_draft(draft_id: int, user_id: int | None = None) -> str:
                 "floor_price",
                 "knowledge",
                 "is_virtual",
+                "location",
             )
         }
+        location = snapshot["location"]
+        if location is None:  # 沿用账号上次使用的所在地
+            acc = await s.get(XyAccount, snapshot["account_id"])
+            location = (acc.settings or {}).get("publish_location") if acc else None
     account_id = snapshot["account_id"]
     try:
         uploaded = []
@@ -263,7 +268,7 @@ async def publish_draft(draft_id: int, user_id: int | None = None) -> str:
             post_fee=snapshot["post_fee"],
             self_pickup=snapshot["self_pickup"],
         )
-        item_id = await gateway.publish_item(account_id, payload)
+        item_id = await gateway.publish_item(account_id, payload, location)
     except (GoofishError, ValueError, FileNotFoundError) as e:
         async with session_factory()() as s:
             d = await s.get(PublishDraftRecord, draft_id)
@@ -282,6 +287,11 @@ async def publish_draft(draft_id: int, user_id: int | None = None) -> str:
     async with session_factory()() as s:
         d = await s.get(PublishDraftRecord, draft_id)
         d.status, d.item_id, d.error = DraftStatus.PUBLISHED, item_id, None
+        if location:  # 记住本次所在地，下次发布默认沿用
+            acc = await s.get(XyAccount, account_id)
+            if acc is not None:
+                acc.settings = {**(acc.settings or {}), "publish_location": location}
+                d.location = location
         s.add(
             MyItem(
                 account_id=account_id,

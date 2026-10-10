@@ -110,6 +110,7 @@ class MtopClient:
         *,
         version: str = "1.0",
         extra_params: dict[str, str] | None = None,
+        extra_headers: dict[str, str] | None = None,
         token_retries: int = 2,
     ) -> dict[str, Any]:
         """调用 mtop 接口，返回响应中的 data 字段。"""
@@ -136,7 +137,7 @@ class MtopClient:
                     MTOP_BASE.format(api=api, version=version),
                     params=params,
                     data={"data": body},
-                    headers={"Cookie": dump_cookie_str(self.cookies)},
+                    headers={"Cookie": dump_cookie_str(self.cookies), **(extra_headers or {})},
                 )
             except httpx.HTTPError as e:
                 raise NetworkError(f"请求失败：{e!r}", api=api) from e

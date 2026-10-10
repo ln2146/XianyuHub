@@ -51,6 +51,31 @@ export interface MarketView {
 
 export type ShippingMode = 'free' | 'by_distance' | 'fixed' | 'no_shipping'
 
+/** 宝贝所在地（字段名与闲鱼一致，坐标为 GCJ-02） */
+export interface ItemLocation {
+  prov: string
+  city: string
+  area: string
+  divisionId: number
+  poiId: string
+  poi: string
+  address: string
+  longitude: number
+  latitude: number
+}
+
+export interface LocationOptions {
+  /** 上次发布用的所在地 */
+  saved: ItemLocation | null
+  /** 账号在闲鱼 App 里的常用地址 */
+  common: ItemLocation[]
+  /** 坐标附近的地点 */
+  nearby: ItemLocation[]
+}
+
+export const getLocations = (account_id: number, coords?: { longitude: number; latitude: number }) =>
+  http.get<LocationOptions>('/goods/locations', { params: { account_id, ...coords } }).then((r) => r.data)
+
 export interface DraftIn {
   account_id: number
   title: string
@@ -65,6 +90,8 @@ export interface DraftIn {
   floor_price: number | null
   knowledge: string
   is_virtual: boolean
+  /** 为空时沿用账号上次使用的所在地 */
+  location: ItemLocation | null
   scheduled_at: string | null
 }
 
