@@ -45,6 +45,24 @@ async def test_channel_validation(admin_client):
 
 
 @respx.mock
+async def test_probe_unsaved_channel(admin_client):
+    respx.post("https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=PROBE123").mock(
+        return_value=httpx.Response(200, json={"errcode": 0})
+    )
+    r = await admin_client.post(
+        "/api/v1/notify/test",
+        json={
+            "type": "wecom",
+            "name": "测试未保存连接器",
+            "config": {"webhook_url": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=PROBE123"},
+        },
+    )
+    assert r.status_code == 200
+    assert r.json()["ok"] is True
+
+
+
+@respx.mock
 async def test_webhook_failure_recorded(admin_client):
     respx.post("https://hook.example.com/x").mock(return_value=httpx.Response(500, text="boom"))
     r = await admin_client.post(

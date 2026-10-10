@@ -145,3 +145,31 @@ async def test_channel(channel_id: int, user: CurrentUser, session: SessionDep) 
         ok, err = False, ch.last_error
     await session.commit()
     return {"ok": ok, "error": err}
+
+
+class ProbeIn(BaseModel):
+    type: str
+    config: dict[str, Any]
+    name: str = "测试连接器"
+
+
+@router.post("/test")
+async def test_unsaved_channel(body: ProbeIn, user: CurrentUser) -> dict[str, Any]:
+    """无需先保存即可实时测试连接器有效性。"""
+    try:
+        validate_config(body.type, body.config)
+        ch = NotificationChannel(
+            owner_id=user.id,
+            name=body.name,
+            type=body.type,
+            config_enc=encode_config(body.config),
+            events=[],
+            enabled=True,
+        )
+        await send_to_channel(
+            ch, Notification(event="test", title="鱼塘管家测试通知", content="如果你看到这条消息，说明连接器配置正确。")
+        )
+        return {"ok": True, "error": None}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": str(e)[:500]}
+

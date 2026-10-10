@@ -34,3 +34,6 @@ export const updateChannel = (id: number, body: Partial<Omit<ChannelIn, 'type'>>
 export const deleteChannel = (id: number) => http.delete(`/notify/channels/${id}`)
 export const testChannel = (id: number) =>
   http.post<{ ok: boolean; error: string | null }>(`/notify/channels/${id}/test`).then((r) => r.data)
+export const testUnsavedChannel = (body: { type: string; config: Record<string, unknown>; name?: string }) =>
+  http.post<{ ok: boolean; error: string | null }>('/notify/test', body).then((r) => r.data)
+
