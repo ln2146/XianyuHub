@@ -59,6 +59,7 @@ def account_key(account_id: int | None) -> str:
 
 # 网页版发布页的 spm：所在地接口据此返回附近地点
 PUBLISH_SPM = "a21ybx.publish.0.0"
+MULTI_INVENTORY_HINT = "这个账号暂不支持多库存（闲鱼只对部分卖家开放），请把数量改成 1"
 # 发布前身份认证：与网页版发布页弹出的二维码相同，手机扫码后在闲鱼 App 里打开认证页
 IDENTITY_VERIFY_URL = (
     "https://pages.goofish.com/sharexy?loadingVisible=false&showNavBar=true&bfs=idlepc.publish"
@@ -266,6 +267,19 @@ class GoofishGateway:
             "nearby": list(data.get("nearbyAddresses") or []),
         }
 
+    async def publish_capability(self, account_id: int) -> dict[str, Any]:
+        """发布前置检查（与网页版发布页一致）：是否被限制发布、是否支持多库存 / 多规格。
+        多库存只对部分卖家开放；不支持时库存只能是 1，卖出一件后商品自动下架。"""
+        check = await self._call(account_id, Action.CATEGORY, "mtop.idle.pc.idleitem.prepublish.check", {})
+        pre = await self._call(account_id, Action.CATEGORY, "mtop.idle.pc.idleitem.preget", {})
+        info = check.get("publishLimitInfo") or {}
+        return {
+            "support_inventory": pre.get("supportSkuOrInventory") is True,
+            "limited": bool(check.get("limited")),
+            "limit_title": info.get("title") or "",
+            "limit_content": info.get("content") or "",
+        }
+
     async def default_address(self, account_id: int) -> dict[str, Any]:
         """未选择所在地时的兜底：账号在闲鱼 App 里的常用地址。"""
         common = (await self.locations(account_id, 121.4737, 31.2304))["common"]
@@ -288,6 +302,8 @@ class GoofishGateway:
                     ret=e.ret,
                     api=e.api,
                 ) from e
+            if "MULTI_INVENTORY" in str(e):
+                raise BizError(MULTI_INVENTORY_HINT, ret=e.ret, api=e.api) from e
             raise
         item_id = str(data.get("itemId") or dig(data, "item", "itemId", default="") or "")
         if not item_id:

@@ -73,6 +73,18 @@ export interface LocationOptions {
   nearby: ItemLocation[]
 }
 
+export interface PublishMeta {
+  /** 能否设多库存（闲鱼只对部分卖家开放；不支持时卖出一件后自动下架） */
+  support_inventory: boolean
+  /** 账号当前被限制发布 */
+  limited: boolean
+  limit_title: string
+  limit_content: string
+}
+
+export const getPublishMeta = (account_id: number) =>
+  http.get<PublishMeta>('/goods/publish-meta', { params: { account_id }, silent: true }).then((r) => r.data)
+
 export const getLocations = (account_id: number, coords?: { longitude: number; latitude: number }) =>
   http.get<LocationOptions>('/goods/locations', { params: { account_id, ...coords } }).then((r) => r.data)
 

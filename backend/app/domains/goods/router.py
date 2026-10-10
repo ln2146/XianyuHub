@@ -229,6 +229,17 @@ async def market(
         raise goofish_http_error(e) from e
 
 
+# ---------------------------------------------------------------- 发布前置检查
+@router.get("/publish-meta")
+async def publish_meta(user: CurrentUser, session: SessionDep, account_id: int) -> dict[str, Any]:
+    """账号当前能否发布、能否设多库存（发布页据此锁定数量）。"""
+    await get_account_for(session, user, account_id)
+    try:
+        return await get_runtime().gateway.publish_capability(account_id)
+    except GoofishError as e:
+        raise goofish_http_error(e) from e
+
+
 # ---------------------------------------------------------------- 宝贝所在地
 @router.get("/locations")
 async def locations(

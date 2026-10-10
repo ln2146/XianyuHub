@@ -14,6 +14,7 @@ import {
   createDraft,
   deleteDraft,
   getLocations,
+  getPublishMeta,
   listDrafts,
   publishDraft,
   updateDraft,
@@ -23,6 +24,7 @@ import {
   type DraftOut,
   type ItemLocation,
   type PriceStrategy,
+  type PublishMeta,
   type ShippingMode,
 } from '@/api/goods'
 import IdentityVerifyDialog from '@/components/IdentityVerifyDialog.vue'
@@ -247,6 +249,9 @@ function toBody(): DraftIn | null {
 // ---------------------------------------------------------------- 宝贝所在地
 // 草稿未单独选择时，发布沿用该账号上次使用的所在地
 const savedLocation = ref<ItemLocation | null>(null)
+// 账号发布能力：不支持多库存时数量固定为 1
+const publishMeta = ref<PublishMeta | null>(null)
+const inventoryLocked = computed(() => publishMeta.value?.support_inventory === false)
 const locationOpen = ref(false)
 const effectiveLocation = computed(() => form.location || savedLocation.value)
 const locationText = (l: ItemLocation) => `${l.city}${l.area ? ` ${l.area}` : ''} · ${l.poi || l.address}`
@@ -254,7 +259,15 @@ watch(
   () => form.account_id,
   async (id) => {
     savedLocation.value = null
+    publishMeta.value = null
     if (!id) return
+    getPublishMeta(id)
+      .then((m) => {
+        if (form.account_id !== id) return
+        publishMeta.value = m
+        if (!m.support_inventory) form.quantity = 1
+      })
+      .catch(() => undefined)
     try {
       savedLocation.value = (await getLocations(id)).saved
     } catch {
@@ -655,7 +668,13 @@ onBeforeUnmount(() => window.clearInterval(timer))
                 <span class="muted">原价</span>
                 <el-input-number v-model="form.orig_price" :min="0" :precision="2" :controls="false" placeholder="可选" :value-on-clear="null" />
                 <span class="muted">数量</span>
-                <el-input-number v-model="form.quantity" :min="1" />
+                <el-input-number v-model="form.quantity" :min="1" :max="inventoryLocked ? 1 : undefined" :disabled="inventoryLocked" />
+              </div>
+              <div v-if="inventoryLocked" class="form-tip">
+                这个账号暂不支持多库存（闲鱼只对部分卖家开放），数量只能是 1，卖出一件后商品会自动下架。
+              </div>
+              <div v-if="publishMeta?.limited" class="form-tip warn">
+                {{ publishMeta.limit_title || '账号当前被限制发布' }}{{ publishMeta.limit_content ? `：${publishMeta.limit_content}` : '' }}
               </div>
               <div v-if="aiMeta" class="form-tip">定价依据：{{ aiMeta.price_source }}</div>
               <div v-if="suggestion" class="strategy">
@@ -843,6 +862,9 @@ onBeforeUnmount(() => window.clearInterval(timer))
 </template>
 
 <style scoped>
+.form-tip.warn {
+  color: var(--xh-warning);
+}
 .location-field {
   display: flex;
   align-items: center;

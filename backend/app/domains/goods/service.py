@@ -19,6 +19,7 @@ from app.domains.goods.models import DraftStatus, ItemStatus, MyItem, PublishDra
 from app.domains.system.audit import record_audit
 from app.goofish.dto import SearchQuery
 from app.goofish.errors import GoofishError, RiskBlockedError, RiskControlError
+from app.goofish.gateway import MULTI_INVENTORY_HINT
 from app.goofish.publish import PublishDraft, ShippingMode
 from app.intelligence.llm import ImageInput, LLMGateway, Tier
 from app.intelligence.pricing import PriceSuggestion, market_stats, suggest_price
@@ -253,6 +254,11 @@ async def publish_draft(draft_id: int, user_id: int | None = None) -> str:
             location = (acc.settings or {}).get("publish_location") if acc else None
     account_id = snapshot["account_id"]
     try:
+        if snapshot["quantity"] > 1:
+            # 先确认账号能否发多库存，免得上传完图片才被闲鱼拒绝
+            cap = await gateway.publish_capability(account_id)
+            if not cap["support_inventory"]:
+                raise ValueError(MULTI_INVENTORY_HINT)
         uploaded = []
         for image_id in snapshot["image_ids"]:
             data, _ = load_upload(image_id)

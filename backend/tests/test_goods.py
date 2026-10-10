@@ -236,3 +236,35 @@ async def test_floor_price_can_be_cleared(admin_client):
     items = (await admin_client.get("/api/v1/goods/items")).json()
     r = await admin_client.patch(f"/api/v1/goods/items/{items[0]['id']}", json={"floor_price": None, "gifts": "贴膜"})
     assert r.json()["floor_price"] is None and r.json()["gifts"] == "贴膜" and r.json()["max_rounds"] == 3
+
+
+@respx.mock
+async def test_multi_inventory_blocked_before_upload_when_account_lacks_it(admin_client):
+    acc_id = await make_account(admin_client)
+    respx.post(url__regex=r".*prepublish\.check.*").mock(return_value=ok({"limited": False}))
+    pre = respx.post(url__regex=r".*idleitem\.preget.*").mock(return_value=ok({"supportSkuOrInventory": False}))
+    meta = (await admin_client.get(f"/api/v1/goods/publish-meta?account_id={acc_id}")).json()
+    assert meta["support_inventory"] is False and meta["limited"] is False
+
+    upload = respx.post("https://stream-upload.goofish.com/api/upload.api").mock(
+        return_value=httpx.Response(200, json={"object": {"url": "https://img.alicdn.com/x.png", "pix": "8x6"}})
+    )
+    publish = respx.post(url__regex=r".*idleitem\.publish.*").mock(return_value=ok({"itemId": "1"}))
+    image_id = (await admin_client.post("/api/v1/goods/uploads", files={"file": ("a.png", PNG, "image/png")})).json()[
+        "id"
+    ]
+    draft = {"account_id": acc_id, "title": "资料", "desc": "资料", "image_ids": [image_id], "price": 1, "quantity": 5}
+    d = (await admin_client.post("/api/v1/goods/drafts", json=draft)).json()
+    r = await admin_client.post(f"/api/v1/goods/drafts/{d['id']}/publish")
+    assert r.status_code == 409 and "数量改成 1" in r.json()["detail"]
+    assert not upload.called and not publish.called
+
+    # 支持多库存的账号照常发布
+    pre.mock(return_value=ok({"supportSkuOrInventory": True}))
+    respx.post(url__regex=r".*kgraph\.property\.recommend.*").mock(
+        return_value=ok({"categoryPredictResult": {"catId": 1, "catName": "x", "channelCatId": 2, "tbCatId": 3}})
+    )
+    respx.post(url__regex=r".*local\.poi\.get.*").mock(
+        return_value=ok({"commonAddresses": [{"city": "上海", "prov": "上海", "area": "浦东", "divisionId": 1}]})
+    )
+    assert (await admin_client.post(f"/api/v1/goods/drafts/{d['id']}/publish")).status_code == 200
