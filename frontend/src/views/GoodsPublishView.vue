@@ -422,7 +422,6 @@ onBeforeUnmount(() => window.clearInterval(timer))
             </el-form-item>
             <el-form-item label="商品图片" required>
               <ImageUploader v-model="form.image_ids" v-model:uploading="uploading" :allow-cover="false" />
-              <div class="form-tip">建议包含正面、背面、细节和瑕疵特写；AI 会自动挑选最合适的封面。</div>
             </el-form-item>
             <el-form-item label="一句话说明">
               <el-input
@@ -445,7 +444,6 @@ onBeforeUnmount(() => window.clearInterval(timer))
                   {{ gen.hint.includes(c) ? '✓ ' : '+ ' }}{{ c }}
                 </button>
               </div>
-              <div class="form-tip">写了价格会优先采用；没写则按同款行情和下面的策略定价。</div>
             </el-form-item>
             <el-form-item label="定价策略">
               <div class="strategy-cards" role="radiogroup">
@@ -578,7 +576,6 @@ onBeforeUnmount(() => window.clearInterval(timer))
             </el-form-item>
             <el-form-item label="底价">
               <el-input-number v-model="form.floor_price" :min="0" :precision="2" :controls="false" placeholder="不设置" :value-on-clear="null" />
-              <div class="form-tip">AI 议价的最低价，不会展示给买家。不设置则 AI 不会给出任何低于售价的价格。</div>
             </el-form-item>
             <el-form-item label="运费">
               <el-radio-group v-model="form.shipping">
@@ -594,7 +591,6 @@ onBeforeUnmount(() => window.clearInterval(timer))
             </el-form-item>
             <el-form-item label="客服知识库">
               <el-input v-model="form.knowledge" type="textarea" :rows="aiMeta ? 8 : 3" placeholder="可选：FAQ、参数、瑕疵说明等，发布后供 AI 客服回答买家" />
-              <div v-if="aiMeta" class="form-tip">AI 已根据图片和说明生成常见问答，发布后 AI 客服会据此回答买家，请检查是否准确。</div>
             </el-form-item>
             <el-form-item label="虚拟商品">
               <el-switch v-model="form.is_virtual" />

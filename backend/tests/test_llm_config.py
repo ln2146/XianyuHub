@@ -26,7 +26,7 @@ async def test_meta_lists_presets(admin_client):
     assert r.status_code == 200
     data = r.json()
     ids = [p["id"] for p in data["presets"]]
-    assert {"anthropic", "deepseek", "dashscope", "ollama", "custom"} <= set(ids)
+    assert {"deepseek", "dashscope", "ollama", "custom"} <= set(ids)
     assert data["kinds"] == ["anthropic", "openai_compatible"]
 
 

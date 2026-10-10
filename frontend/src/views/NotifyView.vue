@@ -314,15 +314,12 @@ async function remove(c: Channel) {
             :placeholder="placeholderOf(f)"
             :show-password="!!fieldMeta[f.key]?.secret && !edit.id"
           />
-          <div v-if="f.kind === 'json'" class="form-tip">填写 JSON {{ Array.isArray(f.default) ? '数组' : '对象' }}，留空使用默认值；保存时会校验格式。</div>
-          <div v-else-if="!f.required && f.kind !== 'string'" class="form-tip">默认：{{ typeof f.default === 'boolean' ? (f.default ? '开启' : '关闭') : f.default }}</div>
-          <div v-if="edit.id && fieldMeta[f.key]?.secret" class="form-tip">显示为 *** 的值表示保持不变。</div>
+          <div v-if="f.kind === 'json'" class="form-tip">填写 JSON 格式，留空使用默认值。</div>
         </el-form-item>
         <el-form-item label="订阅事件">
           <el-checkbox-group v-model="edit.events">
             <el-checkbox v-for="e in meta.events" :key="e" :value="e">{{ notifyEventMap[e] || e }}</el-checkbox>
           </el-checkbox-group>
-          <div class="form-tip">不勾选任何事件表示订阅全部。</div>
         </el-form-item>
         <el-form-item label="启用">
           <el-switch v-model="edit.enabled" />

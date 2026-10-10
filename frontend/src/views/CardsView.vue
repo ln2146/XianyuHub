@@ -768,21 +768,15 @@ const accountModal = reactive({
         </el-form-item>
         <el-form-item v-if="poolEdit.kind === 'text'" label="发货内容" :required="!poolEdit.id">
           <el-input v-model="poolEdit.text" type="textarea" :rows="5" :placeholder="poolEdit.id ? `当前：${poolEdit.textPreview || ''}（留空表示不修改）` : '例如：网盘链接 https://… 提取码 xxxx'" />
-          <div class="form-tip">内容加密存储，列表中只显示前 12 个字符。</div>
         </el-form-item>
         <el-form-item v-if="poolEdit.kind === 'api'" label="API 配置" required>
           <el-input v-model="poolEdit.apiJson" type="textarea" :rows="11" class="mono" spellcheck="false" />
           <div class="form-tip">
-            JSON 对象：url（必填）、method（GET / POST）、headers、body（支持 {order_id} {spec} {quantity} 等变量）、result_path（从返回 JSON 中取值的路径，如 data.card；留空取整个响应文本）、timeout（秒）。
-            <template v-if="poolEdit.id">headers 显示为 *** 时表示保持原值。</template>
+            JSON 对象：url（必填）、method（GET / POST）、headers、body、result_path、timeout（秒）。
           </div>
-        </el-form-item>
-        <el-form-item v-if="poolEdit.kind === 'pool'" label="说明">
-          <span class="muted small">保存后在列表中点击「导入卡密」批量导入，每行一条。</span>
         </el-form-item>
         <el-form-item v-if="poolEdit.kind === 'pool'" label="库存预警">
           <el-input-number v-model="poolEdit.low_stock_threshold" :min="0" />
-          <div class="form-tip">可用卡密低于该数量时发送「库存不足」通知。</div>
         </el-form-item>
         <el-form-item label="启用">
           <el-switch v-model="poolEdit.enabled" />
@@ -869,16 +863,13 @@ const accountModal = reactive({
               <el-tag size="small" class="var" effect="plain" @click="insertVar(v.key)">{{ v.key }}</el-tag>
             </el-tooltip>
           </div>
-          <div class="form-tip">{content} 会被替换成上面选择的发货内容，其余变量按订单信息自动填充。</div>
         </el-form-item>
         <el-form-item label="延迟发货">
           <el-input-number v-model="bEdit.form.delay_seconds" :min="0" :max="600" />
           <span class="muted small ml">秒</span>
-          <div class="form-tip">付款后等待一段时间再发货，更像人工操作。</div>
         </el-form-item>
         <el-form-item label="每人限购">
-          <el-input-number v-model="bEdit.form.max_per_buyer" :min="0" />
-          <div class="form-tip">同一买家 24 小时内最多自动发货的次数（跨账号统计），0 表示不限；超出后订单进入风控暂停，等待人工处理。</div>
+          <el-input-number v-model="bEdit.form.max_per_buyer" :min="0" placeholder="0 表示不限" />
         </el-form-item>
       </el-form>
       <template #footer>

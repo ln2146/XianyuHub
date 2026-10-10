@@ -413,7 +413,6 @@ async function quickEnableTemplate(tpl: PresetTemplate) {
         </el-form-item>
         <el-form-item label="回复内容" required>
           <el-input v-model="edit.form.reply" type="textarea" :rows="4" maxlength="1000" show-word-limit placeholder="买家触发该关键词后系统自动回复的内容" />
-          <div class="form-tip">严禁包含微信号、手机号、外链等站外引流词，容易触发闲鱼平台违规扣分。</div>
         </el-form-item>
         <el-form-item label="生效账号">
           <el-select v-model="edit.form.account_id" clearable placeholder="全部闲鱼账号通用" class="w-full">
@@ -425,7 +424,6 @@ async function quickEnableTemplate(tpl: PresetTemplate) {
         </el-form-item>
         <el-form-item label="优先级">
           <el-input-number v-model="edit.form.priority" :min="-100" :max="100" />
-          <div class="form-tip">多条规则同时命中时，优先级数值越大越先执行。</div>
         </el-form-item>
         <el-form-item label="执行选项">
           <el-checkbox v-model="edit.form.reply_once">每个买家会话仅回复一次（避免刷屏）</el-checkbox>

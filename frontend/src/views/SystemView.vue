@@ -57,12 +57,6 @@ async function loadUsers() {
   }
 }
 
-const roleHelp: Record<Role, string> = {
-  admin: '管理员：可见全部账号，管理用户与审计日志',
-  operator: '运营：管理自己添加或被授权的账号',
-  member: '成员：管理自己添加或被授权的账号',
-}
-
 const uEdit = reactive({
   open: false,
   saving: false,
@@ -376,7 +370,6 @@ onMounted(() => {
             <el-radio-button value="operator">运营</el-radio-button>
             <el-radio-button value="member">成员</el-radio-button>
           </el-radio-group>
-          <div class="form-tip">{{ roleHelp[uEdit.role] }}</div>
         </el-form-item>
         <el-form-item v-if="uEdit.id" label="启用">
           <el-switch v-model="uEdit.is_active" :disabled="uEdit.id === auth.user?.id" />

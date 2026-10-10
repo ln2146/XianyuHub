@@ -29,20 +29,12 @@ from app.intelligence.llm import (
 # 常见供应商预设：填写 API Key 即可用；base_url 与模型名都可以再改
 PRESETS: list[dict[str, Any]] = [
     {
-        "id": "anthropic",
-        "name": "Claude（官方）",
-        "kind": "anthropic",
-        "base_url": "",
-        "models": {"vision": "claude-opus-5-5", "chat": "claude-opus-5-5", "fast": "claude-opus-5-5"},
-        "note": "官方 SDK，支持服务端拒答回退；base_url 留空即官方地址",
-    },
-    {
         "id": "deepseek",
         "name": "DeepSeek",
         "kind": "openai_compatible",
         "base_url": "https://api.deepseek.com/v1",
         "models": {"vision": "", "chat": "deepseek-chat", "fast": "deepseek-chat"},
-        "note": "价格低，适合客服回复与意图分类；不支持图片，多模态判定请另配",
+        "note": "适合客服回复与意图分类",
     },
     {
         "id": "dashscope",

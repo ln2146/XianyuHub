@@ -507,7 +507,6 @@ onBeforeUnmount(stopQrPoll)
           <el-form label-position="top" class="full">
             <el-form-item label="代理（可选）">
               <el-input v-model="qr.proxy" placeholder="http://user:pass@host:port 或 socks5://…" />
-              <div class="form-tip">多账号建议每个账号使用独立的住宅代理，降低关联风控。</div>
             </el-form-item>
           </el-form>
           <el-button type="primary" :loading="qr.starting" @click="startQr">生成二维码</el-button>
@@ -532,8 +531,7 @@ onBeforeUnmount(stopQrPoll)
     <el-dialog v-model="cookie.open" title="导入 Cookie" width="560px">
       <el-form label-position="top">
         <el-form-item label="Cookie" required>
-          <el-input v-model="cookie.cookies" type="textarea" :rows="6" placeholder="粘贴浏览器中 goofish.com 的 Cookie 字符串（a=1; b=2）或 JSON 数组" />
-          <div class="form-tip">需包含 unb、cookie2、_m_h5_tk。Cookie 会加密存储，不会明文展示。</div>
+          <el-input v-model="cookie.cookies" type="textarea" :rows="6" placeholder="粘贴 goofish.com Cookie 字符串或 JSON（需含 unb、cookie2、_m_h5_tk）" />
         </el-form-item>
         <el-form-item label="代理（可选）">
           <el-input v-model="cookie.proxy" placeholder="http://user:pass@host:port" />
@@ -567,11 +565,9 @@ onBeforeUnmount(stopQrPoll)
         <el-divider content-position="left">消息</el-divider>
         <el-form-item label="自动回复总开关">
           <el-switch v-model="settings.form.auto_reply" />
-          <div class="form-tip">关闭时只记录消息，不做任何自动回复（关键词、AI、默认回复都不会发出）。</div>
         </el-form-item>
         <el-form-item label="关键词回复">
           <el-switch v-model="settings.form.keyword_reply" />
-          <div class="form-tip">命中「回复规则」中的关键词时直接回复，优先于 AI。</div>
         </el-form-item>
         <el-form-item label="AI 模式">
           <el-radio-group v-model="settings.form.ai_mode">
@@ -579,11 +575,9 @@ onBeforeUnmount(stopQrPoll)
             <el-radio-button value="suggest">建议</el-radio-button>
             <el-radio-button value="auto">自动发送</el-radio-button>
           </el-radio-group>
-          <div class="form-tip">建议模式：AI 生成候选回复，在收件箱中人工一键发送；自动模式：AI 直接回复买家（议价不会低于商品底价）。</div>
         </el-form-item>
         <el-form-item label="人工接管时长（分钟）">
           <el-input-number v-model="settings.form.takeover_minutes" :min="1" :max="1440" />
-          <div class="form-tip">你在收件箱或闲鱼 App 手动回复后，该会话暂停自动回复的时长。</div>
         </el-form-item>
         <el-form-item label="回复延迟（秒）">
           <div class="range">
@@ -591,11 +585,9 @@ onBeforeUnmount(stopQrPoll)
             <span>至</span>
             <el-input-number v-model="settings.form.reply_delay_max" :min="0" :step="1" :precision="1" />
           </div>
-          <div class="form-tip">在区间内随机等待后再回复，模拟真人节奏，降低风控风险。</div>
         </el-form-item>
         <el-form-item label="消息合并窗口（秒）">
           <el-input-number v-model="settings.form.merge_window_seconds" :min="0" :max="30" :precision="1" />
-          <div class="form-tip">买家连续发送多条消息时，等待该时长后合并为一次回复。</div>
         </el-form-item>
         <el-form-item label="工作时段">
           <el-checkbox v-model="settings.workAllDay">全天</el-checkbox>
@@ -604,17 +596,14 @@ onBeforeUnmount(stopQrPoll)
             <span>至</span>
             <el-time-select v-model="settings.workEnd" start="00:00" step="00:30" end="23:59" placeholder="结束" />
           </div>
-          <div class="form-tip">AI 只在工作时段内回复；时段外仅发送默认回复（如已设置）。</div>
         </el-form-item>
         <el-form-item label="默认回复">
           <el-input v-model="settings.form.default_reply" type="textarea" :rows="2" placeholder="留空不发送。例如：在的，稍等马上回复您～" />
-          <div class="form-tip">没有命中关键词、AI 未开启或不在工作时段时，每个会话最多发送一次。</div>
         </el-form-item>
 
         <el-divider content-position="left">发货</el-divider>
         <el-form-item label="自动发货">
           <el-switch v-model="settings.form.auto_delivery" />
-          <div class="form-tip">买家付款后自动发送你设置的内容，并在闲鱼上点击发货。发什么内容请在 <router-link to="/orders/cards">订单发货 → 自动发货</router-link> 中设置。</div>
           <el-alert v-if="settings.form.auto_delivery && bindingCount === 0" type="warning" :closable="false" show-icon class="mt-s">
             <template #title>还没有任何商品关联了发货内容</template>
             现在打开，买家付款后也不会自动发货。请先到 <router-link to="/orders/cards">自动发货</router-link> 页面新建发货内容并关联商品。
@@ -629,7 +618,6 @@ onBeforeUnmount(stopQrPoll)
         </el-form-item>
         <el-form-item label="自动评价">
           <el-switch v-model="settings.form.auto_rate" />
-          <div class="form-tip">交易完成后自动给买家好评。</div>
         </el-form-item>
         <el-form-item v-if="settings.form.auto_rate" label="评价内容">
           <el-input v-model="settings.form.rate_text" />
@@ -638,7 +626,6 @@ onBeforeUnmount(stopQrPoll)
         <el-divider content-position="left">运营</el-divider>
         <el-form-item label="自动擦亮">
           <el-switch v-model="settings.form.auto_polish" />
-          <div class="form-tip">每天定时擦亮在售商品，提升曝光（受频率限制保护）。</div>
         </el-form-item>
       </el-form>
       <template #footer>

@@ -912,7 +912,6 @@ function fmtJobNextRun(v: string | null | undefined): string {
                           {{ data?.system.im_running ? '监听中' : '未启动' }}
                         </span>
                       </div>
-                      <div class="daemon-desc">买家即时沟通与秒级自动回复</div>
                     </div>
                   </div>
 
@@ -928,7 +927,6 @@ function fmtJobNextRun(v: string | null | undefined): string {
                           {{ data?.monitor_tasks ?? 0 }} 个生效
                         </span>
                       </div>
-                      <div class="daemon-desc">全天候异步巡检闲鱼新上架好货</div>
                     </div>
                   </div>
                 </div>
@@ -949,10 +947,7 @@ function fmtJobNextRun(v: string | null | undefined): string {
                         <span class="job-category-tag" :class="getJobMeta(j.id).tagType">
                           {{ getJobMeta(j.id).category }}
                         </span>
-                        <div class="job-names-wrap">
-                          <span class="job-display-name">{{ getJobMeta(j.id).title }}</span>
-                          <span class="job-code-name mono">{{ j.id }}</span>
-                        </div>
+                        <span class="job-display-name">{{ getJobMeta(j.id).title }}</span>
                       </div>
                       <div class="job-next-run">
                         <span class="time-label">下次执行</span>
@@ -2288,11 +2283,11 @@ function fmtJobNextRun(v: string | null | undefined): string {
 .daemon-card {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   background: #ffffff;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
-  padding: 10px 12px;
+  padding: 12px 14px;
   transition: all 0.2s ease;
   position: relative;
   overflow: hidden;
@@ -2334,20 +2329,12 @@ function fmtJobNextRun(v: string | null | undefined): string {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 3px;
-  gap: 4px;
+  gap: 8px;
 }
 .daemon-name {
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 600;
   color: #1e293b;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.daemon-desc {
-  font-size: 11px;
-  color: #94a3b8;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
