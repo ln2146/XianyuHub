@@ -410,7 +410,16 @@ function listingHint(row: MyItem): { label: string; type: 'warning' | 'success';
           <el-table-column label="商品" min-width="280">
             <template #default="{ row }">
               <div class="goods">
-                <el-image :src="row.image_url" fit="cover" class="thumb" lazy referrerpolicy="no-referrer" />
+                <el-image
+                  :src="row.image_url"
+                  fit="cover"
+                  class="thumb"
+                  lazy
+                  referrerpolicy="no-referrer"
+                  :preview-src-list="row.image_url ? [row.image_url] : []"
+                  preview-teleported
+                  hide-on-click-modal
+                />
                 <div class="goods-info">
                   <el-link :href="itemUrl(row.item_id)" target="_blank" class="goods-title">{{ row.title }}</el-link>
                   <div class="muted small">
@@ -474,13 +483,38 @@ function listingHint(row: MyItem): { label: string; type: 'warning' | 'success';
               <div class="muted small">擦亮 {{ fmtRelative(row.last_polished_at) || '-' }}</div>
             </template>
           </el-table-column>
-          <el-table-column label="操作" :width="isMobile ? 110 : 250" :fixed="isMobile ? undefined : 'right'">
+          <el-table-column label="操作" :width="isMobile ? 110 : 166" :fixed="isMobile ? undefined : 'right'">
             <template #default="{ row }">
-              <div class="ops">
+              <div class="compact-ops">
                 <el-button size="small" type="primary" plain @click="openEdit(row as MyItem)">策略</el-button>
-                <el-button size="small" @click="openMarket(row as MyItem)">行情</el-button>
-                <el-button size="small" :loading="busy[`p-${row.id}`]" :disabled="row.status !== 'on_sale'" @click="polish(row as MyItem)">擦亮</el-button>
-                <el-button size="small" type="danger" plain :loading="busy[`o-${row.id}`]" :disabled="row.status !== 'on_sale'" @click="offline(row as MyItem)">下架</el-button>
+                <el-button
+                  size="small"
+                  :loading="busy[`p-${row.id}`]"
+                  :disabled="row.status !== 'on_sale'"
+                  @click="polish(row as MyItem)"
+                >
+                  擦亮
+                </el-button>
+
+                <el-dropdown trigger="click">
+                  <el-button size="small" class="more-icon-btn" title="更多操作">
+                    <el-icon><MoreFilled /></el-icon>
+                  </el-button>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item :icon="DataLine" @click="openMarket(row as MyItem)">
+                        行情分析
+                      </el-dropdown-item>
+                      <el-dropdown-item
+                        v-if="row.status === 'on_sale'"
+                        :disabled="row.status !== 'on_sale'"
+                        @click="offline(row as MyItem)"
+                      >
+                        <span class="err">下架宝贝</span>
+                      </el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
               </div>
             </template>
           </el-table-column>
@@ -723,6 +757,19 @@ function listingHint(row: MyItem): { label: string; type: 'warning' | 'success';
 .price {
   color: #f56c6c;
   font-weight: 600;
+}
+.compact-ops {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.compact-ops .el-button {
+  border-radius: 6px;
+  font-weight: 500;
+}
+.more-icon-btn {
+  padding: 5px 8px !important;
+  color: var(--xh-text-2);
 }
 .ops {
   display: flex;
