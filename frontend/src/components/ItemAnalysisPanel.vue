@@ -3,6 +3,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { CopyDocument, MagicStick, Refresh, WarningFilled } from '@element-plus/icons-vue'
 import {
+  getItemInsight,
   itemAnalysis,
   itemInsight,
   sellerAnalysis,
@@ -12,6 +13,12 @@ import {
 } from '@/api/buyer'
 import EChart from '@/components/EChart.vue'
 import { askSellerOnGoofish, copyText, fmtMoney, fmtRelative, fmtTime, itemUrl } from '@/utils/format'
+
+// 模块级会话内存缓存，退出抽屉或切页面后，同个会话内点进同一商品瞬间 0ms 恢复
+const sessionInsightCache = new Map<
+  string,
+  { ai: InsightOut; seller?: SellerAnalysis | null; time?: string | null }
+>()
 
 const props = withDefaults(
   defineProps<{
@@ -33,6 +40,15 @@ const tab = ref(props.initialTab)
 const item = reactive({ loading: false, error: '', data: null as ItemAnalysis | null })
 const seller = reactive({ loading: false, error: '', data: null as SellerAnalysis | null })
 const ai = reactive({ loading: false, error: '', data: null as InsightOut | null })
+const aiAnalyzedAt = ref<string | null>(null)
+
+// 优先检查内存缓存，有则立即可用
+const cached = sessionInsightCache.get(props.itemId)
+if (cached) {
+  ai.data = cached.ai
+  if (cached.seller && !seller.data) seller.data = cached.seller
+  if (cached.time) aiAnalyzedAt.value = cached.time
+}
 
 function errText(e: unknown, fallback: string) {
   const err = e as { response?: { data?: { detail?: string } }; message?: string }
@@ -43,11 +59,21 @@ async function loadItem() {
   item.loading = true
   item.error = ''
   try {
-    item.data = await itemAnalysis(props.itemId, {
+    const res = await itemAnalysis(props.itemId, {
       task_id: props.taskId,
       keyword: props.keyword,
       account_id: props.accountId,
     })
+    item.data = res
+    // 如果后台已持久化了该商品的 AI 点评历史记录，立即恢复
+    if (res.ai_insight && !ai.data) {
+      ai.data = res.ai_insight
+      if (res.ai_insight_at) aiAnalyzedAt.value = res.ai_insight_at
+      sessionInsightCache.set(props.itemId, {
+        ai: res.ai_insight,
+        time: res.ai_insight_at,
+      })
+    }
   } catch (e) {
     item.error = errText(e, '商品分析失败')
   } finally {
@@ -84,8 +110,14 @@ async function loadAi() {
       sold_cnt: props.soldCnt,
     })
     ai.data = res.ai
+    aiAnalyzedAt.value = new Date().toISOString()
     item.data = res.item
     if (res.seller) seller.data = res.seller
+    sessionInsightCache.set(props.itemId, {
+      ai: res.ai,
+      seller: res.seller,
+      time: aiAnalyzedAt.value,
+    })
   } catch (e) {
     ai.error = errText(e, 'AI 点评失败')
   } finally {
@@ -94,10 +126,28 @@ async function loadAi() {
 }
 
 // 卖家主页需要 4 次接口调用（受风控限速），切到该页签时才加载
+// 切到 AI 页签时，若尚未加载到已有的记录，尝试拉取已保存的点评
 watch(
   tab,
-  (t) => {
+  async (t) => {
     if (t === 'seller' && !seller.data && !seller.loading) loadSeller()
+    if (t === 'ai' && !ai.data && !ai.loading) {
+      try {
+        const saved = await getItemInsight(props.itemId)
+        if (saved?.ai) {
+          ai.data = saved.ai
+          if (saved.seller && !seller.data) seller.data = saved.seller
+          if (saved.item?.ai_insight_at) aiAnalyzedAt.value = saved.item.ai_insight_at
+          sessionInsightCache.set(props.itemId, {
+            ai: saved.ai,
+            seller: saved.seller,
+            time: aiAnalyzedAt.value,
+          })
+        }
+      } catch {
+        /* 静默忽略未分析情况 */
+      }
+    }
   },
   { immediate: true },
 )
@@ -468,7 +518,13 @@ function rateTag(rate: number | null): { label: string; type: TagType } {
       </el-tab-pane>
 
       <!-- ============================== AI 综合点评 -->
-      <el-tab-pane label="AI 点评" name="ai">
+      <el-tab-pane name="ai">
+        <template #label>
+          <span class="tab-label-item">
+            <span>AI 点评</span>
+            <span v-if="ai.data" class="tab-analyzed-dot" title="已保留分析记录"></span>
+          </span>
+        </template>
         <div v-loading="ai.loading" element-loading-text="AI 正在结合商品与商家数据分析…" class="pane">
           <el-alert v-if="ai.error" type="error" :title="ai.error" show-icon :closable="false" class="mb" />
           <div v-if="!ai.data" class="ai-empty">
@@ -477,9 +533,13 @@ function rateTag(rate: number | null): { label: string; type: TagType } {
           </div>
           <template v-else>
             <div class="ai-head">
-              <el-tag :type="trustMap[ai.data.trust_level].type" effect="dark">{{ trustMap[ai.data.trust_level].label }}</el-tag>
-              <el-tag :type="sellerTypeMap[ai.data.seller_type].type" effect="plain">{{ sellerTypeMap[ai.data.seller_type].label }}</el-tag>
-              <el-button link size="small" :icon="Refresh" @click="loadAi">重新生成</el-button>
+              <div class="ai-head-tags">
+                <el-tag :type="trustMap[ai.data.trust_level].type" effect="dark">{{ trustMap[ai.data.trust_level].label }}</el-tag>
+                <el-tag :type="sellerTypeMap[ai.data.seller_type].type" effect="plain">{{ sellerTypeMap[ai.data.seller_type].label }}</el-tag>
+                <span v-if="aiAnalyzedAt" class="muted small ai-time">分析于 {{ fmtRelative(aiAnalyzedAt) || fmtTime(aiAnalyzedAt).slice(0, 16) }}</span>
+                <el-tag v-else size="small" type="success" effect="light">已保留分析记录</el-tag>
+              </div>
+              <el-button link size="small" :icon="Refresh" :loading="ai.loading" @click="loadAi">重新分析</el-button>
             </div>
             <div class="advice">{{ ai.data.advice }}</div>
             <dl class="ai-list">
@@ -734,10 +794,32 @@ function rateTag(rate: number | null): { label: string; type: TagType } {
   text-align: center;
   padding: 20px 8px;
 }
+.tab-label-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.tab-analyzed-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--el-color-success, #67c23a);
+}
 .ai-head {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.ai-head-tags {
+  display: flex;
+  align-items: center;
   gap: 6px;
+  flex-wrap: wrap;
+}
+.ai-time {
+  font-size: 11px;
 }
 .advice {
   font-size: 14px;

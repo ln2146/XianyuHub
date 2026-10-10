@@ -33,6 +33,7 @@ from app.domains.buyer.analysis import (
     analyze_seller,
 )
 from app.domains.buyer.models import (
+    ItemInsightRecord,
     MarketItemRecord,
     MonitorTask,
     PriceSnapshot,
@@ -631,6 +632,13 @@ async def _item_analysis(
         snapshots=[PricePoint(price=p.price, seen_at=p.seen_at) for p in snaps.scalars()],
         stats=market_stats(peers),
     )
+    insight_row = await session.get(ItemInsightRecord, item_id)
+    if insight_row and insight_row.ai_data:
+        try:
+            analysis.ai_insight = InsightOut.model_validate(insight_row.ai_data)
+            analysis.ai_insight_at = insight_row.updated_at
+        except Exception:
+            pass
     return analysis, rec
 
 
@@ -721,6 +729,23 @@ class InsightResp(BaseModel):
     ai: InsightOut
 
 
+@router.get("/items/{item_id}/insight", response_model=InsightResp | None)
+async def get_item_insight(item_id: str, user: CurrentUser, session: SessionDep) -> InsightResp | None:
+    """获取已保存的商品大模型综合点评；未分析过则返回 None。"""
+    row = await session.get(ItemInsightRecord, item_id)
+    if not row or not row.ai_data:
+        return None
+    try:
+        ai = InsightOut.model_validate(row.ai_data)
+    except Exception:
+        return None
+    item = ItemAnalysis.model_validate(row.item_analysis) if row.item_analysis else None
+    seller = SellerAnalysis.model_validate(row.seller_analysis) if row.seller_analysis else None
+    if item is None:
+        item, _ = await _item_analysis(session, user, item_id, None, None, None)
+    return InsightResp(item=item, seller=seller, ai=ai)
+
+
 @router.post("/items/{item_id}/insight", response_model=InsightResp)
 async def item_insight(item_id: str, body: InsightIn, user: CurrentUser, session: SessionDep) -> InsightResp:
     """商品 + 商家的大模型综合点评（会拉取卖家主页，受风控限速）。"""
@@ -739,6 +764,29 @@ async def item_insight(item_id: str, body: InsightIn, user: CurrentUser, session
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, f"大模型不可用：{e}") from e
     except LLMError as e:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(e)) from e
+
+    # 持久化保存 AI 点评历史记录，退出后再进入可直接查看
+    now = datetime.now(UTC)
+    row = await session.get(ItemInsightRecord, item_id)
+    if row is None:
+        row = ItemInsightRecord(
+            item_id=item_id,
+            ai_data=ai.model_dump(mode="json"),
+            item_analysis=item.model_dump(mode="json"),
+            seller_analysis=seller.model_dump(mode="json") if seller else None,
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(row)
+    else:
+        row.ai_data = ai.model_dump(mode="json")
+        row.item_analysis = item.model_dump(mode="json")
+        row.seller_analysis = seller.model_dump(mode="json") if seller else None
+        row.updated_at = now
+    await session.commit()
+
+    item.ai_insight = ai
+    item.ai_insight_at = now
     return InsightResp(item=item, seller=seller, ai=ai)
 
 

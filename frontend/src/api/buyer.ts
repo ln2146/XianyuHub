@@ -374,6 +374,8 @@ export interface ItemAnalysis {
   level: string
   highlights: string[]
   risks: string[]
+  ai_insight?: InsightOut | null
+  ai_insight_at?: string | null
 }
 
 export interface RatingEntry {
@@ -469,6 +471,13 @@ export const sellerAnalysis = (
 ) =>
   http
     .get<SellerAnalysis>(`/buyer/items/${itemId}/seller-analysis`, { params: clean(params), timeout: 120_000 })
+    .then((r) => r.data)
+
+export const getItemInsight = (itemId: string) =>
+  http
+    .get<{ item: ItemAnalysis; seller: SellerAnalysis | null; ai: InsightOut } | null>(
+      `/buyer/items/${itemId}/insight`,
+    )
     .then((r) => r.data)
 
 export const itemInsight = (

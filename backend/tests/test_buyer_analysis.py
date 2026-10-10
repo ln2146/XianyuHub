@@ -302,6 +302,15 @@ async def test_item_insight_with_llm(admin_client):
     body = r.json()
     assert body["ai"]["trust_level"] == "high" and body["seller"]["ip_match"] == "match"
     assert body["item"]["item_id"] == "900000000001"
+
+    # 验证持久化：再次通过 GET /insight 与 GET /analysis 能直接获取保留的 AI 分析记录
+    r_saved = await admin_client.get("/api/v1/buyer/items/900000000001/insight")
+    assert r_saved.status_code == 200 and r_saved.json()["ai"]["trust_level"] == "high"
+
+    r_item = await admin_client.get("/api/v1/buyer/items/900000000001/analysis")
+    assert r_item.status_code == 200 and r_item.json()["ai_insight"]["trust_level"] == "high"
+    assert r_item.json()["ai_insight_at"] is not None
+
     set_llm(None)
 
 

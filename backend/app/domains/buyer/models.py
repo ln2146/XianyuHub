@@ -172,3 +172,17 @@ class SellerProfileCache(Base):
     seller_id: Mapped[str] = mapped_column(String(32), primary_key=True)
     data: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ItemInsightRecord(Base):
+    """商品大模型综合点评历史记录：持久化保存，退出后再次进入仍可查看。"""
+
+    __tablename__ = "item_insights"
+
+    item_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    ai_data: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    item_analysis: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    seller_analysis: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+

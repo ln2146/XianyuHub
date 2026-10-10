@@ -538,6 +538,18 @@ def analyze_seller(
     return a
 
 
+# ---------------------------------------------------------------- 大模型综合点评
+class InsightOut(BaseModel):
+    item_summary: str
+    seller_summary: str
+    ip_assessment: str
+    comment_insight: str
+    seller_type: Literal["personal", "dealer", "unknown"]
+    trust_level: Literal["high", "medium", "low"]
+    advice: str
+    questions_for_seller: list[str]
+
+
 # ---------------------------------------------------------------- 商品分析
 class PricePoint(BaseModel):
     price: float
@@ -572,6 +584,8 @@ class ItemAnalysis(BaseModel):
     level: str = ""
     highlights: list[str] = Field(default_factory=list)
     risks: list[str] = Field(default_factory=list)
+    ai_insight: InsightOut | None = None
+    ai_insight_at: datetime | None = None
 
 
 _KEY_INFO = {
@@ -691,16 +705,7 @@ def analyze_item(
     return a
 
 
-# ---------------------------------------------------------------- 大模型综合点评
-class InsightOut(BaseModel):
-    item_summary: str
-    seller_summary: str
-    ip_assessment: str
-    comment_insight: str
-    seller_type: Literal["personal", "dealer", "unknown"]
-    trust_level: Literal["high", "medium", "low"]
-    advice: str
-    questions_for_seller: list[str]
+# ---------------------------------------------------------------- 大模型综合点评 Prompt
 
 
 INSIGHT_SYSTEM = """你是闲鱼二手交易顾问，根据系统给出的商品分析和商家分析数据，替买家写一份简明的购买参考。
