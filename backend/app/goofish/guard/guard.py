@@ -123,6 +123,17 @@ class RiskGuard:
             )
         await self._notify(key, reason)
 
+    async def heal_expired(self) -> int:
+        """把冷却已到期的通道恢复为 ACTIVE（定时调用）。人工处理风控后账号进入冷却，
+        此时 IM 已停、订单同步也跳过它，不主动恢复的话就等不到下一次请求来触发。"""
+        now = time.time()
+        healed = 0
+        for key, rt in list(self._rt.items()):
+            if rt.state == AccountState.COOLDOWN and rt.cooldown_until <= now:
+                await self.set_state(key, AccountState.ACTIVE, "冷却结束，自动恢复")
+                healed += 1
+        return healed
+
     async def resolve(self, key: str) -> None:
         """人工完成验证后调用：进入冷却期，冷却结束后自动恢复。"""
         rt = self._rt[key]
@@ -155,7 +166,9 @@ class RiskGuard:
         self._check(key, policy.requires_login and key != ANON)
         rt = self._rt[key]
         if rt.state == AccountState.COOLDOWN or (key == ANON and rt.state == AccountState.CIRCUIT_OPEN):
-            rt.state = AccountState.ACTIVE  # 冷却结束：本次调用作为探活
+            # 冷却结束：本次调用作为探活。走 set_state 通知监听者（落库、重启 IM），
+            # 只改内存的话数据库仍是「冷却中」，重启后 IM / 订单同步 / 保活都会跳过这个账号
+            await self.set_state(key, AccountState.ACTIVE, "冷却结束，自动恢复")
 
         wait = await self.limiter.reserve(f"{key}:{action}", policy.rate, policy.per, policy.burst)
         if wait > policy.max_wait:

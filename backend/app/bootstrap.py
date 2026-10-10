@@ -84,6 +84,7 @@ async def setup_runtime(transport=None) -> None:
 
 async def start_workers() -> None:
     scheduler.add_interval_job("account.keepalive", account_service.keepalive_all, seconds=30 * 60, jitter=300)
+    scheduler.add_interval_job("guard.heal", get_runtime().guard.heal_expired, seconds=60, jitter=5)
     await buyer_scheduling.register_all()
     scheduler.add_interval_job("buyer.price_watch", buyer_watch.check_due_watches, seconds=5 * 60, jitter=30)
     scheduler.add_interval_job("goods.publish_due", goods_service.publish_due_drafts, seconds=60, jitter=5)

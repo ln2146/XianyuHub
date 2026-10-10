@@ -107,6 +107,34 @@ async def test_guard_anonymous_circuit_heals_after_cooldown_but_accounts_need_ve
         await guard.run("acc:1", Action.SEARCH, fine)
 
 
+async def test_guard_cooldown_recovery_is_announced_not_just_in_memory():
+    # 冷却到期必须通知监听者（落库、重启 IM），否则数据库一直是「冷却中」，重启后账号被自动化永久跳过
+    guard = RiskGuard()
+    seen: list[tuple[str, str]] = []
+
+    async def listener(key, rt, reason):
+        seen.append((key, rt.state))
+
+    guard.on_state_change(listener)
+
+    async def fine():
+        return 1
+
+    # 1) 冷却到期后的第一次调用：作为探活恢复，并通知
+    guard.load("acc:1", AccountState.COOLDOWN, time.time() - 1)
+    assert await guard.run("acc:1", Action.SEARCH, fine) == 1
+    assert ("acc:1", AccountState.ACTIVE) in seen
+
+    # 2) 人工处理风控后进入冷却：没有任何请求经过时，定时任务也要把它恢复
+    guard.load("acc:2", AccountState.CIRCUIT_OPEN, time.time() + 600)
+    await guard.resolve("acc:2")
+    assert guard.runtime("acc:2").state == AccountState.COOLDOWN
+    assert await guard.heal_expired() == 0  # 冷却未到期
+    guard.runtime("acc:2").cooldown_until = time.time() - 1
+    assert await guard.heal_expired() == 1
+    assert guard.runtime("acc:2").state == AccountState.ACTIVE and ("acc:2", AccountState.ACTIVE) in seen
+
+
 async def test_guard_session_expired_blocks_login_actions_only():
     guard = RiskGuard()
 
