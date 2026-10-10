@@ -20,9 +20,12 @@ import {
 } from '@element-plus/icons-vue'
 
 import { usePrefsStore } from '@/stores/prefs'
+import { useRealtimeStore } from '@/stores/realtime'
 
 const props = defineProps<{ active: string; collapsed: boolean }>()
 const prefs = usePrefsStore()
+const realtime = useRealtimeStore()
+const unreadCount = computed(() => realtime.totalUnread)
 
 const activeMenu = computed(() => {
   if (props.active.startsWith('/radar')) return '/radar/smart'
@@ -86,11 +89,19 @@ const activeMenu = computed(() => {
     <el-sub-menu v-if="prefs.showSeller" index="messages">
       <template #title>
         <el-icon class="menu-icon-primary"><ChatDotRound /></el-icon>
-        <span>消息中心</span>
+        <span class="sub-menu-title-row">
+          <span>消息中心</span>
+          <span v-if="unreadCount > 0" class="menu-dot-badge" />
+        </span>
       </template>
       <el-menu-item index="/messages/inbox">
         <el-icon class="sub-icon"><Message /></el-icon>
-        <template #title><span>在线客服</span></template>
+        <template #title>
+          <div class="menu-item-row">
+            <span>在线客服</span>
+            <el-badge v-if="unreadCount > 0" :value="unreadCount" :max="99" class="unread-badge" />
+          </div>
+        </template>
       </el-menu-item>
       <el-menu-item index="/messages/rules">
         <el-icon class="sub-icon"><Operation /></el-icon>
@@ -220,5 +231,31 @@ const activeMenu = computed(() => {
   margin: 4px 6px;
   padding: 0 !important;
   justify-content: center;
+}
+
+.sub-menu-title-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.menu-dot-badge {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: var(--el-color-danger);
+  flex-shrink: 0;
+}
+.menu-item-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding-right: 8px;
+}
+.unread-badge :deep(.el-badge__content) {
+  font-size: 11px;
+  height: 16px;
+  line-height: 16px;
+  padding: 0 5px;
 }
 </style>

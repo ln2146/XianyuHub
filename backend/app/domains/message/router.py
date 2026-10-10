@@ -242,6 +242,23 @@ async def list_conversations(
     return [_conv_out(c) for c in (await session.execute(stmt.limit(limit).offset(offset))).scalars()]
 
 
+@router.get("/conversations/unread-count")
+async def get_unread_count(
+    user: CurrentUser,
+    session: SessionDep,
+    account_id: int | None = None,
+) -> dict[str, int]:
+    """获取当前用户可访问账号的未读消息总数。"""
+    ids = await accessible_account_ids(session, user)
+    stmt = select(func.coalesce(func.sum(Conversation.unread), 0))
+    if ids is not None:
+        stmt = stmt.where(Conversation.account_id.in_(ids))
+    if account_id is not None:
+        stmt = stmt.where(Conversation.account_id == account_id)
+    total_unread = (await session.execute(stmt)).scalar() or 0
+    return {"total": int(total_unread)}
+
+
 @router.get("/conversations/{conv_id}/evidence")
 async def conversation_evidence(conv_id: int, user: CurrentUser, session: SessionDep) -> dict[str, str]:
     """售后 / 纠纷举证材料：订单、发货记录与完整聊天记录（Markdown）。"""

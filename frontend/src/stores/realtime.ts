@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { getItem, TOKEN_KEY } from '@/utils/storage'
+import { getUnreadCount } from '@/api/message'
 
 export interface RealtimeEvent {
   event: 'message' | 'suggestion' | string
@@ -9,15 +10,33 @@ export interface RealtimeEvent {
 
 type Listener = (ev: RealtimeEvent) => void
 
-/** WebSocket 实时推送：自动重连（指数退避）+ 心跳 */
+/** WebSocket 实时推送：自动重连（指数退避）+ 心跳 + 全局未读消息计数感知 */
 export const useRealtimeStore = defineStore('realtime', () => {
   const connected = ref(false)
+  const totalUnread = ref(0)
   const listeners = new Set<Listener>()
   let ws: WebSocket | null = null
   let retry = 0
   let reconnectTimer: number | undefined
   let heartbeat: number | undefined
   let stopped = true
+
+  async function refreshUnread() {
+    try {
+      const res = await getUnreadCount()
+      totalUnread.value = res.total || 0
+    } catch {
+      // 忽略未登录或网络异常
+    }
+  }
+
+  function setUnread(count: number) {
+    totalUnread.value = Math.max(0, count)
+  }
+
+  function decrementUnread(amount = 1) {
+    totalUnread.value = Math.max(0, totalUnread.value - amount)
+  }
 
   function connect() {
     stopped = false
@@ -29,6 +48,7 @@ export const useRealtimeStore = defineStore('realtime', () => {
     sock.onopen = () => {
       connected.value = true
       retry = 0
+      refreshUnread()
       heartbeat = window.setInterval(() => {
         if (sock.readyState === WebSocket.OPEN) sock.send('ping')
       }, 25_000)
@@ -36,6 +56,9 @@ export const useRealtimeStore = defineStore('realtime', () => {
     sock.onmessage = (e) => {
       try {
         const ev = JSON.parse(e.data as string) as RealtimeEvent
+        if (ev.event === 'message') {
+          refreshUnread()
+        }
         listeners.forEach((fn) => fn(ev))
       } catch {
         /* 忽略非 JSON 消息 */
@@ -68,5 +91,14 @@ export const useRealtimeStore = defineStore('realtime', () => {
     return () => listeners.delete(fn)
   }
 
-  return { connected, connect, disconnect, subscribe }
+  return {
+    connected,
+    totalUnread,
+    refreshUnread,
+    setUnread,
+    decrementUnread,
+    connect,
+    disconnect,
+    subscribe,
+  }
 })

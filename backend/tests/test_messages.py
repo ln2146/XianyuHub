@@ -278,3 +278,17 @@ async def test_new_buyer_message_notified_once(admin_client, im):
     # 同一会话的后续消息不再提醒
     await receive(account_id, chat("还在吗"))
     assert hook.call_count == 1
+
+
+async def test_conversation_unread_count(admin_client, im):
+    account_id, _fake = im
+    r = await admin_client.get("/api/v1/messages/conversations/unread-count")
+    assert r.status_code == 200
+    assert r.json()["total"] == 0
+    await receive(account_id, chat("第一条未读消息"))
+    r = await admin_client.get("/api/v1/messages/conversations/unread-count")
+    assert r.json()["total"] == 1
+    conv_id = (await admin_client.get("/api/v1/messages/conversations")).json()[0]["id"]
+    await admin_client.post(f"/api/v1/messages/conversations/{conv_id}/read")
+    r = await admin_client.get("/api/v1/messages/conversations/unread-count")
+    assert r.json()["total"] == 0

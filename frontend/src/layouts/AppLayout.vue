@@ -60,6 +60,18 @@ watch(
   },
 )
 
+watch(
+  () => [realtime.totalUnread, route.meta.title],
+  ([unread, pageTitle]) => {
+    const base = '鱼塘管家'
+    const page = (pageTitle as string) || ''
+    const count = Number(unread) || 0
+    const prefix = count > 0 ? `(${count > 99 ? '99+' : count}) ` : ''
+    document.title = page ? `${prefix}${page} - ${base}` : `${prefix}${base}`
+  },
+  { immediate: true },
+)
+
 onMounted(() => {
   realtime.connect()
   auth.refreshMe().catch(() => undefined)

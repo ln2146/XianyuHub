@@ -115,8 +115,10 @@ async function loadThread(silent = false) {
   }
   const conv = convs.value.find((c) => c.id === id)
   if (conv?.unread) {
+    const count = conv.unread
     await markRead(id).catch(() => undefined)
     conv.unread = 0
+    realtime.decrementUnread(count)
   }
 }
 

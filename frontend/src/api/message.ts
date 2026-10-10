@@ -77,6 +77,8 @@ export interface ImStatus {
 
 export const listConversations = (params: { account_id?: number; q?: string; limit?: number; offset?: number }) =>
   http.get<Conversation[]>('/messages/conversations', { params }).then(toPaged)
+export const getUnreadCount = (params?: { account_id?: number }) =>
+  http.get<{ total: number }>('/messages/conversations/unread-count', { params }).then((r) => r.data)
 export const listMessages = (convId: number, before_id?: number) =>
   http
     .get<ChatMessage[]>(`/messages/conversations/${convId}/messages`, { params: { before_id } })
