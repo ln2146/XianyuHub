@@ -328,7 +328,7 @@ function listingHint(row: MyItem): { label: string; type: 'warning' | 'success';
   <div class="page">
     <div class="page-head">
       <div>
-        <h2>商品中心 · 商品管理</h2>
+        <h2>商品管理</h2>
       </div>
       <div class="toolbar">
         <el-button type="primary" :icon="Plus" @click="router.push('/goods/publish')">发布新商品</el-button>
