@@ -9,7 +9,7 @@ from pathlib import Path
 
 from loguru import logger
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.core.config import get_settings
 from app.core.db import session_factory
@@ -389,3 +389,148 @@ async def polish_all(account_id: int | None = None) -> int:
             logger.warning("擦亮失败 item={} err={}", item.item_id, e)
         await asyncio.sleep(random.uniform(5, 15))
     return count
+
+
+# ---------------------------------------------------------------- 卖完自动重新上架
+# 网页版对多数个人账号不开放库存（只能发 1 件），电子资料卖出一件就下架。
+# 关联了发货内容并开启「卖完自动重新上架」的商品：卖完后用原商品的标题、描述、图片、价格发布一件新的，
+# 发货关联、底价和知识库一并转到新商品上，后续订单照常自动发货。
+_relist_locks: dict[tuple[int, str], asyncio.Lock] = {}
+RELIST_MAX_IMAGES = 9
+
+
+async def _download_image(url: str) -> bytes:
+    import httpx
+
+    if url.startswith("//"):
+        url = "https:" + url
+    async with httpx.AsyncClient(timeout=20, follow_redirects=True) as http:
+        resp = await http.get(url)
+    resp.raise_for_status()
+    return resp.content
+
+
+async def relist_sold_item(account_id: int, item_id: str) -> str | None:
+    """原商品已卖完下架时发布一件同样的新商品，返回新商品 ID；仍在售（多库存）或已处理过时返回 None。"""
+    from app.domains.buyer.watch import ended_reason
+    from app.domains.order.models import CardBinding, CardItem, CardPool
+
+    lock = _relist_locks.setdefault((account_id, item_id), asyncio.Lock())
+    async with lock:  # 同一商品并发的多个订单只重新上架一次
+        async with session_factory()() as s:
+            bindings = list(
+                (
+                    await s.execute(
+                        select(CardBinding).where(
+                            CardBinding.item_id == item_id,
+                            CardBinding.auto_relist.is_(True),
+                            (CardBinding.account_id == account_id) | CardBinding.account_id.is_(None),
+                        )
+                    )
+                ).scalars()
+            )
+            if not bindings:
+                return None
+            # 发货内容已经发完：上架了也发不出货，不重新上架
+            pool = await s.get(CardPool, bindings[0].pool_id)
+            if pool is None or not pool.enabled:
+                return None
+            if pool.kind == "pool":
+                left = (
+                    await s.execute(
+                        select(func.count())
+                        .select_from(CardItem)
+                        .where(CardItem.pool_id == pool.id, CardItem.status == "available")
+                    )
+                ).scalar_one()
+                if left == 0:
+                    logger.info("商品 {} 的卡密已用完，不自动重新上架", item_id)
+                    return None
+            old = (
+                await s.execute(select(MyItem).where(MyItem.account_id == account_id, MyItem.item_id == item_id))
+            ).scalar_one_or_none()
+            acc = await s.get(XyAccount, account_id)
+            location = (acc.settings or {}).get("publish_location") if acc else None
+            owner_id = acc.owner_id if acc else None
+
+        gateway = get_runtime().gateway
+        detail = await gateway.get_item_detail(item_id, account_id)
+        if not ended_reason(detail):
+            return None  # 还在售（如在 App 里设了库存），不需要重新上架
+        src = detail.item
+        uploaded = []
+        for i, url in enumerate((src.images or [src.image_url])[:RELIST_MAX_IMAGES]):
+            if url:
+                uploaded.append(await gateway.upload_image(account_id, await _download_image(url), f"relist_{i}.jpg"))
+        if not uploaded:
+            raise GoofishError("原商品没有可用的图片，无法重新上架")
+        title = (src.title or src.desc or (old.title if old else "")).strip()[:60]
+        draft = PublishDraft(
+            title=title,
+            desc=(src.desc or title).strip()[:5000],
+            images=uploaded,
+            price=src.price or (old.price if old else 0) or 0,
+            orig_price=src.orig_price,
+            quantity=1,
+            shipping=ShippingMode.NO_SHIPPING,  # 关联了发货内容的都是虚拟商品
+        )
+        new_id = await gateway.publish_item(account_id, draft, location)
+
+        async with session_factory()() as s:
+            s.add(
+                MyItem(
+                    account_id=account_id,
+                    item_id=new_id,
+                    title=title,
+                    price=draft.price,
+                    image_url=uploaded[0].url,
+                    status=ItemStatus.ON_SALE,
+                    desc=draft.desc,
+                    floor_price=old.floor_price if old else None,
+                    knowledge=old.knowledge if old else "",
+                    is_virtual=True,
+                )
+            )
+            # 发货关联转到新商品；旧商品已下架，关掉它的自动重新上架，避免重复发布
+            for b in bindings:
+                row = await s.get(CardBinding, b.id)
+                if row is None:
+                    continue
+                s.add(
+                    CardBinding(
+                        owner_id=row.owner_id,
+                        pool_id=row.pool_id,
+                        account_id=row.account_id,
+                        item_id=new_id,
+                        spec_value=row.spec_value,
+                        template=row.template,
+                        delay_seconds=row.delay_seconds,
+                        max_per_buyer=row.max_per_buyer,
+                        auto_relist=True,
+                    )
+                )
+                row.auto_relist = False
+            await s.commit()
+
+    await record_audit(
+        "goods.relist",
+        actor_type="rule",
+        account_id=account_id,
+        target_type="item",
+        target_id=new_id,
+        detail={"from_item": item_id},
+    )
+    from app.notify.senders import Notification
+    from app.notify.service import NotifyEvents, notify_background
+
+    notify_background(
+        owner_id,
+        Notification(
+            event=NotifyEvents.ITEM_RELISTED,
+            title=f"🔁 「{title}」卖完已自动重新上架",
+            content=f"原商品 {item_id} 已卖完下架，已发布同样的新商品 {new_id}，自动发货关联已转到新商品。",
+            url=f"https://www.goofish.com/item?id={new_id}",
+        ),
+    )
+    logger.info("商品 {} 卖完，已自动重新上架为 {}", item_id, new_id)
+    return new_id

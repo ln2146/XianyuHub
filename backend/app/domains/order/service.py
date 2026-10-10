@@ -443,6 +443,7 @@ async def _deliver(order_pk: int, *, force: bool, user_id: int | None) -> bool:
             return await _fail(order_pk, str(e), record, release_card=None)
         text = _render(binding.template or DEFAULT_TEMPLATE, order, content)
         delay = binding.delay_seconds
+        relist = binding.auto_relist
         account_id, order_id, cid, buyer_id, item_id = (
             order.account_id,
             order.order_id,
@@ -522,7 +523,41 @@ async def _deliver(order_pk: int, *, force: bool, user_id: int | None) -> bool:
     )
     if pool and pool.kind == "pool":
         await check_stock(pool.id)
+    if relist and item_id:
+        _spawn(_relist_later(account_id, item_id))
     return True
+
+
+RELIST_DELAY_SECONDS = 15  # 等闲鱼把卖完的商品状态更新为下架
+_tasks: set[asyncio.Task] = set()
+
+
+def _spawn(coro) -> None:  # noqa: ANN001
+    task = asyncio.create_task(coro)
+    _tasks.add(task)
+    task.add_done_callback(_tasks.discard)
+
+
+async def _relist_later(account_id: int, item_id: str) -> None:
+    from app.domains.goods.service import relist_sold_item
+    from app.goofish.errors import VerificationRequiredError
+
+    await asyncio.sleep(RELIST_DELAY_SECONDS)
+    try:
+        await relist_sold_item(account_id, item_id)
+    except Exception as e:  # noqa: BLE001  后台任务：失败要告诉卖家，否则商品下架了没人知道
+        logger.exception("商品 {} 自动重新上架失败", item_id)
+        reason = (
+            "闲鱼要求先完成身份认证，请到「商品 → 发布」发布一次并按提示扫码认证"
+            if isinstance(e, VerificationRequiredError)
+            else str(e) or type(e).__name__
+        )
+        await _notify_owner(
+            account_id,
+            NotifyEvents.ITEM_RELISTED,
+            f"⚠️ 商品 {item_id} 卖完了，但自动重新上架失败",
+            f"{reason}\n商品现已下架，请手动重新发布。",
+        )
 
 
 # 能确定消息没有发出去的错误（发送前就被拒绝）；其余如超时、发出后断线都算「可能已送达」

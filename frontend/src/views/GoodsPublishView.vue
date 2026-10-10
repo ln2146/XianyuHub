@@ -63,6 +63,8 @@ interface FormState {
   location: ItemLocation | null
   scheduled_at: Date | null
   delivery_pool_id: number | null
+  /** 关联发货内容时：卖完自动重新上架 */
+  delivery_relist: boolean
 }
 
 const emptyForm = (): FormState => ({
@@ -82,6 +84,7 @@ const emptyForm = (): FormState => ({
   location: null,
   scheduled_at: null,
   delivery_pool_id: null,
+  delivery_relist: true,
 })
 
 const form = reactive<FormState>(emptyForm())
@@ -329,7 +332,7 @@ async function confirmAndPublish() {
   publishing.value = true
   try {
     const d = await persist(body)
-    if (await doPublish(d.id, body.account_id, form.delivery_pool_id)) resetAll()
+    if (await doPublish(d.id, body.account_id, form.delivery_pool_id, form.delivery_relist)) resetAll()
   } catch {
     /* 拦截器已提示；草稿已保存，可稍后在右侧列表重试 */
   } finally {
@@ -340,10 +343,18 @@ async function confirmAndPublish() {
 
 // ---------------------------------------------------------------- 发布（含身份认证）
 // 闲鱼要求先完成身份认证时（HTTP 428）弹出认证二维码，认证后用同一份草稿重新发布
-const verify = reactive({ open: false, url: '', draftId: 0, accountId: 0, poolId: null as number | null, retrying: false })
+const verify = reactive({
+  open: false,
+  url: '',
+  draftId: 0,
+  accountId: 0,
+  poolId: null as number | null,
+  relist: false,
+  retrying: false,
+})
 
 /** 发布草稿；成功返回 true。需要身份认证时打开认证弹窗并返回 false，其他错误由拦截器提示 */
-async function doPublish(draftId: number, accountId: number, poolId: number | null): Promise<boolean> {
+async function doPublish(draftId: number, accountId: number, poolId: number | null, relist = false): Promise<boolean> {
   try {
     const r = await publishDraft(draftId)
     ElMessage.success(`发布成功，商品 ID ${r.item_id}`)
@@ -357,6 +368,7 @@ async function doPublish(draftId: number, accountId: number, poolId: number | nu
           template: '您购买的内容如下：\n{content}\n祝您使用愉快！',
           delay_seconds: 0,
           max_per_buyer: 1,
+          auto_relist: relist,
         })
         ElMessage.success('已自动关联发货内容')
       } catch {
@@ -367,7 +379,7 @@ async function doPublish(draftId: number, accountId: number, poolId: number | nu
   } catch (e: unknown) {
     const resp = (e as { response?: { status?: number; headers?: Record<string, string> } }).response
     if (resp?.status === 428) {
-      Object.assign(verify, { open: true, url: resp.headers?.['x-verify-url'] || '', draftId, accountId, poolId })
+      Object.assign(verify, { open: true, url: resp.headers?.['x-verify-url'] || '', draftId, accountId, poolId, relist })
     }
     return false
   }
@@ -376,7 +388,7 @@ async function doPublish(draftId: number, accountId: number, poolId: number | nu
 async function retryAfterVerify() {
   verify.retrying = true
   try {
-    const ok = await doPublish(verify.draftId, verify.accountId, verify.poolId)
+    const ok = await doPublish(verify.draftId, verify.accountId, verify.poolId, verify.relist)
     if (ok) {
       verify.open = false
       if (editingId.value === verify.draftId) resetAll()
@@ -746,6 +758,9 @@ onBeforeUnmount(() => window.clearInterval(timer))
                   :label="`${p.name} · ${p.kind === 'text' ? '固定文案/网盘' : p.kind === 'pool' ? '卡密库存' : '接口取货'}`"
                 />
               </el-select>
+              <el-checkbox v-if="form.delivery_pool_id" v-model="form.delivery_relist" class="mt-s">
+                卖完自动重新上架（网页发布只有 1 件库存，卖出即下架）
+              </el-checkbox>
             </el-form-item>
             <el-form-item label="定时发布">
               <el-date-picker v-model="form.scheduled_at" type="datetime" placeholder="留空表示立即发布" :disabled-date="(d: Date) => d.getTime() < Date.now() - 86400000" />

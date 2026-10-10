@@ -93,6 +93,7 @@ const quickDelivery = reactive({
   pool_id: null as number | null,
   applyToAll: true,
   template: '',
+  autoRelist: false,
 })
 
 function openQuickDelivery(it: MyItem) {
@@ -107,6 +108,7 @@ function openQuickDelivery(it: MyItem) {
     currentBinding: matched || null,
     pool_id: matched?.pool_id ?? (pools.value[0]?.id || null),
     applyToAll: matched ? matched.account_id === null : true,
+    autoRelist: matched?.auto_relist ?? false,
     template: matched?.template || '您好，订单已发货，内容如下：\n{content}\n如有问题请随时联系～',
   })
 }
@@ -125,8 +127,10 @@ async function saveQuickDelivery() {
       item_id: it.item_id,
       spec_value: null,
       template: quickDelivery.template.trim(),
-      delay_seconds: 0,
-      max_per_buyer: 0,
+      // 更新时沿用原有的延迟 / 限购设置（这里没有对应输入项，不能重置为 0）
+      delay_seconds: quickDelivery.currentBinding?.delay_seconds ?? 0,
+      max_per_buyer: quickDelivery.currentBinding?.max_per_buyer ?? 0,
+      auto_relist: quickDelivery.autoRelist,
     }
     if (quickDelivery.currentBinding) {
       await updateBinding(quickDelivery.currentBinding.id, body)
@@ -587,6 +591,13 @@ function listingHint(row: MyItem): { label: string; type: 'warning' | 'success';
               <el-radio :value="true">全部闲鱼账号通用（推荐）</el-radio>
               <el-radio :value="false">仅当前账号（{{ accounts.nameOf(quickDelivery.item.account_id) }}）有效</el-radio>
             </el-radio-group>
+          </el-form-item>
+
+          <el-form-item label="卖完重新上架">
+            <el-switch v-model="quickDelivery.autoRelist" />
+            <div class="form-tip">
+              闲鱼网页版只能发 1 件库存，卖出就下架。打开后，每次卖完会自动发布一件同样的新商品继续卖（卡密用完时不再上架）。
+            </div>
           </el-form-item>
 
           <el-collapse class="template-collapse">

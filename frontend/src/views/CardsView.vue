@@ -274,6 +274,7 @@ const emptyBinding = (): BindingIn => ({
   template: DEFAULT_TEMPLATE,
   delay_seconds: 0,
   max_per_buyer: 0,
+  auto_relist: false,
 })
 
 const bEdit = reactive({ open: false, saving: false, replaceId: null as number | null, form: emptyBinding() })
@@ -713,6 +714,12 @@ const accountModal = reactive({
                   <span class="small">{{ row.max_per_buyer ? `≤ ${row.max_per_buyer} 次/24h` : '不限' }}</span>
                 </template>
               </el-table-column>
+              <el-table-column label="卖完重新上架" width="110">
+                <template #default="{ row }">
+                  <el-tag v-if="row.auto_relist" size="small" type="success" effect="plain">已开启</el-tag>
+                  <span v-else class="muted small">关闭</span>
+                </template>
+              </el-table-column>
               <el-table-column label="操作" width="130" :fixed="isMobile ? undefined : 'right'">
                 <template #default="{ row }">
                   <el-button size="small" link type="primary" @click="openBindingEdit(row as BindingOut)">编辑</el-button>
@@ -872,6 +879,10 @@ const accountModal = reactive({
         </el-form-item>
         <el-form-item label="每人限购">
           <el-input-number v-model="bEdit.form.max_per_buyer" :min="0" placeholder="0 表示不限" />
+        </el-form-item>
+        <el-form-item label="卖完重新上架">
+          <el-switch v-model="bEdit.form.auto_relist" />
+          <div class="form-tip">商品卖完下架后，自动发布一件同样的新商品，关联转到新商品上；卡密用完时不再上架。</div>
         </el-form-item>
       </el-form>
       <template #footer>

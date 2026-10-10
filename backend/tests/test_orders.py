@@ -319,3 +319,77 @@ async def test_buyer_limit_holds_under_concurrent_payments(admin_client, im):  #
     await asyncio.gather(paid(account_id, "4400105"), paid(account_id, "4400106"))
     statuses = sorted(o["status"] for o in (await admin_client.get("/api/v1/orders")).json())
     assert statuses == ["delivered", "risk_hold"] and len(fake.sent) == 1
+
+
+def _detail(status: str):
+    from tests.test_goofish_protocol import load
+
+    data = load("detail_response.json")
+    data["data"]["itemDO"]["itemStatusStr"] = status
+    return httpx.Response(200, json=data)
+
+
+def _mock_relist_publish(new_id: str = "990001"):
+    respx.get(url__regex=r"https://img\.example\.com/.*").mock(return_value=httpx.Response(200, content=b"img"))
+    upload = respx.post("https://stream-upload.goofish.com/api/upload.api").mock(
+        return_value=httpx.Response(200, json={"object": {"url": "https://img.alicdn.com/n.jpg", "pix": "8x6"}})
+    )
+    respx.post(url__regex=r".*kgraph\.property\.recommend.*").mock(
+        return_value=ok({"categoryPredictResult": {"catId": 1, "catName": "x", "channelCatId": 2, "tbCatId": 3}})
+    )
+    respx.post(url__regex=r".*local\.poi\.get.*").mock(
+        return_value=ok({"commonAddresses": [{"city": "厦门", "prov": "福建", "area": "思明", "divisionId": 350203}]})
+    )
+    publish = respx.post(url__regex=r".*idleitem\.publish.*").mock(return_value=ok({"itemId": new_id}))
+    return upload, publish
+
+
+async def _run_relist(monkeypatch):
+    import asyncio
+
+    monkeypatch.setattr(order_service, "RELIST_DELAY_SECONDS", 0)
+    await asyncio.gather(*list(order_service._tasks))
+
+
+@respx.mock
+async def test_sold_out_item_is_relisted_with_its_delivery_binding(admin_client, im, monkeypatch):  # noqa: F811
+    account_id, fake = im
+    await setup_delivery(admin_client, account_id, cards="C1\nC2")
+    b = (await admin_client.get("/api/v1/cards/bindings")).json()[0]
+    await admin_client.put(f"/api/v1/cards/bindings/{b['id']}", json={**b, "auto_relist": True})
+    mock_trade()
+    respx.post(url__regex=r".*mtop\.taobao\.idle\.pc\.detail.*").mock(return_value=_detail("已售出"))
+    upload, publish = _mock_relist_publish("990001")
+    await receive(account_id, chat("在吗"))
+    monkeypatch.setattr(order_service, "RELIST_DELAY_SECONDS", 0)
+    await paid(account_id, "4400201")
+    await _run_relist(monkeypatch)
+
+    assert publish.call_count == 1 and upload.call_count == 2  # 原商品两张图都带上
+    sent = dict(httpx.QueryParams(publish.calls[0].request.content.decode()))["data"]
+    assert "MacBook Air M1" in sent
+    bindings = {x["item_id"]: x for x in (await admin_client.get("/api/v1/cards/bindings")).json()}
+    assert bindings["990001"]["auto_relist"] and bindings["990001"]["spec_value"] == "月卡"
+    assert bindings["900"]["auto_relist"] is False  # 旧商品不会再触发第二次
+
+
+@respx.mock
+async def test_item_still_on_sale_or_out_of_cards_is_not_relisted(admin_client, im, monkeypatch):  # noqa: F811
+    account_id, fake = im
+    await setup_delivery(admin_client, account_id, cards="C1\nC2")
+    b = (await admin_client.get("/api/v1/cards/bindings")).json()[0]
+    await admin_client.put(f"/api/v1/cards/bindings/{b['id']}", json={**b, "auto_relist": True})
+    mock_trade()
+    respx.post(url__regex=r".*mtop\.taobao\.idle\.pc\.detail.*").mock(return_value=_detail("在售"))
+    _, publish = _mock_relist_publish()
+    await receive(account_id, chat("在吗"))
+    monkeypatch.setattr(order_service, "RELIST_DELAY_SECONDS", 0)
+    await paid(account_id, "4400202")  # 在 App 里设了库存：卖出后仍在售
+    await _run_relist(monkeypatch)
+    assert not publish.called
+    # 卡密用完：即使下架也不上架一件发不出货的商品
+    respx.post(url__regex=r".*mtop\.taobao\.idle\.pc\.detail.*").mock(return_value=_detail("已售出"))
+    await receive(account_id, chat("在吗", sender="3301", cid="c2"))
+    await paid(account_id, "4400203")
+    await _run_relist(monkeypatch)
+    assert not publish.called

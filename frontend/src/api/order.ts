@@ -84,6 +84,8 @@ export interface BindingIn {
   template: string
   delay_seconds: number
   max_per_buyer: number
+  /** 商品卖完下架后自动发布一件同样的新商品（网页版只能发 1 件库存时用） */
+  auto_relist: boolean
 }
 
 export interface BindingOut extends BindingIn {
@@ -112,6 +114,8 @@ export const deliverOrder = (id: number) =>
     )
     .then((r) => r.data)
 export const closeHold = (id: number) => http.post<{ status: string }>(`/orders/${id}/close-hold`).then((r) => r.data)
+export const resolveManualOrder = (id: number, action: 'delivered' | 'closed' = 'delivered') =>
+  http.post<{ status: string }>(`/orders/${id}/resolve-manual`, null, { params: { action } }).then((r) => r.data)
 
 export const listPools = () => http.get<PoolOut[]>('/cards/pools').then((r) => r.data)
 export const createPool = (body: PoolIn) => http.post<PoolOut>('/cards/pools', body).then((r) => r.data)

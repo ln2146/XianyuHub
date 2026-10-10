@@ -13,6 +13,7 @@ import {
   listBindings,
   listOrders,
   listPools,
+  resolveManualOrder,
   syncOrders,
   type DeliveryRecord,
   type Order,
@@ -135,6 +136,7 @@ async function saveQuickBind(andDeliver = false) {
       template: quickBind.template.trim(),
       delay_seconds: 0,
       max_per_buyer: 0,
+      auto_relist: false,
     })
     ElMessage.success('已关联发货内容')
 

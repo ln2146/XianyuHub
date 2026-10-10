@@ -86,6 +86,7 @@ class BindingIn(BaseModel):
     template: str = ""
     delay_seconds: int = Field(default=0, ge=0, le=600)
     max_per_buyer: int = Field(default=0, ge=0)
+    auto_relist: bool = False  # 卖完下架后自动发布一件同样的新商品
 
 
 class BindingOut(BindingIn):
@@ -218,6 +219,18 @@ async def close_hold(order_pk: int, user: CurrentUser, session: SessionDep) -> d
     await service.transition(
         session, order, OrderState.MANUAL if order.status == OrderState.RISK_HOLD else order.status
     )
+    await session.commit()
+    return {"status": order.status}
+
+
+@router.post("/orders/{order_pk}/resolve-manual")
+async def resolve_manual(
+    order_pk: int, user: CurrentUser, session: SessionDep, action: str = "delivered"
+) -> dict[str, str]:
+    """人工处理异常待办订单：标记为已发货 / 已人工完成或关闭。"""
+    order = await _own_order(session, user, order_pk)
+    target = OrderState.CLOSED if action == "closed" else OrderState.DELIVERED
+    await service.transition(session, order, target, reason=f"人工标记处理（{user.username}）")
     await session.commit()
     return {"status": order.status}
 

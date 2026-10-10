@@ -40,7 +40,7 @@ ORDER_STATE_LABELS: dict[str, str] = {
 
 # 允许的状态迁移（其余迁移会被拒绝，保证状态机一致）
 TRANSITIONS: dict[str, set[str]] = {
-    OrderState.PENDING_PAY: {OrderState.PAID, OrderState.CLOSED},
+    OrderState.PENDING_PAY: {OrderState.PAID, OrderState.CLOSED, OrderState.REFUNDED},
     OrderState.PAID: {
         OrderState.DELIVERING,
         OrderState.RISK_HOLD,
@@ -48,13 +48,43 @@ TRANSITIONS: dict[str, set[str]] = {
         OrderState.REFUNDING,
         OrderState.CLOSED,
         OrderState.MANUAL,
+        OrderState.COMPLETED,
     },
-    OrderState.RISK_HOLD: {OrderState.PAID, OrderState.CLOSED, OrderState.REFUNDING, OrderState.DELIVERED},
-    OrderState.DELIVERING: {OrderState.DELIVERED, OrderState.DELIVER_FAILED, OrderState.MANUAL, OrderState.REFUNDING},
-    OrderState.DELIVER_FAILED: {OrderState.DELIVERING, OrderState.MANUAL, OrderState.REFUNDING, OrderState.DELIVERED},
-    OrderState.MANUAL: {OrderState.DELIVERING, OrderState.DELIVERED, OrderState.REFUNDING, OrderState.CLOSED},
-    OrderState.DELIVERED: {OrderState.COMPLETED, OrderState.REFUNDING},
-    OrderState.COMPLETED: {OrderState.REFUNDING},
+    OrderState.RISK_HOLD: {
+        OrderState.PAID,
+        OrderState.CLOSED,
+        OrderState.REFUNDING,
+        OrderState.DELIVERED,
+        OrderState.COMPLETED,
+        OrderState.MANUAL,
+    },
+    OrderState.DELIVERING: {
+        OrderState.DELIVERED,
+        OrderState.DELIVER_FAILED,
+        OrderState.MANUAL,
+        OrderState.REFUNDING,
+        OrderState.CLOSED,
+        OrderState.COMPLETED,
+    },
+    OrderState.DELIVER_FAILED: {
+        OrderState.DELIVERING,
+        OrderState.MANUAL,
+        OrderState.REFUNDING,
+        OrderState.DELIVERED,
+        OrderState.CLOSED,
+        OrderState.COMPLETED,
+        OrderState.REFUNDED,
+    },
+    OrderState.MANUAL: {
+        OrderState.DELIVERING,
+        OrderState.DELIVERED,
+        OrderState.REFUNDING,
+        OrderState.CLOSED,
+        OrderState.COMPLETED,
+        OrderState.REFUNDED,
+    },
+    OrderState.DELIVERED: {OrderState.COMPLETED, OrderState.REFUNDING, OrderState.CLOSED, OrderState.REFUNDED},
+    OrderState.COMPLETED: {OrderState.REFUNDING, OrderState.REFUNDED},
     OrderState.REFUNDING: {OrderState.REFUNDED, OrderState.DELIVERED, OrderState.COMPLETED, OrderState.CLOSED},
     OrderState.REFUNDED: set(),
     OrderState.CLOSED: set(),
@@ -126,6 +156,8 @@ class CardBinding(IdMixin, TimestampMixin, Base):
     template: Mapped[str] = mapped_column(Text, default="")
     delay_seconds: Mapped[int] = mapped_column(Integer, default=0)
     max_per_buyer: Mapped[int] = mapped_column(Integer, default=0)  # 同一买家 24 小时内最多自动发货次数，0 不限
+    # 商品卖完下架后，自动发布一件同样的新商品（库存只能为 1 的账号用来持续售卖电子资料等）
+    auto_relist: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class DeliveryRecord(IdMixin, Base):

@@ -34,6 +34,7 @@ class NotifyEvents:
     DELIVERY_FAILED = "delivery_failed"
     STOCK_LOW = "stock_low"
     TASK_FAILED = "task_failed"
+    ITEM_RELISTED = "item_relisted"
 
     ALL = [
         ITEM_RECOMMENDED,
@@ -46,6 +47,7 @@ class NotifyEvents:
         DELIVERY_FAILED,
         STOCK_LOW,
         TASK_FAILED,
+        ITEM_RELISTED,
     ]
 
 
