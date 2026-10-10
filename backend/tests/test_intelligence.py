@@ -274,3 +274,32 @@ async def test_openai_compatible_network_errors_become_llm_errors():
     gw = LLMGateway(provider=ChatCompletionsProvider("k", "https://bad.example.com/v1", 5))
     with pytest.raises(LLMError, match="格式异常"):
         await gw.complete_text(Tier.FAST, "s", [Message("user", "hi")])
+
+
+@respx.mock
+async def test_openai_compatible_connect_error_retries_once():
+    from app.intelligence.llm import LLMError, Message
+
+    ok = httpx.Response(200, json={"model": "m", "choices": [{"message": {"content": "hi"}}], "usage": {}})
+    route = respx.post("https://blip.example.com/v1/chat/completions").mock(side_effect=[httpx.ConnectError(""), ok])
+    gw = LLMGateway(provider=ChatCompletionsProvider("k", "https://blip.example.com/v1", 5))
+    assert (await gw.complete_text(Tier.FAST, "s", [Message("user", "hi")])) == "hi"
+    assert route.call_count == 2
+
+    # 连续连不上：只重试一次就报错；读超时不重试（请求可能已在生成）
+    down = respx.post("https://down.example.com/v1/chat/completions").mock(side_effect=httpx.ConnectError(""))
+    gw = LLMGateway(provider=ChatCompletionsProvider("k", "https://down.example.com/v1", 5))
+    with pytest.raises(LLMError, match="ConnectError"):
+        await gw.complete_text(Tier.FAST, "s", [Message("user", "hi")])
+    assert down.call_count == 2
+    slow = respx.post("https://slow.example.com/v1/chat/completions").mock(side_effect=httpx.ReadTimeout(""))
+    gw = LLMGateway(provider=ChatCompletionsProvider("k", "https://slow.example.com/v1", 5))
+    with pytest.raises(LLMError, match="ReadTimeout"):
+        await gw.complete_text(Tier.FAST, "s", [Message("user", "hi")])
+    assert slow.call_count == 1
+
+
+def test_connect_timeout_is_capped():
+    p = ChatCompletionsProvider("k", "https://llm.example.com/v1", 180)
+    assert p.http.timeout.connect == 10 and p.http.timeout.read == 180
+    assert ChatCompletionsProvider("k", "https://llm.example.com/v1", 5).http.timeout.connect == 5

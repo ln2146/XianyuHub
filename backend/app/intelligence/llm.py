@@ -31,6 +31,13 @@ from app.core.config import Settings, get_settings
 T = TypeVar("T", bound=BaseModel)
 Effort = Literal["low", "medium", "high"]
 
+# 建立连接单独限时：连不上时尽快报错，而不是等满整个生成超时（或系统 TCP 超时，约 70 秒）
+CONNECT_TIMEOUT_SECONDS = 10.0
+
+
+def _timeout(seconds: float) -> httpx.Timeout:
+    return httpx.Timeout(seconds, connect=min(seconds, CONNECT_TIMEOUT_SECONDS))
+
 
 class Tier(StrEnum):
     VISION = "vision"
@@ -182,7 +189,8 @@ class AnthropicProvider:
         import anthropic
 
         self._anthropic = anthropic
-        kwargs: dict[str, Any] = {"timeout": timeout, "max_retries": 2}
+        connect = min(timeout, CONNECT_TIMEOUT_SECONDS)
+        kwargs: dict[str, Any] = {"timeout": anthropic.Timeout(timeout, connect=connect), "max_retries": 2}
         if api_key:
             kwargs["api_key"] = api_key
         if base_url:
@@ -261,7 +269,9 @@ class ChatCompletionsProvider:
             raise LLMUnavailable("openai_compatible 需要配置 LLM_BASE_URL")
         self.base_url = base_url.rstrip("/")
         self.http = httpx.AsyncClient(
-            timeout=timeout, transport=transport, headers={"Authorization": f"Bearer {api_key}"} if api_key else {}
+            timeout=_timeout(timeout),
+            transport=transport,
+            headers={"Authorization": f"Bearer {api_key}"} if api_key else {},
         )
         self._json_mode = True
 
@@ -311,9 +321,15 @@ class ChatCompletionsProvider:
         )
 
     async def _post(self, body: dict[str, Any]) -> httpx.Response:
-        """网络层错误（超时、连接断开等）统一转成 LLMError，调用方据此降级，而不是整条流程失败。"""
+        """网络层错误（超时、连接断开等）统一转成 LLMError，调用方据此降级，而不是整条流程失败。
+        连接没建立起来时请求还没到服务端，重试一次是安全的，能挡掉偶发的网络抖动。"""
+        url = f"{self.base_url}/chat/completions"
         try:
-            return await self.http.post(f"{self.base_url}/chat/completions", json=body)
+            try:
+                return await self.http.post(url, json=body)
+            except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+                logger.warning("模型接口连接失败，重试一次：{}", type(e).__name__)
+                return await self.http.post(url, json=body)
         except httpx.HTTPError as e:
             raise LLMError(f"模型接口网络错误：{type(e).__name__} {e}".strip()) from e
 
