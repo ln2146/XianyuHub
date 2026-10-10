@@ -3,7 +3,7 @@ import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRealtimeStore } from '@/stores/realtime'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Refresh, Search, WarningFilled } from '@element-plus/icons-vue'
+import { Document, MoreFilled, Refresh, Search, UserFilled, WarningFilled } from '@element-plus/icons-vue'
 import {
   closeHold,
   createBinding,
@@ -457,25 +457,39 @@ async function openDetail(o: Order) {
             </template>
           </el-table-column>
 
-          <el-table-column label="操作" :width="isMobile ? 100 : 250" :fixed="isMobile ? undefined : 'right'">
+          <el-table-column label="操作" :width="isMobile ? 110 : 156" :fixed="isMobile ? undefined : 'right'">
             <template #default="{ row }">
-              <div class="ops">
-                <el-button size="small" @click="openDetail(row as Order)">详情</el-button>
-                <el-button v-if="row.buyer_id" size="small" type="danger" plain @click="openBuyerRisk(row as Order)">买家</el-button>
-                <el-button v-if="needsLink(row as Order)" size="small" type="warning" plain @click="openQuickBind(row as Order)">
-                  关联发货
-                </el-button>
-                <el-button v-if="isOutOfStock(row as Order)" size="small" type="warning" plain @click="openQuickReplenish(row as Order)">
+              <div class="compact-ops">
+                <!-- 动态最迫切主操作 -->
+                <el-button
+                  v-if="isOutOfStock(row as Order)"
+                  size="small"
+                  type="warning"
+                  plain
+                  @click="openQuickReplenish(row as Order)"
+                >
                   补卡发货
                 </el-button>
-                <el-button v-if="canDeliver(row as Order)" size="small" type="primary" :loading="busy[`d-${row.id}`]" @click="deliver(row as Order)">
-                  {{ isOutOfStock(row as Order) ? '重试发货' : '手动发货' }}
-                </el-button>
-                <el-button v-if="row.status === 'risk_hold'" size="small" type="warning" plain :loading="busy[`h-${row.id}`]" @click="toManual(row as Order)">
-                  转人工
+                <el-button
+                  v-else-if="needsLink(row as Order)"
+                  size="small"
+                  type="warning"
+                  plain
+                  @click="openQuickBind(row as Order)"
+                >
+                  关联发货
                 </el-button>
                 <el-button
-                  v-if="['manual', 'deliver_failed'].includes(row.status)"
+                  v-else-if="canDeliver(row as Order)"
+                  size="small"
+                  type="primary"
+                  :loading="busy[`d-${row.id}`]"
+                  @click="deliver(row as Order)"
+                >
+                  {{ isOutOfStock(row as Order) ? '重试发货' : '手动发货' }}
+                </el-button>
+                <el-button
+                  v-else-if="['manual', 'deliver_failed'].includes(row.status)"
                   size="small"
                   type="success"
                   plain
@@ -484,6 +498,64 @@ async function openDetail(o: Order) {
                 >
                   标记已处理
                 </el-button>
+                <el-button
+                  v-else-if="row.status === 'risk_hold'"
+                  size="small"
+                  type="warning"
+                  plain
+                  :loading="busy[`h-${row.id}`]"
+                  @click="toManual(row as Order)"
+                >
+                  转人工
+                </el-button>
+                <el-button
+                  v-else
+                  size="small"
+                  @click="openDetail(row as Order)"
+                >
+                  详情
+                </el-button>
+
+                <!-- 更多辅助操作下拉 -->
+                <el-dropdown trigger="click">
+                  <el-button size="small" class="more-icon-btn" title="更多操作">
+                    <el-icon><MoreFilled /></el-icon>
+                  </el-button>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item :icon="Document" @click="openDetail(row as Order)">
+                        订单详情
+                      </el-dropdown-item>
+                      <el-dropdown-item v-if="row.buyer_id" :icon="UserFilled" @click="openBuyerRisk(row as Order)">
+                        买家画像
+                      </el-dropdown-item>
+                      <el-dropdown-item
+                        v-if="canDeliver(row as Order) && isOutOfStock(row as Order)"
+                        @click="deliver(row as Order)"
+                      >
+                        重试发货
+                      </el-dropdown-item>
+                      <el-dropdown-item
+                        v-if="needsLink(row as Order) && isOutOfStock(row as Order)"
+                        @click="openQuickBind(row as Order)"
+                      >
+                        修改关联
+                      </el-dropdown-item>
+                      <el-dropdown-item
+                        v-if="row.status === 'risk_hold'"
+                        @click="toManual(row as Order)"
+                      >
+                        转人工处理
+                      </el-dropdown-item>
+                      <el-dropdown-item
+                        v-if="['manual', 'deliver_failed'].includes(row.status)"
+                        @click="markResolved(row as Order)"
+                      >
+                        标记已处理
+                      </el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
               </div>
             </template>
           </el-table-column>
@@ -803,6 +875,19 @@ async function openDetail(o: Order) {
   padding: 40px 0;
   display: flex;
   justify-content: center;
+}
+.compact-ops {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.compact-ops .el-button {
+  border-radius: 6px;
+  font-weight: 500;
+}
+.more-icon-btn {
+  padding: 5px 8px !important;
+  color: var(--xh-text-2);
 }
 .ops {
   display: flex;
