@@ -49,7 +49,11 @@ export interface RuleIn {
   item_id: string | null
   keywords: string[]
   match: 'contains' | 'exact' | 'regex'
+  /** reply 自动回复；handoff 转人工（暂停自动回复并通知，reply 可留空作为过渡话） */
+  action: 'reply' | 'handoff'
   reply: string
+  /** 随回复发送的图片（上传 ID） */
+  images: string[]
   priority: number
   reply_once: boolean
   enabled: boolean

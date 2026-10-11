@@ -75,6 +75,7 @@ def check_reply(
     floor_price: float | None = None,
     allowed_amounts: tuple[float, ...] = (),
     max_len: int = 200,
+    banned_words: tuple[str, ...] = (),
 ) -> GuardResult:
     r = GuardResult(ok=True)
     if not text.strip():
@@ -89,6 +90,11 @@ def check_reply(
     for p in _PROMISE:
         if p.search(text):
             r.add("promise")
+            break
+    lowered = text.lower()
+    for word in banned_words:
+        if word and word.lower() in lowered:
+            r.add(f"banned_word:{word}")
             break
     if floor_price is not None:
         allowed = set(allowed_amounts)

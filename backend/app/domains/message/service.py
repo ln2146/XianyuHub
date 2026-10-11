@@ -26,16 +26,19 @@ from app.domains.message.models import (
     ReplyRule,
     ReplySuggestion,
 )
+from app.domains.order.models import BuyerBlacklist, Order
 from app.goofish.dto import ImEvent, ImEventType, SystemNotice
 from app.goofish.errors import RiskBlockedError
-from app.intelligence.bargain import BargainAction, BargainState, decide
+from app.goofish.publish import UploadedImage
+from app.intelligence.bargain import BargainAction, BargainPolicy, BargainState, decide
 from app.intelligence.guardrails import detect_injection
-from app.intelligence.intent import Intent, classify_intent
+from app.intelligence.intent import Intent, classify_intent, is_post_purchase_complaint
 from app.intelligence.llm import get_llm
 from app.intelligence.retrieval import select_knowledge
 from app.notify.senders import Notification
 from app.notify.service import NotifyEvents, notify, notify_background
 from app.notify.service import drain as drain_notifications
+from app.runtime import get_runtime
 from app.workers.im_gateway import get_im_manager
 
 _pending: dict[tuple[int, str], asyncio.Task] = {}
@@ -383,6 +386,66 @@ async def _history(s: AsyncSession, conv_id: int) -> list[tuple[str, str]]:
     return [("me" if m.direction == "out" else "buyer", m.text) for m in reversed(list(msgs))]
 
 
+def _rule_plan(rule: ReplyRule) -> dict[str, Any]:
+    if rule.action == "handoff":
+        plan: dict[str, Any] = {
+            "action": "send" if rule.reply.strip() else "handoff",
+            "need_human": True,
+            "note": f"命中转人工规则「{rule.name or '、'.join(rule.keywords)}」",
+        }
+        if rule.reply.strip():
+            plan["text"] = rule.reply
+    else:
+        plan = {"action": "send", "text": rule.reply, "images": list(rule.images or [])}
+    return {**plan, "source": MessageSource.AUTO_KEYWORD, "rule_id": rule.id}
+
+
+async def _is_blacklisted(s: AsyncSession, owner_id: int, buyer_id: str | None) -> bool:
+    if not buyer_id:
+        return False
+    found = await s.execute(
+        select(BuyerBlacklist.id).where(BuyerBlacklist.owner_id == owner_id, BuyerBlacklist.buyer_id == buyer_id)
+    )
+    return found.first() is not None
+
+
+async def _has_ordered(s: AsyncSession, conv: Conversation) -> bool:
+    """买家在这个账号下过单（任何状态），或会话里出现过付款 / 发货等订单通知：之后说「退款」「有问题」才可能是售后纠纷。"""
+    if conv.peer_id:
+        found = await s.execute(
+            select(Order.id).where(Order.account_id == conv.account_id, Order.buyer_id == conv.peer_id).limit(1)
+        )
+        if found.first() is not None:
+            return True
+    notice = await s.execute(
+        select(ChatMessage.id).where(ChatMessage.conversation_id == conv.id, ChatMessage.notice.is_not(None)).limit(1)
+    )
+    return notice.first() is not None
+
+
+def _bargain_policy(item: MyItem | None, settings: AccountSettings) -> BargainPolicy | None:
+    """商品自己设了底价就用商品的；否则按账号的默认议价范围（最多让百分之几 / 多少元）。"""
+    if item is None:
+        return None
+    policy = item.bargain_policy()
+    if policy is not None or not settings.bargain_default or not item.price:
+        return policy
+    discount = item.price * settings.bargain_max_percent / 100
+    if settings.bargain_max_amount is not None:
+        discount = min(discount, settings.bargain_max_amount)
+    round_to = 1.0 if item.price >= 20 else 0.1
+    floor = round(item.price - discount, 2)
+    if discount < round_to or floor <= 0:
+        return None
+    return BargainPolicy(
+        list_price=item.price,
+        floor_price=floor,
+        max_rounds=settings.bargain_max_rounds,
+        gifts=item.gifts or "",
+        round_to=round_to,
+    )
+
+
 async def plan_reply(conv_id: int, *, dry_run_text: str | None = None) -> dict[str, Any]:
     """计算应当如何回复（不发送）。返回 {action, text, source, intent, note, ...}。"""
     async with session_factory()() as s:
@@ -402,12 +465,14 @@ async def plan_reply(conv_id: int, *, dry_run_text: str | None = None) -> dict[s
             return {"action": "none", "note": "没有待回复的买家消息"}
         if dry_run_text is None and in_takeover(conv):
             return {"action": "none", "note": "人工接管中"}
+        if await _is_blacklisted(s, acc.owner_id, conv.peer_id):
+            return {"action": "none", "note": "黑名单买家，不自动回复"}
         if detect_injection(text):
             return {"action": "none", "note": "疑似套取设定 / 探测，不回复", "intent": Intent.NO_REPLY}
 
         rule = await match_rule(s, acc.owner_id, acc.id, conv.item_id, text) if settings.keyword_reply else None
         if rule is not None and not (rule.reply_once and rule.hits and conv.tags and f"rule:{rule.id}" in conv.tags):
-            return {"action": "send", "text": rule.reply, "source": MessageSource.AUTO_KEYWORD, "rule_id": rule.id}
+            return _rule_plan(rule)
 
         item = None
         if conv.item_id:
@@ -417,12 +482,13 @@ async def plan_reply(conv_id: int, *, dry_run_text: str | None = None) -> dict[s
         history = await _history(s, conv_id)
         bargain_state = BargainState(conv.bargain_rounds, conv.bargain_last_offer)
         default_reply = settings.default_reply if not conv.default_replied else None
+        ordered = await _has_ordered(s, conv)
 
     if settings.ai_mode == "off" or not in_work_hours(settings):
         if default_reply:
             return {"action": "send", "text": default_reply, "source": MessageSource.AUTO_DEFAULT}
         return {"action": "none", "note": "AI 未开启或不在工作时段"}
-    plan = await _ai_plan(acc.owner_id, acc.id, settings, item, history, bargain_state, text)
+    plan = await _ai_plan(acc.owner_id, acc.id, settings, item, history, bargain_state, text, ordered=ordered)
     if plan.get("text"):
         plan["action"] = "suggest" if settings.ai_mode == "suggest" else "send"
     return plan
@@ -448,17 +514,20 @@ async def _ai_plan(
     history: list[tuple[str, str]],
     bargain_state: BargainState,
     text: str,
+    *,
+    ordered: bool,
 ) -> dict[str, Any]:
-    """AI 回复：意图 → 议价决策 → 结合商品、知识库、店主说明与资料写回复 → 护栏。不决定是否发送。"""
+    """AI 回复：意图 → 议价决策 → 结合商品、知识库、店主说明与资料写回复 → 护栏。不决定是否发送。
+    ordered：买家是否在这个账号下过单。没下过单时，「退款」「售后」「有问题」都是售前咨询，交给 AI 正常回答。"""
     llm = get_llm()
     intent = await classify_intent(text, llm)
     if intent == Intent.NO_REPLY:
         return {"action": "none", "note": "无需回复", "intent": intent}
-    if intent == Intent.AFTER_SALE:
+    if intent == Intent.AFTER_SALE and (ordered or is_post_purchase_complaint(text)):
         return {"action": "handoff", "note": "售后 / 纠纷，转人工", "intent": intent}
 
     decision = None
-    policy = item.bargain_policy() if item else None
+    policy = _bargain_policy(item, settings)
     if intent == Intent.BARGAIN and policy is not None:
         decision = decide(policy, bargain_state, text, want_cnt=item.want_cnt if item else None)
 
@@ -472,6 +541,8 @@ async def _ai_plan(
         floor_price=(policy.floor_price if policy else (item.price if item else None)),
         instructions=settings.ai_instructions,
         docs=select_from_docs(await _load_docs(owner_id, account_id), text),
+        ordered=ordered,
+        banned_words=tuple(w.strip() for w in settings.ai_banned_words if w.strip()),
     )
     reply = await compose_reply(llm, ctx, intent, text, decision)
     plan: dict[str, Any] = {
@@ -508,14 +579,15 @@ async def trial_reply(account_id: int, text: str, item_id: str | None = None) ->
             return {"action": "none", "note": "疑似套取设定 / 探测，不回复", "intent": Intent.NO_REPLY}
         rule = await match_rule(s, acc.owner_id, acc.id, item_id, text) if settings.keyword_reply else None
         if rule is not None:
-            return {"action": "send", "text": rule.reply, "source": MessageSource.AUTO_KEYWORD, "rule_id": rule.id}
+            return _rule_plan(rule)
         item = None
         if item_id:
             item = (
                 await s.execute(select(MyItem).where(MyItem.account_id == acc.id, MyItem.item_id == item_id))
             ).scalar_one_or_none()
         owner_id = acc.owner_id
-    plan = await _ai_plan(owner_id, account_id, settings, item, [], BargainState(0, None), text)
+    # 试运行没有真实买家，按售前咨询处理
+    plan = await _ai_plan(owner_id, account_id, settings, item, [], BargainState(0, None), text, ordered=False)
     if plan.get("text"):
         plan["action"] = {"off": "off", "suggest": "suggest"}.get(settings.ai_mode, "send")
     return plan
@@ -574,17 +646,24 @@ async def auto_reply(conv_id: int) -> dict[str, Any]:
             await hub.publish(
                 "suggestion", {"conversation_id": conv_id, "id": sug.id, "text": sug.text}, account_id=conv.account_id
             )
-    elif action == "send" and plan.get("text"):
+    elif action == "send" and (plan.get("text") or plan.get("images")):
         delay = random.uniform(settings.reply_delay_min, max(settings.reply_delay_min, settings.reply_delay_max))
         if settings.reply_delay_max > 0:  # 模拟打字时间
-            delay += min(len(plan["text"]) * 0.15, 6)
+            delay += min(len(plan.get("text") or "") * 0.15, 6)
         await asyncio.sleep(delay)
         async with session_factory()() as s:  # 等待期间卖家可能已接管
             conv = await s.get(Conversation, conv_id)
             # 转人工时的过渡回复（如「我确认一下再回你」）要照常发出：接管是我们自己刚设的
             if conv is None or (in_takeover(conv) and not handing_off):
                 return {"action": "none", "note": "等待期间进入人工接管"}
-        await send_text(conv_id, plan["text"], source=plan["source"], meta={"intent": str(plan.get("intent", ""))})
+        if plan.get("text"):
+            await send_text(conv_id, plan["text"], source=plan["source"], meta={"intent": str(plan.get("intent", ""))})
+        if plan.get("images"):
+            try:
+                await send_images(conv_id, plan["images"], source=plan["source"])
+            except Exception as e:  # noqa: BLE001  图片发不出去不影响文字回复，记下来让卖家知道
+                logger.warning("自动回复的图片发送失败 conv={}: {}", conv_id, e)
+                await _alert_unanswered(conv_id, f"自动回复的图片没有发出去：{e}")
         async with session_factory()() as s:
             conv = await s.get(Conversation, conv_id)
             if "bargain" in plan:
@@ -600,6 +679,12 @@ async def auto_reply(conv_id: int) -> dict[str, Any]:
                     rule.hits += 1
                     conv.tags = [*(conv.tags or []), f"rule:{rule.id}"]
             await s.commit()
+    elif action == "handoff" and plan.get("rule_id"):
+        async with session_factory()() as s:
+            rule = await s.get(ReplyRule, plan["rule_id"])
+            if rule:
+                rule.hits += 1
+                await s.commit()
     plan["action"] = action
     return plan
 
@@ -632,6 +717,77 @@ async def im_send(account_id: int, cid: str, peer_id: str, text: str) -> None:
         await cluster.call("im.send", {"account_id": account_id, "cid": cid, "peer_id": peer_id, "text": text})
     except (ClusterUnavailable, RuntimeError) as e:
         raise ConnectionError(str(e)) from e
+
+
+IMAGE_ECHO = "[图片]"  # 图片消息回传时的提醒文案，用来识别自己发出的图片
+_remote_images: dict[tuple[int, str], UploadedImage] = {}
+
+
+async def im_send_image_local(account_id: int, cid: str, peer_id: str, image: dict[str, Any]) -> None:
+    manager = get_im_manager()
+    if manager is None:
+        raise ConnectionError("IM 网关未运行")
+    _remember_sent(account_id, cid, IMAGE_ECHO)
+    await manager.send_image(account_id, cid, peer_id, image["url"], image["width"], image["height"])
+
+
+async def rpc_im_send_image(payload: dict[str, Any]) -> bool:
+    await im_send_image_local(payload["account_id"], payload["cid"], payload["peer_id"], payload["image"])
+    return True
+
+
+async def _remote_image(account_id: int, image_id: str) -> UploadedImage:
+    """本地图片先传到闲鱼图床（每个账号传一次，结果缓存），聊天里只能发闲鱼图床的地址。"""
+    key = (account_id, image_id)
+    if key not in _remote_images:
+        from app.domains.goods.service import load_upload
+
+        try:
+            content, _ = load_upload(image_id)
+        except FileNotFoundError as e:
+            raise ValueError("图片文件不存在，请重新上传") from e
+        _remote_images[key] = await get_runtime().gateway.upload_image(account_id, content, image_id)
+    return _remote_images[key]
+
+
+async def send_images(conv_id: int, image_ids: list[str], *, source: str, meta: dict[str, Any] | None = None) -> int:
+    """按顺序把图片发给买家，返回发出的张数。"""
+    async with session_factory()() as s:
+        conv = await s.get(Conversation, conv_id)
+        if conv is None or not conv.peer_id:
+            raise ValueError("会话不存在或缺少买家信息")
+        account_id, cid, peer_id = conv.account_id, conv.cid, conv.peer_id
+    sent = 0
+    for image_id in image_ids:
+        img = await _remote_image(account_id, image_id)
+        image = {"url": img.url, "width": img.width, "height": img.height}
+        if get_im_manager() is not None:
+            await im_send_image_local(account_id, cid, peer_id, image)
+        else:
+            from app.core.cluster import ClusterUnavailable, get_cluster
+
+            cluster = get_cluster()
+            if cluster is None:
+                raise ConnectionError("IM 网关未运行")
+            try:
+                await cluster.call(
+                    "im.send_image", {"account_id": account_id, "cid": cid, "peer_id": peer_id, "image": image}
+                )
+            except (ClusterUnavailable, RuntimeError) as e:
+                raise ConnectionError(str(e)) from e
+        sent += 1
+        async with session_factory()() as s:
+            conv = await s.get(Conversation, conv_id)
+            msg = await save_message(
+                s, conv, direction="out", source=source, text=IMAGE_ECHO, meta={**(meta or {}), "image": img.url}
+            )
+            await s.commit()
+        await hub.publish(
+            "message",
+            {"conversation_id": conv_id, "account_id": account_id, "text": IMAGE_ECHO, "id": msg.id, "source": source},
+            account_id=account_id,
+        )
+    return sent
 
 
 # ---------------------------------------------------------------- 出口风控与敏感词过滤

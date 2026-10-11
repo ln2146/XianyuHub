@@ -99,6 +99,7 @@ async def start_workers() -> None:
     cluster = get_cluster()
     if cluster is not None:
         cluster.register("im.send", message_service.rpc_im_send)
+        cluster.register("im.send_image", message_service.rpc_im_send_image)
 
         async def _status(_: dict[str, Any]) -> dict[str, Any] | None:
             return await im_status_snapshot()

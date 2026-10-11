@@ -38,6 +38,14 @@ _RULES: list[tuple[Intent, re.Pattern[str]]] = [
 ]
 
 
+# 只有买到手之后才会这么说：即使系统里没有这笔订单（例如部署前成交的），也直接按售后纠纷转人工
+_POST_PURCHASE = re.compile(r"坏了|不能用|用不了|投诉|举报|差评|骗|仅退款|收到货|到货了|收到的|发错|少发|漏发")
+
+
+def is_post_purchase_complaint(text: str) -> bool:
+    return bool(_POST_PURCHASE.search(text))
+
+
 def rule_intent(text: str) -> Intent | None:
     t = text.strip()
     if not t:

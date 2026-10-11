@@ -172,6 +172,14 @@ class ImGatewayManager:
             account_key(account_id), Action.SEND_MESSAGE, lambda: client.send_text(cid, to_id, text)
         )
 
+    async def send_image(self, account_id: int, cid: str, to_id: str, url: str, width: int, height: int) -> None:
+        client = self._clients.get(account_id)
+        if client is None or not client.connected.is_set():
+            raise ConnectionError("该账号 IM 未连接")
+        await get_runtime().guard.run(
+            account_key(account_id), Action.SEND_MESSAGE, lambda: client.send_image(cid, to_id, url, width, height)
+        )
+
 
 _manager: ImGatewayManager | None = None
 

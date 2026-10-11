@@ -8,6 +8,13 @@ export interface AccountSettings {
   ai_mode: 'off' | 'suggest' | 'auto'
   /** 给 AI 的说明：店铺情况、语气、发货与售后规则等 */
   ai_instructions?: string
+  /** AI 回复里不允许出现的词 */
+  ai_banned_words?: string[]
+  /** 默认议价：商品没单独设底价时，AI 最多让价的范围 */
+  bargain_default?: boolean
+  bargain_max_percent?: number
+  bargain_max_amount?: number | null
+  bargain_max_rounds?: number
   takeover_minutes: number
   reply_delay_min: number
   reply_delay_max: number

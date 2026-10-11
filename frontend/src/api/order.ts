@@ -64,6 +64,8 @@ export interface PoolIn {
   kind: PoolKind
   text: string | null
   api_config: Record<string, unknown>
+  /** 随发货文字一起发给买家的图片（上传 ID）；修改时不传表示不变 */
+  images?: string[]
   low_stock_threshold: number
   enabled: boolean
 }
@@ -74,6 +76,7 @@ export interface PoolOut {
   kind: PoolKind
   text_preview: string | null
   api_config: Record<string, unknown>
+  images: string[]
   low_stock_threshold: number
   enabled: boolean
   stock: { available: number; locked: number; used: number; [k: string]: number }

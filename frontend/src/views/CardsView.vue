@@ -31,6 +31,7 @@ import { updateAccount, type Account } from '@/api/account'
 import { useAccountsStore } from '@/stores/accounts'
 import { useMobile } from '@/composables/useMobile'
 import { fmtTime } from '@/utils/format'
+import ImageUploader from '@/components/ImageUploader.vue'
 
 const accounts = useAccountsStore()
 const isMobile = useMobile()
@@ -88,7 +89,9 @@ const poolEdit = reactive({
   low_stock_threshold: 5,
   enabled: true,
   textPreview: null as string | null,
+  images: [] as string[],
 })
+const poolImgUploading = ref(0)
 
 function openPoolCreate() {
   Object.assign(poolEdit, {
@@ -101,6 +104,7 @@ function openPoolCreate() {
     low_stock_threshold: 5,
     enabled: true,
     textPreview: null,
+    images: [],
   })
 }
 
@@ -115,6 +119,7 @@ function openPoolEdit(p: PoolOut) {
     low_stock_threshold: p.low_stock_threshold,
     enabled: p.enabled,
     textPreview: p.text_preview,
+    images: [...(p.images || [])],
   })
 }
 
@@ -131,12 +136,15 @@ async function savePool() {
     }
     if (!/^https?:\/\//.test(String(api_config.url || ''))) return ElMessage.warning('API 配置需要有效的 url')
   }
-  if (poolEdit.kind === 'text' && !poolEdit.id && !poolEdit.text.trim()) return ElMessage.warning('请填写发货内容')
+  if (poolEdit.kind === 'text' && !poolEdit.id && !poolEdit.text.trim() && !poolEdit.images.length)
+    return ElMessage.warning('请填写发货内容或添加图片')
+  if (poolImgUploading.value) return ElMessage.warning('图片还在上传，请稍等')
   const body: PoolIn = {
     name: poolEdit.name.trim(),
     kind: poolEdit.kind,
     text: poolEdit.kind === 'text' && poolEdit.text.trim() ? poolEdit.text : null,
     api_config,
+    images: poolEdit.images,
     low_stock_threshold: poolEdit.low_stock_threshold,
     enabled: poolEdit.enabled,
   }
@@ -661,11 +669,12 @@ const accountModal = reactive({
                     </div>
                   </template>
                   <span v-else-if="row.kind === 'text'" class="muted mono small ellipsis-text preview-inline" :title="row.text_preview">
-                    <el-icon><Document /></el-icon> {{ row.text_preview || '已加密固定内容' }}
+                    <el-icon><Document /></el-icon> {{ row.text_preview || (row.images?.length ? '仅图片' : '已加密固定内容') }}
                   </span>
                   <span v-else class="muted mono small ellipsis-text preview-inline" :title="row.api_config?.url">
                     <el-icon><Connection /></el-icon> {{ row.api_config?.url || '自定义 API 接口' }}
                   </span>
+                  <div v-if="row.images?.length" class="muted smaller">附 {{ row.images.length }} 张图片</div>
                 </template>
               </el-table-column>
               <el-table-column label="库存预警阈值" width="120">
@@ -824,6 +833,16 @@ const accountModal = reactive({
           <div class="form-tip">
             JSON 对象：url（必填）、method（GET / POST）、headers、body、result_path、timeout（秒）。
           </div>
+        </el-form-item>
+        <el-form-item label="附带图片">
+          <ImageUploader
+            v-model="poolEdit.images"
+            v-model:uploading="poolImgUploading"
+            :max="9"
+            :pasteable="false"
+            :allow-cover="false"
+          />
+          <div class="form-tip">发货文字之后按顺序发给买家，例如领取二维码、使用教程截图。固定内容可以只发图片。</div>
         </el-form-item>
         <el-form-item v-if="poolEdit.kind === 'pool'" label="库存预警">
           <el-input-number v-model="poolEdit.low_stock_threshold" :min="0" />

@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox, type UploadRequestOptions } from 'element-plus'
 import {
+  ArrowRight,
   ChatDotRound,
   Check,
   CircleClose,
@@ -35,6 +36,7 @@ import { updateAccount, type Account } from '@/api/account'
 import { useAccountsStore } from '@/stores/accounts'
 import { useMobile } from '@/composables/useMobile'
 import StatusTag from '@/components/StatusTag.vue'
+import ImageUploader from '@/components/ImageUploader.vue'
 import { accountStatusMap } from '@/utils/format'
 
 const route = useRoute()
@@ -169,13 +171,16 @@ const empty = (): RuleIn => ({
   item_id: null,
   keywords: [],
   match: 'contains',
+  action: 'reply',
   reply: '',
+  images: [],
   priority: 0,
   reply_once: false,
   enabled: true,
 })
 
 const edit = reactive({ open: false, saving: false, id: null as number | null, form: empty() })
+const imgUploading = ref(0)
 
 function openCreate() {
   Object.assign(edit, { open: true, id: null, form: empty() })
@@ -183,7 +188,11 @@ function openCreate() {
 
 function openEdit(r: RuleOut) {
   const { id: _id, hits: _hits, ...rest } = r
-  Object.assign(edit, { open: true, id: r.id, form: { ...rest, keywords: [...r.keywords] } })
+  Object.assign(edit, {
+    open: true,
+    id: r.id,
+    form: { ...rest, keywords: [...r.keywords], images: [...(r.images || [])] },
+  })
 }
 
 function toIn(r: RuleOut): RuleIn {
@@ -196,7 +205,8 @@ const PLACEHOLDER = /【[^】]*】/
 async function saveRule() {
   const f = edit.form
   if (!f.keywords.length) return ElMessage.warning('至少需要一个关键词')
-  if (!f.reply.trim()) return ElMessage.warning('请填写回复内容')
+  if (f.action === 'reply' && !f.reply.trim() && !f.images.length) return ElMessage.warning('请填写回复内容或添加图片')
+  if (imgUploading.value) return ElMessage.warning('图片还在上传，请稍等')
   if (PLACEHOLDER.test(f.reply)) return ElMessage.warning('请先把【】里的内容改成你的实际情况，再保存')
   if (f.match === 'regex') {
     for (const k of f.keywords) {
@@ -209,7 +219,8 @@ async function saveRule() {
   }
   edit.saving = true
   try {
-    const body: RuleIn = { ...f, item_id: f.item_id?.trim() || null }
+    // 转人工规则不发图片
+    const body: RuleIn = { ...f, item_id: f.item_id?.trim() || null, images: f.action === 'reply' ? f.images : [] }
     if (edit.id) await updateRule(edit.id, body)
     else await createRule(body)
     ElMessage.success('已保存规则')
@@ -305,7 +316,9 @@ async function quickEnableTemplate(tpl: PresetTemplate) {
       item_id: null,
       keywords: [...tpl.keywords],
       match: 'contains',
+      action: 'reply',
       reply: tpl.reply,
+      images: [],
       priority: 0,
       reply_once: false,
       enabled: true,
@@ -361,6 +374,45 @@ async function saveInstructions() {
     ElMessage.success('已保存店铺人设说明，AI 回复将立即生效')
   } finally {
     savingInstr.value = false
+  }
+}
+
+// 默认议价与 AI 禁用词
+const guard = reactive({
+  bargain_default: false,
+  bargain_max_percent: 10,
+  bargain_max_amount: null as number | null,
+  bargain_max_rounds: 3,
+  ai_banned_words: [] as string[],
+})
+const savingGuard = ref(false)
+
+function guardFrom(a?: Account) {
+  const st = a?.settings
+  return {
+    bargain_default: st?.bargain_default ?? false,
+    bargain_max_percent: st?.bargain_max_percent ?? 10,
+    bargain_max_amount: st?.bargain_max_amount ?? null,
+    bargain_max_rounds: st?.bargain_max_rounds ?? 3,
+    ai_banned_words: [...(st?.ai_banned_words ?? [])],
+  }
+}
+
+watch(currentAccount, (a) => Object.assign(guard, guardFrom(a)), { immediate: true })
+
+const guardDirty = computed(() => JSON.stringify(guardFrom(currentAccount.value)) !== JSON.stringify(guard))
+
+async function saveGuard() {
+  if (!currentAccount.value) return
+  savingGuard.value = true
+  try {
+    await updateAccount(currentAccount.value.id, {
+      settings: { ...guard, ai_banned_words: guard.ai_banned_words.map((w) => w.trim()).filter(Boolean) },
+    })
+    await accounts.load(true)
+    ElMessage.success('已保存议价范围与禁用词')
+  } finally {
+    savingGuard.value = false
   }
 }
 
@@ -635,7 +687,10 @@ onMounted(() => {
                 <el-table-column label="规则名称" prop="name" min-width="140">
                   <template #default="{ row }">
                     <div class="rule-name-cell">
-                      <span class="rule-name">{{ row.name || '未命名规则' }}</span>
+                      <span class="rule-name">
+                        {{ row.name || '未命名规则' }}
+                        <el-tag v-if="row.action === 'handoff'" size="small" type="warning" effect="plain">转人工</el-tag>
+                      </span>
                       <span v-if="row.priority !== 0" class="priority-badge">优先度 {{ row.priority }}</span>
                     </div>
                   </template>
@@ -657,7 +712,11 @@ onMounted(() => {
 
                 <el-table-column label="自动回复内容" prop="reply" min-width="260" show-overflow-tooltip>
                   <template #default="{ row }">
-                    <div class="reply-text">{{ row.reply }}</div>
+                    <div class="reply-text">
+                      <template v-if="row.reply">{{ row.reply }}</template>
+                      <span v-else-if="row.action === 'handoff'" class="muted">不回复，暂停自动回复并通知你</span>
+                    </div>
+                    <div v-if="row.images?.length" class="muted smaller">附 {{ row.images.length }} 张图片</div>
                   </template>
                 </el-table-column>
 
@@ -893,6 +952,48 @@ onMounted(() => {
                 </div>
               </div>
             </div>
+
+            <!-- 议价范围与禁用词 -->
+            <div class="ai-column-panel guard-panel">
+              <div class="panel-header">
+                <div class="panel-title">
+                  <span class="title-text">议价范围与禁用词</span>
+                  <span class="title-desc">价格由系统按规则计算，AI 只负责把话说自然；禁用词出现在 AI 回复里会被拦下重写</span>
+                </div>
+                <el-button type="primary" size="small" :loading="savingGuard" :disabled="!guardDirty" @click="saveGuard">
+                  保存
+                </el-button>
+              </div>
+              <el-form label-width="120px" :label-position="isMobile ? 'top' : 'right'" class="guard-form">
+                <el-form-item label="默认议价">
+                  <el-switch v-model="guard.bargain_default" />
+                  <span class="form-tip inline-tip">
+                    商品没有单独设置底价时，允许 AI 在下面的范围内让价；关闭则不让价（单独设了底价的商品不受影响）
+                  </span>
+                </el-form-item>
+                <template v-if="guard.bargain_default">
+                  <el-form-item label="最多让">
+                    <el-input-number v-model="guard.bargain_max_percent" :min="1" :max="50" :step="1" />
+                    <span class="unit">%</span>
+                    <span class="unit">且不超过</span>
+                    <el-input-number v-model="guard.bargain_max_amount" :min="0" :step="10" placeholder="不限" />
+                    <span class="unit">元</span>
+                  </el-form-item>
+                  <el-form-item label="最多议价">
+                    <el-input-number v-model="guard.bargain_max_rounds" :min="1" :max="10" />
+                    <span class="unit">轮，之后坚持最终价</span>
+                  </el-form-item>
+                </template>
+                <el-form-item label="AI 禁用词">
+                  <el-input-tag
+                    v-model="guard.ai_banned_words"
+                    placeholder="输入后回车，例如竞品平台名、不想提的话题"
+                    save-on-blur
+                    :max="100"
+                  />
+                </el-form-item>
+              </el-form>
+            </div>
           </div>
         </el-tab-pane>
 
@@ -915,15 +1016,38 @@ onMounted(() => {
             <el-radio-button value="regex">正则表达式</el-radio-button>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="回复内容" required>
+        <el-form-item label="命中后">
+          <el-radio-group v-model="edit.form.action">
+            <el-radio-button value="reply">自动回复</el-radio-button>
+            <el-radio-button value="handoff">转人工</el-radio-button>
+          </el-radio-group>
+          <div v-if="edit.form.action === 'handoff'" class="form-tip">
+            暂停这个会话的自动回复（时长按账号的「人工接管」设置），并通知你来回复。适合发票、定制、批量采购这类需要你本人处理的问题。
+          </div>
+        </el-form-item>
+        <el-form-item :label="edit.form.action === 'handoff' ? '过渡话' : '回复内容'">
           <el-input
             v-model="edit.form.reply"
             type="textarea"
             :rows="4"
             maxlength="1000"
             show-word-limit
-            placeholder="买家触发该关键词后系统自动回复的内容"
+            :placeholder="
+              edit.form.action === 'handoff'
+                ? '可选：转人工前先回买家一句，例如「我确认一下，马上回你」；留空则不回复'
+                : '买家触发该关键词后系统自动回复的内容'
+            "
           />
+        </el-form-item>
+        <el-form-item v-if="edit.form.action === 'reply'" label="附带图片">
+          <ImageUploader
+            v-model="edit.form.images"
+            v-model:uploading="imgUploading"
+            :max="9"
+            :pasteable="false"
+            :allow-cover="false"
+          />
+          <div class="form-tip">文字之后按顺序发出，例如实拍图、尺码表、使用教程截图。只发图片时回复内容可以留空。</div>
         </el-form-item>
         <el-form-item label="生效账号">
           <el-select v-model="edit.form.account_id" clearable placeholder="全部闲鱼账号通用" class="w-full">
@@ -1832,6 +1956,24 @@ onMounted(() => {
 
 .w-full {
   width: 100%;
+}
+
+.guard-panel {
+  margin-top: 16px;
+}
+
+.guard-form :deep(.el-form-item) {
+  margin-bottom: 12px;
+}
+
+.inline-tip {
+  margin: 0 0 0 10px;
+}
+
+.unit {
+  margin: 0 8px;
+  font-size: var(--xh-fs-sm);
+  color: var(--xh-text-2);
 }
 
 .form-tip {

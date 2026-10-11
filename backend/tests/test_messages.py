@@ -26,6 +26,7 @@ class FakeIm:
         self.connected = asyncio.Event()
         self.connected.set()
         self.sent: list[tuple[str, str, str]] = []
+        self.images: list[tuple[str, str, str]] = []
 
     async def run_forever(self):
         await asyncio.Event().wait()
@@ -35,6 +36,9 @@ class FakeIm:
 
     async def send_text(self, cid, to_id, text):
         self.sent.append((cid, to_id, text))
+
+    async def send_image(self, cid, to_id, url, width, height):
+        self.images.append((cid, to_id, url))
 
 
 @pytest.fixture

@@ -560,6 +560,7 @@ async def _deliver(order_pk: int, *, force: bool, user_id: int | None) -> bool:
         text = _render(binding.template or DEFAULT_TEMPLATE, order, content)
         delay = binding.delay_seconds
         relist = binding.auto_relist
+        images = list(pool.images or [])
         account_id, order_id, cid, buyer_id, item_id = (
             order.account_id,
             order.order_id,
@@ -579,6 +580,20 @@ async def _deliver(order_pk: int, *, force: bool, user_id: int | None) -> bool:
             raise DeliveryError("找不到与买家的会话，无法发送发货内容")
         await message_service.send_text(conv.id, text, source=MessageSource.DELIVERY, meta={"order_id": order_id})
         record.message_sent = True
+        if images:
+            # 文字（含卡密）已经送达：图片失败只提醒卖家补发，不让整单失败重试（否则会重复发卡密）
+            try:
+                await message_service.send_images(
+                    conv.id, images, source=MessageSource.DELIVERY, meta={"order_id": order_id}
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.warning("订单 {} 的发货图片没有发出去：{}", order_id, e)
+                await _notify_owner(
+                    account_id,
+                    NotifyEvents.DELIVERY_FAILED,
+                    f"⚠️ 订单 {order_id} 的发货图片没有发出去",
+                    f"发货文字已经发给买家，但图片发送失败（{_describe(e)}），请在聊天里手动补发图片。",
+                )
 
     async def consign() -> None:
         await gateway.consign_virtual(account_id, order_id)

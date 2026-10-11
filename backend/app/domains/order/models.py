@@ -127,7 +127,7 @@ class Order(IdMixin, TimestampMixin, Base):
 
 
 class CardPool(IdMixin, TimestampMixin, Base):
-    """卡券：text 固定文本；pool 卡密库存（一卡一用）；api 外部接口取货。"""
+    """卡券：text 固定文本；pool 卡密库存（一卡一用）；api 外部接口取货。都可以附带图片。"""
 
     __tablename__ = "card_pools"
 
@@ -136,6 +136,7 @@ class CardPool(IdMixin, TimestampMixin, Base):
     kind: Mapped[str] = mapped_column(String(8))  # text / pool / api
     text_enc: Mapped[str | None] = mapped_column(Text, nullable=True)  # kind=text 的内容（加密）
     api_config: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    images: Mapped[list[str]] = mapped_column(JSON, default=list)  # 发货时随文字一起发给买家的图片（本地上传 ID）
     low_stock_threshold: Mapped[int] = mapped_column(Integer, default=5)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
 

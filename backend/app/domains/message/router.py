@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 import jwt
 from fastapi import (
@@ -14,7 +14,7 @@ from fastapi import (
     WebSocketDisconnect,
     status,
 )
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import func, or_, select
 
 from app.core.db import session_factory
@@ -22,7 +22,7 @@ from app.core.deps import CurrentUser, SessionDep
 from app.core.pagination import set_total
 from app.core.realtime import hub
 from app.core.security import user_id_from_token
-from app.core.uploads import TooLarge, read_limited
+from app.core.uploads import TooLarge, UploadId, read_limited
 from app.domains.account.models import XyAccount
 from app.domains.account.service import accessible_account_ids, get_account_for
 from app.domains.goods.models import MyItem
@@ -208,10 +208,19 @@ class RuleIn(BaseModel):
     item_id: str | None = None
     keywords: list[str] = Field(min_length=1)
     match: str = Field(default="contains", pattern="^(contains|exact|regex)$")
-    reply: str = Field(min_length=1, max_length=1000)
+    # reply 自动回复；handoff 转人工（暂停自动回复并通知你，reply 可留空，填了就先发这句过渡话）
+    action: Literal["reply", "handoff"] = "reply"
+    reply: str = Field(default="", max_length=1000)
+    images: list[UploadId] = Field(default_factory=list, max_length=9)
     priority: int = 0
     reply_once: bool = False
     enabled: bool = True
+
+    @model_validator(mode="after")
+    def _has_content(self) -> "RuleIn":
+        if self.action == "reply" and not self.reply.strip() and not self.images:
+            raise ValueError("请填写回复内容或添加图片")
+        return self
 
 
 class RuleOut(RuleIn):

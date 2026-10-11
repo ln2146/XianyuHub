@@ -65,6 +65,9 @@ class ReplyRule(IdMixin, TimestampMixin, Base):
     keywords: Mapped[list[str]] = mapped_column(JSON, default=list)
     match: Mapped[str] = mapped_column(String(8), default="contains")  # contains / exact / regex
     reply: Mapped[str] = mapped_column(Text)
+    # reply 自动回复；handoff 转人工：暂停自动回复并通知卖家（reply 不为空时先发这句过渡话）
+    action: Mapped[str] = mapped_column(String(8), default="reply", server_default="reply")
+    images: Mapped[list[str]] = mapped_column(JSON, default=list)  # 随回复发送的图片（本地上传 ID）
     priority: Mapped[int] = mapped_column(Integer, default=0)
     reply_once: Mapped[bool] = mapped_column(Boolean, default=False)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)

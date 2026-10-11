@@ -18,6 +18,13 @@ class AccountSettings(BaseModel):
     ai_mode: Literal["off", "suggest", "auto"] = "off"
     # 给 AI 的说明：店铺介绍、语气、发货 / 售后规则等；不能覆盖底价、站外联系等护栏
     ai_instructions: str = Field(default="", max_length=2000)
+    # AI 回复里不允许出现的词（例如竞品名、不想提的话题），命中就重写，仍命中则不发
+    ai_banned_words: list[str] = Field(default_factory=list, max_length=100)
+    # 默认议价：商品没有单独设底价时，AI 可以在这个范围内让价（价格仍由议价引擎计算，不交给模型）
+    bargain_default: bool = False
+    bargain_max_percent: float = Field(default=10, ge=0, le=50)
+    bargain_max_amount: float | None = Field(default=None, ge=0)
+    bargain_max_rounds: int = Field(default=3, ge=1, le=10)
     takeover_minutes: int = Field(default=60, ge=1, le=24 * 60)
     reply_delay_min: float = Field(default=2, ge=0)
     reply_delay_max: float = Field(default=6, ge=0)

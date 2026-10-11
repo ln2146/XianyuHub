@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from app.core.crypto import get_vault
 from app.core.deps import CurrentUser, SessionDep
 from app.core.pagination import set_total
+from app.core.uploads import UploadId
 from app.domains.account.service import accessible_account_ids, get_account_for
 from app.domains.buyer.pipeline import load_seller_profile
 from app.domains.message.models import ChatMessage, Conversation
@@ -62,6 +63,8 @@ class PoolIn(BaseModel):
     kind: str = Field(pattern="^(text|pool|api)$")
     text: str | None = None
     api_config: dict[str, Any] = Field(default_factory=dict)
+    # 随发货文字一起发给买家的图片（先通过 /goods/uploads 上传）；修改时不传表示不变
+    images: list[UploadId] | None = Field(default=None, max_length=9)
     low_stock_threshold: int = 5
     enabled: bool = True
 
@@ -72,6 +75,7 @@ class PoolOut(BaseModel):
     kind: str
     text_preview: str | None
     api_config: dict[str, Any]
+    images: list[str] = []
     low_stock_threshold: int
     enabled: bool
     stock: dict[str, int]
@@ -136,6 +140,7 @@ async def _pool_out(session, pool: CardPool) -> PoolOut:
         kind=pool.kind,
         text_preview=_preview(get_vault().decrypt(pool.text_enc)) if pool.text_enc else None,
         api_config={k: ("***" if k == "headers" else v) for k, v in (pool.api_config or {}).items()},
+        images=pool.images or [],
         low_stock_threshold=pool.low_stock_threshold,
         enabled=pool.enabled,
         stock=stock,
@@ -314,8 +319,8 @@ async def list_pools(user: CurrentUser, session: SessionDep) -> list[PoolOut]:
 
 @router.post("/cards/pools", response_model=PoolOut, status_code=201)
 async def create_pool(body: PoolIn, user: CurrentUser, session: SessionDep) -> PoolOut:
-    if body.kind == "text" and not body.text:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "「固定内容」需要填写发货内容")
+    if body.kind == "text" and not body.text and not body.images:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "「固定内容」需要填写发货内容或添加图片")
     if body.kind == "api" and not str(body.api_config.get("url", "")).startswith(("http://", "https://")):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "「接口取货」需要填写有效的 url")
     pool = CardPool(
@@ -324,6 +329,7 @@ async def create_pool(body: PoolIn, user: CurrentUser, session: SessionDep) -> P
         kind=body.kind,
         text_enc=get_vault().encrypt(body.text) if body.text else None,
         api_config=body.api_config,
+        images=body.images or [],
         low_stock_threshold=body.low_stock_threshold,
         enabled=body.enabled,
     )
@@ -336,6 +342,8 @@ async def create_pool(body: PoolIn, user: CurrentUser, session: SessionDep) -> P
 async def update_pool(pool_id: int, body: PoolIn, user: CurrentUser, session: SessionDep) -> PoolOut:
     pool = await _own_pool(session, user, pool_id)
     pool.name, pool.low_stock_threshold, pool.enabled = body.name, body.low_stock_threshold, body.enabled
+    if body.images is not None:
+        pool.images = body.images
     if body.text:
         pool.text_enc = get_vault().encrypt(body.text)
     if body.api_config:
