@@ -1,16 +1,19 @@
 <script setup lang="ts">
-import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref } from 'vue'
+import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
+  Aim,
   Bell,
   CaretRight,
+  Check,
   CircleCheck,
   CircleClose,
   CopyDocument,
   Delete,
   Download,
   Edit,
+  InfoFilled,
   MoreFilled,
   Refresh,
   Search,
@@ -93,13 +96,15 @@ function retryText(t: TaskOut) {
 function startTimer() {
   stopTimer()
   timer = window.setInterval(() => {
-    // 搜索中，或退避重试已到点：刷新任务状态
+    // 搜索中，或退避重试已到点：刷新任务状态。有任务运行时以 2.5 秒频率高效轮询
     if (tasks.value.some((t) => t.running || retryDue(t))) loadTasks(true)
-  }, 5000)
+  }, 2500)
 }
 function stopTimer() {
   if (timer) window.clearInterval(timer)
   timer = undefined
+  if (progressTimer) window.clearInterval(progressTimer)
+  progressTimer = undefined
 }
 
 const statusLabel: Record<string, { label: string; type: 'success' | 'danger' | 'warning' }> = {
@@ -111,10 +116,105 @@ const statusLabel: Record<string, { label: string; type: 'success' | 'danger' | 
 function selectTask(id: number | undefined) {
   if (filters.task_id === id) return
   filters.task_id = id
+  runningStartTime.value = null
+  taskProgress.value = currentTask.value?.running ? 30 : 0
+  progressStageIndex.value = currentTask.value?.running ? 2 : 1
   load(1)
 }
 
 const currentTask = computed(() => tasks.value.find((t) => t.id === filters.task_id) || null)
+
+// ================================================================ 智能搜索运行进度与阶段推演
+const runningStartTime = ref<number | null>(null)
+const taskProgress = ref(0)
+const progressStageIndex = ref(1)
+let progressTimer: number | undefined
+
+const searchSteps = [
+  { key: 'fetch', label: '检索抓取商品' },
+  { key: 'filter', label: '卖家与成色初筛' },
+  { key: 'eval', label: 'AI 核验与性价比' },
+  { key: 'summary', label: '收录精选好货' },
+]
+
+const progressStageText = computed(() => {
+  if (taskProgress.value < 28) return '正在连接闲鱼，检索匹配商品…'
+  if (taskProgress.value < 58) return '已抓取商品，正在初筛成色、价格与卖家信用…'
+  if (taskProgress.value < 86) return 'AI 大模型多维核验与性价比评估中…'
+  return '正在收录好货并整理筛选结果，即将呈现…'
+})
+
+function updateProgress() {
+  if (!currentTask.value?.running) {
+    if (runningStartTime.value) {
+      taskProgress.value = 100
+      progressStageIndex.value = 4
+      setTimeout(() => {
+        runningStartTime.value = null
+        taskProgress.value = 0
+        progressStageIndex.value = 1
+      }, 500)
+    }
+    return
+  }
+
+  if (!runningStartTime.value) {
+    runningStartTime.value = Date.now() - 1500
+    taskProgress.value = 15
+    progressStageIndex.value = 1
+  }
+
+  const elapsedSec = (Date.now() - runningStartTime.value) / 1000
+
+  let target = 15
+  if (elapsedSec < 3) {
+    target = 15 + (elapsedSec / 3) * 15
+    progressStageIndex.value = 1
+  } else if (elapsedSec < 8) {
+    target = 30 + ((elapsedSec - 3) / 5) * 30
+    progressStageIndex.value = 2
+  } else if (elapsedSec < 16) {
+    target = 60 + ((elapsedSec - 8) / 8) * 26
+    progressStageIndex.value = 3
+  } else {
+    target = Math.min(96, 86 + (elapsedSec - 16) * 0.7)
+    progressStageIndex.value = 4
+  }
+
+  taskProgress.value = Math.min(96, Math.max(taskProgress.value, Math.round(target)))
+}
+
+watch(
+  () => currentTask.value?.running,
+  (isRunning) => {
+    if (isRunning) {
+      if (!runningStartTime.value) {
+        runningStartTime.value = Date.now()
+        taskProgress.value = 15
+        progressStageIndex.value = 1
+      }
+      if (!progressTimer) {
+        progressTimer = window.setInterval(updateProgress, 250)
+      }
+    } else {
+      if (runningStartTime.value) {
+        taskProgress.value = 100
+        progressStageIndex.value = 4
+        setTimeout(() => {
+          runningStartTime.value = null
+          taskProgress.value = 0
+          progressStageIndex.value = 1
+          if (progressTimer) {
+            clearInterval(progressTimer)
+            progressTimer = undefined
+          }
+        }, 500)
+      }
+    }
+  },
+  { immediate: true },
+)
+
 const totalRecommend = computed(() => tasks.value.reduce((n, t) => n + (t.result_counts.recommend || 0), 0))
 
 function cronText(t: TaskOut) {
@@ -145,6 +245,13 @@ async function run(t: TaskOut) {
     await runTask(t.id)
     ElMessage.success(`「${t.name}」开始搜索，结果会陆续出现在右侧`)
     selectTask(t.id)
+    t.running = true
+    runningStartTime.value = Date.now()
+    taskProgress.value = 15
+    progressStageIndex.value = 1
+    if (!progressTimer) {
+      progressTimer = window.setInterval(updateProgress, 250)
+    }
     await loadTasks(true)
   } catch {
     /* 拦截器已提示 */
@@ -552,7 +659,7 @@ onBeforeUnmount(stopTimer)
           v-for="t in tasks"
           :key="t.id"
           class="task"
-          :class="{ active: filters.task_id === t.id }"
+          :class="{ active: filters.task_id === t.id, 'is-running': t.running }"
           role="button"
           tabindex="0"
           @click="selectTask(t.id)"
@@ -589,6 +696,7 @@ onBeforeUnmount(stopTimer)
               </template>
             </el-dropdown>
           </div>
+          <div v-if="t.running" class="task-running-bar" />
         </div>
       </aside>
 
@@ -618,16 +726,89 @@ onBeforeUnmount(stopTimer)
           <el-input v-model="filters.q" placeholder="标题关键词" clearable class="f-q" :prefix-icon="Search" @keyup.enter="load()" @clear="load()" />
         </div>
 
+        <!-- 任务后台运行且当前已有结果时：浮动轻量进度条条带 -->
+        <div v-if="currentTask?.running && results.length" class="searching-ribbon">
+          <div class="ribbon-left">
+            <span class="ribbon-pulse-dot" />
+            <span class="ribbon-title">智能搜索进行中</span>
+            <span class="ribbon-stage">{{ progressStageText }}</span>
+          </div>
+          <div class="ribbon-right">
+            <div class="ribbon-bar">
+              <el-progress :percentage="taskProgress" :stroke-width="6" :show-text="false" color="#10b981" />
+            </div>
+            <span class="ribbon-pct mono">{{ taskProgress }}%</span>
+          </div>
+        </div>
+
         <div v-loading="loading" class="grid">
-          <div v-if="!loading && !results.length" class="empty-state-wrap">
+          <!-- 智能搜索正在运行且暂无结果时：专属雷达扫描动态进度卡片 -->
+          <div v-if="!loading && !results.length && currentTask?.running" class="search-progress-box">
+            <div class="radar-pulse-anim">
+              <div class="pulse-ring ring-1" />
+              <div class="pulse-ring ring-2" />
+              <div class="pulse-ring ring-3" />
+              <div class="pulse-core">
+                <el-icon class="pulse-icon"><Aim /></el-icon>
+              </div>
+            </div>
+
+            <h3 class="progress-title">正在智能搜索「{{ currentTask.name }}」</h3>
+            <p class="progress-sub">{{ progressStageText }}</p>
+
+            <div class="progress-track-wrap">
+              <el-progress
+                :percentage="taskProgress"
+                :stroke-width="8"
+                color="#10b981"
+                :show-text="false"
+                class="main-progress-bar"
+              />
+              <div class="progress-track-info">
+                <span class="track-stage-tag">第 {{ progressStageIndex }} / 4 阶段</span>
+                <span class="track-percent mono">{{ taskProgress }}%</span>
+              </div>
+            </div>
+
+            <div class="search-steps-flow">
+              <div
+                v-for="(st, idx) in searchSteps"
+                :key="st.key"
+                class="step-flow-item"
+                :class="{
+                  active: progressStageIndex === idx + 1,
+                  done: progressStageIndex > idx + 1,
+                }"
+              >
+                <div class="step-flow-circle">
+                  <el-icon v-if="progressStageIndex > idx + 1"><Check /></el-icon>
+                  <span v-else>{{ idx + 1 }}</span>
+                </div>
+                <span class="step-flow-name">{{ st.label }}</span>
+              </div>
+            </div>
+
+            <div class="progress-bottom-meta">
+              <div class="progress-hint">
+                <el-icon><InfoFilled /></el-icon>
+                <span>后台全自动检索与多维评估，稍候精选好货将呈现在此；您也可随时切换其他页面</span>
+              </div>
+              <div class="progress-btns">
+                <el-button @click="router.push('/radar/search')">先去实时搜货看看</el-button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 暂无结果且未在搜索运行时：通用空状态 -->
+          <div v-else-if="!loading && !results.length" class="empty-state-wrap">
             <el-empty
               class="empty"
               :image-size="80"
-              :description="tasks.length ? (currentTask?.running ? '正在搜索中…' : '暂无符合条件的商品') : '暂无搜索结果'"
+              :description="tasks.length ? '暂无符合筛选条件的商品' : '暂无搜索结果'"
             >
               <template #description>
                 <div class="empty-desc-box">
-                  <p class="empty-main-text">{{ tasks.length ? (currentTask?.running ? '正在搜索中，稍候出结果…' : '暂无符合筛选条件的商品') : '输入关键词，开始你的第一个智能搜索' }}</p>
+                  <p class="empty-main-text">{{ tasks.length ? '暂无符合筛选条件的商品' : '输入关键词，开始你的第一个智能搜索' }}</p>
                   <p v-if="currentTask?.paused_reason" class="empty-paused-hint">
                     <el-icon><WarningFilled /></el-icon>
                     <span>当前任务已暂停：{{ currentTask.paused_reason }}</span>
@@ -823,6 +1004,8 @@ onBeforeUnmount(stopTimer)
   color: var(--xh-muted);
 }
 .task {
+  position: relative;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -835,6 +1018,36 @@ onBeforeUnmount(stopTimer)
   cursor: pointer;
   outline: none;
   transition: border-color 0.15s;
+}
+.task-running-bar {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  right: 0;
+  height: 2.5px;
+  background: rgba(16, 185, 129, 0.15);
+  overflow: hidden;
+}
+.task-running-bar::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 40%;
+  background: var(--xh-primary);
+  border-radius: 9999px;
+  animation: task-runner 1.4s ease-in-out infinite alternate;
+}
+@keyframes task-runner {
+  0% {
+    left: 0%;
+    width: 30%;
+  }
+  100% {
+    left: 70%;
+    width: 30%;
+  }
 }
 .task:hover {
   background: var(--xh-fill-strong);
@@ -970,6 +1183,283 @@ onBeforeUnmount(stopTimer)
   gap: var(--xh-space-4);
   min-height: 160px;
 }
+/* 顶部搜索轻量进度条条带 */
+.searching-ribbon {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 14px;
+  background: var(--xh-primary-soft);
+  border: 1px solid var(--xh-primary-border);
+  border-radius: var(--xh-radius-md);
+  margin-bottom: var(--xh-space-2);
+  animation: fadeIn 0.25s ease;
+}
+.ribbon-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.ribbon-pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--xh-primary);
+  box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+  animation: pulse-ring 1.8s cubic-bezier(0.45, 0, 0.2, 1) infinite;
+  flex-shrink: 0;
+}
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 7px rgba(16, 185, 129, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+  }
+}
+.ribbon-title {
+  font-weight: 600;
+  font-size: 13px;
+  color: #065f46;
+  white-space: nowrap;
+}
+.ribbon-stage {
+  font-size: 12px;
+  color: #047857;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ribbon-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 200px;
+  flex-shrink: 0;
+}
+.ribbon-bar {
+  flex: 1;
+}
+.ribbon-pct {
+  font-size: 12px;
+  font-weight: 600;
+  color: #047857;
+}
+
+/* 智能搜索运行专属卡片（无结果时的核心扫描进度台） */
+.search-progress-box {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 44px 24px;
+  background: var(--xh-card);
+  border: 1px solid var(--xh-border);
+  border-radius: var(--xh-radius-lg);
+  box-shadow: var(--xh-shadow-1);
+  margin: 12px auto 24px;
+  max-width: 680px;
+  width: 100%;
+}
+
+/* 雷达动态扫描波环 */
+.radar-pulse-anim {
+  position: relative;
+  width: 88px;
+  height: 88px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 20px;
+}
+.pulse-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1.5px solid rgba(16, 185, 129, 0.35);
+  animation: radar-expand 2.4s cubic-bezier(0.1, 0.8, 0.3, 1) infinite;
+}
+.ring-1 {
+  animation-delay: 0s;
+}
+.ring-2 {
+  animation-delay: 0.8s;
+}
+.ring-3 {
+  animation-delay: 1.6s;
+}
+@keyframes radar-expand {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+.pulse-core {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35);
+  z-index: 2;
+}
+.pulse-icon {
+  font-size: 26px;
+  color: #fff;
+  animation: pulse-icon-turn 4s linear infinite;
+}
+@keyframes pulse-icon-turn {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.progress-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--xh-text);
+  margin: 0 0 6px;
+  letter-spacing: -0.01em;
+}
+.progress-sub {
+  font-size: 13.5px;
+  color: var(--xh-muted);
+  margin: 0 0 24px;
+  min-height: 20px;
+}
+
+/* 进度条轨道容器 */
+.progress-track-wrap {
+  width: 100%;
+  max-width: 480px;
+  margin-bottom: 28px;
+}
+.main-progress-bar :deep(.el-progress-bar__outer) {
+  background-color: #e2e8f0;
+  border-radius: 9999px;
+  overflow: hidden;
+}
+.main-progress-bar :deep(.el-progress-bar__inner) {
+  border-radius: 9999px;
+  background: linear-gradient(90deg, #10b981 0%, #34d399 50%, #10b981 100%);
+  background-size: 200% 100%;
+  animation: prog-gradient-slide 2s linear infinite;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+@keyframes prog-gradient-slide {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+.progress-track-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 8px;
+  font-size: 12px;
+}
+.track-stage-tag {
+  color: var(--xh-primary);
+  background: var(--xh-primary-soft);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+.track-percent {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--xh-text);
+}
+
+/* 步骤流式指示器 */
+.search-steps-flow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  width: 100%;
+  max-width: 520px;
+  margin-bottom: 28px;
+  padding: 10px 14px;
+  background: var(--xh-fill);
+  border-radius: var(--xh-radius-md);
+}
+.step-flow-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--xh-muted);
+  font-size: 12px;
+  transition: all 0.2s ease;
+}
+.step-flow-circle {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--xh-border);
+  color: var(--xh-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+.step-flow-item.active {
+  color: var(--xh-primary);
+  font-weight: 600;
+}
+.step-flow-item.active .step-flow-circle {
+  background: var(--xh-primary);
+  color: #fff;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+}
+.step-flow-item.done {
+  color: var(--xh-text-2);
+}
+.step-flow-item.done .step-flow-circle {
+  background: #10b981;
+  color: #fff;
+}
+
+/* 底部操作与提示 */
+.progress-bottom-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+.progress-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--xh-muted);
+  font-size: 12px;
+}
+.progress-btns {
+  display: flex;
+  gap: 10px;
+}
+
 .empty-state-wrap {
   grid-column: 1 / -1;
   background: var(--xh-card);
