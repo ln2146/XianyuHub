@@ -106,6 +106,7 @@ export interface DraftIn {
   location: ItemLocation | null
   scheduled_at: string | null
   confirmed_facts: string[]
+  delivery_setup: { pool_id: number; auto_relist: boolean } | null
 }
 
 export interface DraftOut extends DraftIn {
@@ -116,7 +117,24 @@ export interface DraftOut extends DraftIn {
   created_at: string
   /** AI 生成草稿时的附加信息；手动创建的草稿为 null */
   ai_meta: AiMeta | null
+  delivery_setup: DeliverySetup | null
 }
+
+export interface DeliverySetup {
+  pool_id: number
+  auto_relist: boolean
+  status: 'pending' | 'linked' | 'error'
+  error: string | null
+}
+
+export interface PublishOutcome {
+  item_id: string
+  published_at: string
+  delivery_setup: DeliverySetup | null
+}
+
+export const retryDeliverySetup = (id: number) => http.post<{ delivery_setup: DeliverySetup }>(`/goods/drafts/${id}/delivery/retry`).then((r) => r.data)
+export const confirmUnpublished = (id: number) => http.post<DraftOut>(`/goods/drafts/${id}/confirm-unpublished`).then((r) => r.data)
 
 export type PriceStrategy = 'quick' | 'market' | 'premium'
 
@@ -198,5 +216,5 @@ export const updateDraft = (id: number, body: DraftIn) =>
 export const deleteDraft = (id: number) => http.delete(`/goods/drafts/${id}`)
 export const publishDraft = (id: number) =>
   http
-    .post<{ item_id: string; published_at: string }>(`/goods/drafts/${id}/publish`, null, { timeout: 120_000 })
+    .post<PublishOutcome>(`/goods/drafts/${id}/publish`, null, { timeout: 120_000 })
     .then((r) => r.data)

@@ -99,6 +99,7 @@ export const draftStatusMap: Record<string, { label: string; type: TagType }> = 
   publishing: { label: '发布中', type: 'warning' },
   published: { label: '已发布', type: 'success' },
   failed: { label: '失败', type: 'danger' },
+  unknown: { label: '发布结果未知', type: 'warning' },
 }
 
 /** 消息来源：标签 + 气泡配色 */

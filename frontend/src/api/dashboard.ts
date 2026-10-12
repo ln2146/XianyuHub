@@ -48,4 +48,4 @@ export interface Dashboard {
   }
 }
 
-export const getDashboard = () => http.get<Dashboard>('/dashboard').then((r) => r.data)
+export const getDashboard = () => http.get<Dashboard>('/dashboard', { silent: true }).then((r) => r.data)

@@ -10,6 +10,7 @@ from pathlib import Path
 from loguru import logger
 from pydantic import BaseModel
 from sqlalchemy import func, select, update
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import get_settings
 from app.core.db import session_factory
@@ -17,6 +18,7 @@ from app.core.events import Topics, bus
 from app.core.uploads import sniff_image
 from app.domains.account.models import XyAccount
 from app.domains.goods.models import DraftStatus, ItemStatus, MyItem, PublishDraftRecord
+from app.domains.order.models import CardBinding, CardPool
 from app.domains.system.audit import record_audit
 from app.goofish.dto import SearchQuery
 from app.goofish.errors import GoofishError, NetworkError, RiskBlockedError, RiskControlError
@@ -248,7 +250,7 @@ async def publish_draft(draft_id: int, user_id: int | None = None) -> str:
             update(PublishDraftRecord)
             .where(
                 PublishDraftRecord.id == draft_id,
-                PublishDraftRecord.status.not_in([DraftStatus.PUBLISHING, DraftStatus.PUBLISHED]),
+                PublishDraftRecord.status.not_in([DraftStatus.PUBLISHING, DraftStatus.PUBLISHED, DraftStatus.UNKNOWN]),
             )
             .values(status=DraftStatus.PUBLISHING)
         )
@@ -257,6 +259,8 @@ async def publish_draft(draft_id: int, user_id: int | None = None) -> str:
         if d is None:
             raise ValueError("草稿不存在")
         if claimed.rowcount != 1:
+            if d.status == DraftStatus.UNKNOWN:
+                raise ValueError(UNCERTAIN_PUBLISH_HINT)
             raise ValueError("草稿已发布或正在发布")
         try:
             validate_publish_draft(d)
@@ -324,7 +328,7 @@ async def publish_draft(draft_id: int, user_id: int | None = None) -> str:
         async with session_factory()() as s:
             d = await s.get(PublishDraftRecord, draft_id)
             if d:
-                d.status, d.error = DraftStatus.FAILED, error
+                d.status, d.error = DraftStatus.UNKNOWN if uncertain else DraftStatus.FAILED, error
                 await s.commit()
         await record_audit(
             "goods.publish",
@@ -369,7 +373,57 @@ async def publish_draft(draft_id: int, user_id: int | None = None) -> str:
         detail={"draft_id": draft_id, "title": snapshot["title"]},
     )
     await bus.publish(Topics.ITEM_PUBLISHED, {"account_id": account_id, "item_id": item_id})
+    await setup_draft_delivery(draft_id)
     return item_id
+
+
+async def setup_draft_delivery(draft_id: int) -> dict | None:
+    """仅修复本地发货关联，绝不再次请求闲鱼发布；结果持久化供刷新和定时发布查看。"""
+    try:
+        async with session_factory()() as session:
+            # 先取得数据库写锁，串行处理重复点击，SQLite 与 PostgreSQL 均避免重复关联。
+            await session.execute(update(PublishDraftRecord).where(PublishDraftRecord.id == draft_id).values(updated_at=datetime.now(UTC)))
+            draft = await session.get(PublishDraftRecord, draft_id)
+            if draft is None:
+                raise ValueError("草稿不存在")
+            if not draft.delivery_setup:
+                return None
+            if draft.status != DraftStatus.PUBLISHED or not draft.item_id:
+                raise ValueError("商品尚未确认发布成功，不能关联发货")
+            if not await _creator_can_use(session, draft):
+                raise ValueError("草稿创建者已无权使用该闲鱼账号")
+            setup = draft.delivery_setup
+            pool = await session.get(CardPool, setup["pool_id"])
+            if pool is None or pool.owner_id != draft.created_by:
+                raise ValueError("发货内容已删除或创建者无权使用，请在商品管理中重新关联")
+            if not pool.enabled:
+                raise ValueError("发货内容已停用，请先在自动发货页面启用后重试关联")
+            existing = (await session.execute(select(CardBinding).where(
+                CardBinding.owner_id == draft.created_by,
+                CardBinding.account_id == draft.account_id,
+                CardBinding.item_id == draft.item_id,
+                CardBinding.spec_value.is_(None),
+            ))).scalars().all()
+            if existing and any(binding.pool_id != pool.id for binding in existing):
+                raise ValueError("商品已关联其他发货内容，请到商品管理核对，未覆盖原关联")
+            if not existing:
+                session.add(CardBinding(
+                    owner_id=draft.created_by, pool_id=pool.id, account_id=draft.account_id,
+                    item_id=draft.item_id, template="您购买的内容如下：\n{content}\n祝您使用愉快！",
+                    delay_seconds=0, max_per_buyer=1, auto_relist=setup["auto_relist"],
+                ))
+            draft.delivery_setup = {**setup, "status": "linked", "error": None}
+            await session.commit()
+            return draft.delivery_setup
+    except (ValueError, SQLAlchemyError) as error:
+        logger.warning("发货关联失败 draft={} err={}", draft_id, error)
+        async with session_factory()() as session:
+            draft = await session.get(PublishDraftRecord, draft_id)
+            if draft is None or not draft.delivery_setup:
+                raise
+            draft.delivery_setup = {**draft.delivery_setup, "status": "error", "error": str(error)}
+            await session.commit()
+            return draft.delivery_setup
 
 
 async def _creator_can_use(s, d: PublishDraftRecord) -> bool:  # noqa: ANN001
@@ -399,7 +453,7 @@ async def publish_due_drafts() -> None:
             )
         ).scalars()
         for d in stale:
-            d.status, d.error = DraftStatus.FAILED, "发布超时（服务重启或闲鱼未响应）"
+            d.status, d.error = DraftStatus.UNKNOWN, UNCERTAIN_PUBLISH_HINT
         await s.commit()
 
         due = [

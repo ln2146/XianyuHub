@@ -82,4 +82,10 @@ async def test_publish_with_unknown_outcome_tells_seller_to_check_first(admin_cl
     assert r.status_code >= 400
     async with session_factory()() as s:
         d = await s.get(PublishDraftRecord, draft_id)
-        assert d.status == "failed" and "可能已经上架" in d.error and "核对" in d.error
+        assert d.status == "unknown" and "可能已经上架" in d.error and "核对" in d.error
+    before = respx.calls.call_count
+    repeated = await admin_client.post(f"/api/v1/goods/drafts/{draft_id}/publish")
+    assert repeated.status_code == 409 and "核对" in repeated.json()["detail"]
+    assert respx.calls.call_count == before
+    resolved = await admin_client.post(f"/api/v1/goods/drafts/{draft_id}/confirm-unpublished")
+    assert resolved.status_code == 200 and resolved.json()["status"] == "draft"

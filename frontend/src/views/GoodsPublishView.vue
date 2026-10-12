@@ -6,12 +6,17 @@
  * 也可以切换为“手动填写”。
  */
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
+import { isAxiosError } from 'axios'
+import { errorMessage } from '@/api/http'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Check, EditPen, Loading, Location, MagicStick, Refresh, Warning } from '@element-plus/icons-vue'
 import {
   aiDraft,
   createDraft,
+  confirmUnpublished,
+  retryDeliverySetup,
+  type PublishOutcome,
   deleteDraft,
   getLocations,
   getPublishMeta,
@@ -36,11 +41,14 @@ import StatusTag from '@/components/StatusTag.vue'
 import { useAccountsStore } from '@/stores/accounts'
 import { useMobile } from '@/composables/useMobile'
 import { draftStatusMap, fmtMoney, fmtTime, itemUrl, parseDate } from '@/utils/format'
-import { createBinding, listPools, type PoolOut } from '@/api/order'
+import { listPools, type PoolOut } from '@/api/order'
 
 const accounts = useAccountsStore()
 const isMobile = useMobile()
 const route = useRoute()
+const router = useRouter()
+const publishOutcome = ref<(PublishOutcome & { draft_id: number }) | null>(null)
+const publishFailure = ref<{ unknown: boolean; message: string } | null>(null)
 
 // ---------------------------------------------------------------- 状态
 type Mode = 'ai' | 'review' | 'manual'
@@ -163,6 +171,8 @@ function fillFromDraft(d: DraftOut) {
     is_virtual: d.is_virtual,
     location: d.location,
     scheduled_at: d.scheduled_at ? parseDate(d.scheduled_at) : null,
+    delivery_pool_id: d.delivery_setup?.pool_id ?? null,
+    delivery_relist: d.delivery_setup?.auto_relist ?? false,
   })
   editingId.value = d.id
   aiMeta.value = d.ai_meta
@@ -249,6 +259,7 @@ function toBody(): DraftIn | null {
     location: form.location,
     scheduled_at: form.scheduled_at ? form.scheduled_at.toISOString() : null,
     confirmed_facts: uncertain.value.filter((_, i) => confirmed[i]),
+    delivery_setup: form.delivery_pool_id ? { pool_id: form.delivery_pool_id, auto_relist: form.delivery_relist } : null,
   }
 }
 
@@ -336,7 +347,7 @@ async function confirmAndPublish() {
   publishing.value = true
   try {
     const d = await persist(body)
-    if (await doPublish(d.id, body.account_id, form.delivery_pool_id, form.delivery_relist)) resetAll()
+    if (await doPublish(d.id)) resetAll()
   } catch {
     /* 拦截器已提示；草稿已保存，可稍后在右侧列表重试 */
   } finally {
@@ -358,41 +369,57 @@ const verify = reactive({
 })
 
 /** 发布草稿；成功返回 true。需要身份认证时打开认证弹窗并返回 false，其他错误由拦截器提示 */
-async function doPublish(draftId: number, accountId: number, poolId: number | null, relist = false): Promise<boolean> {
+async function doPublish(draftId: number): Promise<boolean> {
+  publishOutcome.value = null
+  publishFailure.value = null
   try {
-    const r = await publishDraft(draftId)
-    ElMessage.success(`发布成功，商品 ID ${r.item_id}`)
-    if (poolId && r.item_id) {
-      try {
-        await createBinding({
-          pool_id: poolId,
-          account_id: accountId,
-          item_id: r.item_id,
-          spec_value: null,
-          template: '您购买的内容如下：\n{content}\n祝您使用愉快！',
-          delay_seconds: 0,
-          max_per_buyer: 1,
-          auto_relist: relist,
-        })
-        ElMessage.success('已自动关联发货内容')
-      } catch {
-        /* 仅辅助绑定，失败可在商品管理中补绑 */
-      }
+    const result = await publishDraft(draftId)
+    publishOutcome.value = { ...result, draft_id: draftId }
+    if (result.delivery_setup?.status === 'error') {
+      ElMessage.warning('商品已发布，但发货内容关联失败，请修复关联')
+    } else {
+      ElMessage.success('商品已发布，结果已保存在发布记录中')
     }
     return true
-  } catch (e: unknown) {
-    const resp = (e as { response?: { status?: number; headers?: Record<string, string> } }).response
+  } catch (error) {
+    const resp = isAxiosError(error) ? error.response : undefined
     if (resp?.status === 428) {
-      Object.assign(verify, { open: true, url: resp.headers?.['x-verify-url'] || '', draftId, accountId, poolId, relist })
+      Object.assign(verify, { open: true, url: resp.headers?.['x-verify-url'] || '', draftId })
+    } else {
+      const message = errorMessage(error)
+      publishFailure.value = { unknown: !resp || message.includes('可能已经上架'), message }
     }
     return false
   }
 }
 
+async function repairDelivery(id: number) {
+  busy[`delivery-${id}`] = true
+  try {
+    const { delivery_setup } = await retryDeliverySetup(id)
+    if (publishOutcome.value?.draft_id === id) publishOutcome.value.delivery_setup = delivery_setup
+    if (delivery_setup.status === 'linked') ElMessage.success('发货内容已关联，请确认账号开关和库存')
+    else ElMessage.error(delivery_setup.error || '关联未完成，请在商品管理中核对')
+    await loadDrafts()
+  } catch (error) {
+    ElMessage.error(`修复结果未确认：${errorMessage(error)}。请刷新发布记录后核对`)
+  } finally {
+    busy[`delivery-${id}`] = false
+  }
+}
+
+async function resolveUnknown(draft: DraftOut) {
+  await ElMessageBox.confirm('请先在闲鱼 App「我发布的」核对，确认该商品没有上架。恢复草稿不会立即发布，之后由你手动重试。', '确认未发布', { type: 'warning', confirmButtonText: '我已核对，确实未上架' })
+  await confirmUnpublished(draft.id)
+  publishFailure.value = null
+  await loadDrafts()
+  ElMessage.success('已恢复为草稿，可以核对后重新发布')
+}
+
 async function retryAfterVerify() {
   verify.retrying = true
   try {
-    const ok = await doPublish(verify.draftId, verify.accountId, verify.poolId, verify.relist)
+    const ok = await doPublish(verify.draftId)
     if (ok) {
       verify.open = false
       if (editingId.value === verify.draftId) resetAll()
@@ -445,7 +472,7 @@ async function publishFromList(d: DraftOut) {
   })
   busy[`pub-${d.id}`] = true
   try {
-    await doPublish(d.id, d.account_id, null)
+    await doPublish(d.id)
   } finally {
     busy[`pub-${d.id}`] = false
     await loadDrafts()
@@ -460,7 +487,7 @@ async function removeDraft(d: DraftOut) {
   await loadDrafts()
 }
 
-const canEdit = (d: DraftOut) => d.status !== 'published' && d.status !== 'publishing'
+const canEdit = (d: DraftOut) => !['published', 'publishing', 'unknown'].includes(d.status)
 const titleLen = computed(() => form.title.length)
 
 type DraftFilter = 'all' | 'pending' | 'published'
@@ -537,6 +564,18 @@ onBeforeUnmount(() => window.clearInterval(timer))
       </div>
     </div>
 
+    <el-alert v-if="publishOutcome" :type="publishOutcome.delivery_setup?.status === 'error' ? 'warning' : 'success'" :closable="false" show-icon title="商品已发布">
+      <div>商品 ID：{{ publishOutcome.item_id }}</div>
+      <div v-if="publishOutcome.delivery_setup">{{ publishOutcome.delivery_setup.status === 'linked' ? '发货内容已关联；请确认账号自动发货开关和库存。' : `发货内容未关联：${publishOutcome.delivery_setup.error || '尚未完成'}` }}</div>
+      <el-link :href="itemUrl(publishOutcome.item_id)" target="_blank" type="primary">查看已发布商品</el-link>
+      <el-button v-if="publishOutcome.delivery_setup?.status !== 'linked' && publishOutcome.delivery_setup" link type="primary" :loading="busy[`delivery-${publishOutcome.draft_id}`]" @click="repairDelivery(publishOutcome.draft_id)">重试发货关联</el-button>
+      <el-button v-if="publishOutcome.delivery_setup" link type="primary" @click="router.push('/orders/cards')">检查发货配置</el-button>
+    </el-alert>
+    <el-alert v-if="publishFailure" :title="publishFailure.unknown ? '发布结果未知，请先核对闲鱼' : '发布未完成'" :type="publishFailure.unknown ? 'warning' : 'error'" :closable="false" show-icon>
+      {{ publishFailure.message }}
+      <div v-if="publishFailure.unknown">请先在闲鱼 App「我发布的」核对，避免重复上架；确认没有上架后，在发布记录中恢复草稿。</div>
+      <el-button link type="primary" @click="loadDrafts">刷新发布记录</el-button>
+    </el-alert>
     <el-row :gutter="12" class="publish-row">
       <el-col :xs="24" :lg="14" class="publish-left-col">
         <!-- 第一步：上传图片，AI 生成 -->
@@ -781,7 +820,7 @@ onBeforeUnmount(() => window.clearInterval(timer))
             </el-collapse>
 
             <el-form-item class="publish-form-actions">
-              <el-button type="primary" :loading="publishing" :disabled="gen.loading || unconfirmedCount > 0" @click="confirmAndPublish">
+              <el-button type="primary" :loading="publishing" :disabled="gen.loading || unconfirmedCount > 0 || !!publishFailure?.unknown" @click="confirmAndPublish">
                 {{ form.scheduled_at ? '确认并定时发布' : '确认并发布' }}
               </el-button>
               <el-button :loading="saving" :disabled="gen.loading" @click="saveDraft">保存草稿</el-button>
@@ -832,14 +871,19 @@ onBeforeUnmount(() => window.clearInterval(timer))
                     <span v-if="d.status === 'scheduled'" class="muted">· {{ fmtTime(d.scheduled_at) }}</span>
                     <span v-if="d.ai_meta?.uncertain?.length && canEdit(d)" class="pending">· {{ d.ai_meta.uncertain.length }} 项待确认</span>
                   </div>
+                  <div v-if="d.status === 'published' && d.delivery_setup" class="small" :class="d.delivery_setup.status === 'linked' ? 'muted' : 'err'">
+                    {{ d.delivery_setup.status === 'linked' ? '发货内容已关联' : `商品已发布，发货关联未完成：${d.delivery_setup.error || '待关联'}` }}
+                  </div>
                   <el-tooltip v-if="d.error" :content="d.error">
                     <div class="small err ellipsis">{{ d.error }}</div>
                   </el-tooltip>
                   <div class="d-ops">
                     <el-button v-if="canEdit(d)" size="small" type="primary" @click="openDraft(d)">{{ d.ai_meta ? '核对' : '编辑' }}</el-button>
                     <el-button v-if="canEdit(d)" size="small" :loading="busy[`pub-${d.id}`]" @click="publishFromList(d)">直接发布</el-button>
+                    <el-button v-if="d.status === 'unknown'" size="small" type="warning" @click="resolveUnknown(d)">核对后恢复草稿</el-button>
+                    <el-button v-if="d.status === 'published' && d.delivery_setup && d.delivery_setup.status !== 'linked'" size="small" type="warning" :loading="busy[`delivery-${d.id}`]" @click="repairDelivery(d.id)">修复发货关联</el-button>
                     <el-link v-if="d.item_id" :href="itemUrl(d.item_id)" target="_blank" type="primary" class="small">查看商品</el-link>
-                    <el-button size="small" type="danger" link class="d-del" :disabled="d.status === 'publishing'" @click="removeDraft(d)">删除</el-button>
+                    <el-button size="small" type="danger" link class="d-del" :disabled="['publishing', 'unknown'].includes(d.status)" @click="removeDraft(d)">删除</el-button>
                   </div>
                 </div>
               </div>

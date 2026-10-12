@@ -6,7 +6,7 @@ import httpx
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, model_validator
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.core.deps import CurrentUser, SessionDep
 from app.core.uploads import read_limited, sniff_image
@@ -15,6 +15,7 @@ from app.domains.account.service import accessible_account_ids, get_account_for
 from app.domains.goods import service
 from app.domains.goods.ai_listing import Strategy, generate_listing
 from app.domains.goods.models import DraftStatus, MyItem, PublishDraftRecord
+from app.domains.order.models import CardPool
 from app.domains.system.audit import record_audit
 from app.goofish.errors import GoofishError, RiskBlockedError, VerificationRequiredError
 from app.goofish.publish import ItemLocation, ShippingMode
@@ -66,6 +67,11 @@ class ItemUpdate(BaseModel):
     is_virtual: bool | None = None
 
 
+class DeliverySetupIn(BaseModel):
+    pool_id: int = Field(gt=0)
+    auto_relist: bool = False
+
+
 class DraftIn(BaseModel):
     account_id: int
     title: str = Field(min_length=1, max_length=60)
@@ -83,6 +89,7 @@ class DraftIn(BaseModel):
     location: ItemLocation | None = None  # 宝贝所在地；为空时沿用账号上次使用的所在地
     scheduled_at: datetime | None = None
     confirmed_facts: list[str] = Field(default_factory=list)
+    delivery_setup: DeliverySetupIn | None = None
 
     @model_validator(mode="after")
     def _check(self) -> "DraftIn":
@@ -118,6 +125,7 @@ class DraftOut(BaseModel):
     created_at: datetime
     ai_meta: dict[str, Any] | None = None
     confirmed_facts: list[str] = Field(default_factory=list)
+    delivery_setup: dict[str, Any] | None = None
 
 
 class AiDraftIn(BaseModel):
@@ -389,7 +397,7 @@ async def ai_draft(body: AiDraftIn, user: CurrentUser, session: SessionDep) -> P
         draft = await session.get(PublishDraftRecord, body.draft_id)
         if draft is None or draft.account_id != body.account_id:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "草稿不存在")
-        if draft.status in (DraftStatus.PUBLISHING, DraftStatus.PUBLISHED):
+        if draft.status in (DraftStatus.PUBLISHING, DraftStatus.PUBLISHED, DraftStatus.UNKNOWN):
             raise HTTPException(status.HTTP_409_CONFLICT, "已发布的草稿不能重新生成")
     try:
         images = []
@@ -460,7 +468,11 @@ async def list_drafts(user: CurrentUser, session: SessionDep) -> list[PublishDra
 @router.post("/drafts", response_model=DraftOut, status_code=201)
 async def create_draft(body: DraftIn, user: CurrentUser, session: SessionDep) -> PublishDraftRecord:
     await get_account_for(session, user, body.account_id)
+    if body.delivery_setup:
+        await check_delivery_pool(session, user, body.delivery_setup.pool_id)
     d = PublishDraftRecord(**body.model_dump(), created_by=user.id)
+    if d.delivery_setup:
+        d.delivery_setup = {**d.delivery_setup, "status": "pending", "error": None}
     if body.confirmed_facts:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "手动草稿没有 AI 待核验事项")
     if body.scheduled_at:
@@ -482,13 +494,17 @@ async def update_draft(draft_id: int, body: DraftIn, user: CurrentUser, session:
     await get_account_for(session, user, d.account_id)
     if body.account_id != d.account_id:
         await get_account_for(session, user, body.account_id)  # 换发布账号：新账号也必须有权限
-    if d.status in (DraftStatus.PUBLISHING, DraftStatus.PUBLISHED):
+    if d.status in (DraftStatus.PUBLISHING, DraftStatus.PUBLISHED, DraftStatus.UNKNOWN):
         raise HTTPException(status.HTTP_409_CONFLICT, "已发布的草稿不能修改")
+    if body.delivery_setup:
+        await check_delivery_pool(session, user, body.delivery_setup.pool_id)
     required = (d.ai_meta or {}).get("uncertain", [])
     if any(fact not in required for fact in body.confirmed_facts):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "核验事项已变化，请重新打开草稿确认")
     for k, v in body.model_dump().items():
         setattr(d, k, v)
+    if d.delivery_setup:
+        d.delivery_setup = {**d.delivery_setup, "status": "pending", "error": None}
     if body.scheduled_at:
         try:
             service.validate_publish_draft(d)
@@ -530,5 +546,51 @@ async def publish(draft_id: int, user: CurrentUser, session: SessionDep) -> dict
             status.HTTP_428_PRECONDITION_REQUIRED, str(e), headers={"X-Verify-Url": e.verify_url}
         ) from e
     except GoofishError as e:
+        await session.refresh(d)
+        if d.status == DraftStatus.UNKNOWN:
+            raise HTTPException(status.HTTP_502_BAD_GATEWAY, service.UNCERTAIN_PUBLISH_HINT, headers={"X-Publish-Outcome": "unknown"}) from e
         raise goofish_http_error(e) from e
-    return {"item_id": item_id, "published_at": datetime.now(UTC)}
+    await session.refresh(d)
+    return {"item_id": item_id, "published_at": datetime.now(UTC), "delivery_setup": d.delivery_setup}
+
+
+async def check_delivery_pool(session: SessionDep, user: CurrentUser, pool_id: int) -> None:
+    pool = await session.get(CardPool, pool_id)
+    if pool is None or pool.owner_id != user.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "发货内容不存在或无权使用")
+
+
+@router.post("/drafts/{draft_id}/delivery/retry")
+async def retry_delivery_setup(draft_id: int, user: CurrentUser, session: SessionDep) -> dict[str, Any]:
+    draft = await session.get(PublishDraftRecord, draft_id)
+    if draft is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "草稿不存在")
+    await get_account_for(session, user, draft.account_id)
+    if draft.status != DraftStatus.PUBLISHED or not draft.delivery_setup:
+        raise HTTPException(status.HTTP_409_CONFLICT, "该草稿没有可修复的已发布发货关联")
+    # 操作绑定沿用创建者身份；账号授权不能代替访问他人卡密内容的权限。
+    if draft.created_by != user.id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "请由草稿创建者修复发货关联")
+    setup = await service.setup_draft_delivery(draft_id)
+    return {"delivery_setup": setup}
+
+
+@router.post("/drafts/{draft_id}/confirm-unpublished", response_model=DraftOut)
+async def confirm_unpublished(draft_id: int, user: CurrentUser, session: SessionDep) -> PublishDraftRecord:
+    draft = await session.get(PublishDraftRecord, draft_id)
+    if draft is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "草稿不存在")
+    await get_account_for(session, user, draft.account_id)
+    if draft.status != DraftStatus.UNKNOWN:
+        raise HTTPException(status.HTTP_409_CONFLICT, "只有发布结果未知的草稿需要人工核对")
+    changed = await session.execute(
+        update(PublishDraftRecord)
+        .where(PublishDraftRecord.id == draft_id, PublishDraftRecord.status == DraftStatus.UNKNOWN)
+        .values(status=DraftStatus.DRAFT, error=None, scheduled_at=None)
+    )
+    if changed.rowcount != 1:
+        raise HTTPException(status.HTTP_409_CONFLICT, "草稿状态已变化，请刷新后核对")
+    await session.commit()
+    await session.refresh(draft)
+    await record_audit("goods.confirm_unpublished", user_id=user.id, account_id=draft.account_id, target_type="draft", target_id=draft.id)
+    return draft

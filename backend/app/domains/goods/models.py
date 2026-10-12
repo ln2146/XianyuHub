@@ -62,6 +62,7 @@ class DraftStatus(StrEnum):
     PUBLISHING = "publishing"
     PUBLISHED = "published"
     FAILED = "failed"
+    UNKNOWN = "unknown"
 
 
 class PublishDraftRecord(IdMixin, TimestampMixin, Base):
@@ -91,3 +92,5 @@ class PublishDraftRecord(IdMixin, TimestampMixin, Base):
     ai_meta: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     # 卖家已核验的 AI 待确认事项；重新生成后清空。
     confirmed_facts: Mapped[list[str]] = mapped_column(JSON, default=list)
+    # 发布前选定的发货关联及其执行结果，失败后可单独修复而不重新发布。
+    delivery_setup: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)

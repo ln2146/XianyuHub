@@ -25,6 +25,7 @@ import {
 } from '@element-plus/icons-vue'
 import { getDashboard, type Dashboard, type DashboardAccount } from '@/api/dashboard'
 import { updateAccount } from '@/api/account'
+import { errorMessage } from '@/api/http'
 import { ElMessage } from 'element-plus'
 import StatusTag from '@/components/StatusTag.vue'
 import { NEEDS_ACTION_STATUSES, accountStatusMap, fmtMoney, fmtTime, parseDate } from '@/utils/format'
@@ -35,13 +36,22 @@ const realtime = useRealtimeStore()
 const prefs = usePrefsStore()
 const data = ref<Dashboard | null>(null)
 const loading = ref(false)
+const loadError = ref('')
+const lastUpdated = ref<Date | null>(null)
+const monitoring = computed(() => !!data.value && !loadError.value && realtime.connected && data.value.system.im_running)
+const monitoringText = computed(() => loadError.value ? '数据未更新' : !data.value ? '状态待确认' : !realtime.connected ? '实时推送断开' : !data.value.system.im_running ? '消息服务未运行' : '实时推送已连接')
 const activeTab = ref<'all' | 'accounts' | 'system'>('all')
 let timer: number | undefined
 
 async function load() {
+  if (loading.value) return
   loading.value = true
   try {
     data.value = await getDashboard()
+    loadError.value = ''
+    lastUpdated.value = new Date()
+  } catch (error) {
+    loadError.value = errorMessage(error)
   } finally {
     loading.value = false
   }
@@ -266,9 +276,9 @@ function fmtJobNextRun(v: string | null | undefined): string {
       <div class="header-left">
         <h2 class="page-title-text">
           总览工作台
-          <span class="live-pill">
-            <span class="live-pulse" />
-            实时监控中
+          <span class="live-pill" :class="{ 'is-unknown': !monitoring }">
+            <span v-if="monitoring" class="live-pulse" />
+            {{ monitoringText }}
           </span>
         </h2>
       </div>
@@ -276,7 +286,7 @@ function fmtJobNextRun(v: string | null | undefined): string {
       <div class="header-right">
         <!-- 待办订单报警胶囊 (高亮突出) -->
         <div
-          v-if="(data?.pending_manual_orders || 0) > 0"
+          v-if="data && (data.pending_manual_orders || 0) > 0"
           class="pending-alarm-pill active"
           @click="router.push({ path: '/orders/list', query: { status: NEEDS_ACTION_STATUSES } })"
         >
@@ -285,7 +295,7 @@ function fmtJobNextRun(v: string | null | undefined): string {
           <el-icon class="arrow-right"><Right /></el-icon>
         </div>
         <div
-          v-else
+          v-else-if="data && !loadError"
           class="pending-alarm-pill calm"
           @click="router.push('/orders/list')"
         >
@@ -299,6 +309,12 @@ function fmtJobNextRun(v: string | null | undefined): string {
       </div>
     </header>
 
+    <el-alert v-if="loadError" :type="data ? 'warning' : 'error'" :title="data ? '数据更新失败，以下为上次成功读取的历史快照' : '工作台数据读取失败，当前业务状态未知'" :closable="false" show-icon>
+      {{ loadError }}<span v-if="lastUpdated"> · 上次成功更新：{{ lastUpdated.toLocaleString('zh-CN') }}</span>
+      <el-button link type="primary" :loading="loading" @click="load">重新读取</el-button>
+    </el-alert>
+    <div v-if="lastUpdated && !loadError" class="muted small">数据更新于 {{ lastUpdated.toLocaleString('zh-CN') }}</div>
+    <template v-if="data">
     <!-- 核心指标卡片矩阵 (紧凑单行 6 列) -->
     <section class="kpi-section">
       <div
@@ -883,6 +899,10 @@ function fmtJobNextRun(v: string | null | undefined): string {
         </div>
       </div>
     </main>
+    </template>
+    <el-empty v-else-if="!loading && !loadError" description="尚未读取到工作台数据，当前状态待确认">
+      <el-button @click="load">读取数据</el-button>
+    </el-empty>
   </div>
 </template>
 
@@ -944,6 +964,11 @@ function fmtJobNextRun(v: string | null | undefined): string {
   font-weight: 500;
   padding: 1px 8px;
   border-radius: 999px;
+}
+.live-pill.is-unknown {
+  color: var(--xh-text-2);
+  background: var(--xh-fill);
+  border-color: var(--xh-border);
 }
 .live-pulse {
   width: 5px;
