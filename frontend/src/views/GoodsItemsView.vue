@@ -485,22 +485,22 @@ function listingHint(row: MyItem): { label: string; type: 'warning' | 'success';
                   <el-tag size="small" :type="listingHint(row as MyItem)!.type">{{ listingHint(row as MyItem)!.label }}</el-tag>
                 </el-tooltip>
               </div>
-              <span v-else class="muted small" title="每次同步补全最多 10 个商品的数据">待同步补全</span>
+              <span v-else class="muted small">-</span>
             </template>
           </el-table-column>
-          <el-table-column label="议价策略" min-width="150">
+          <el-table-column label="议价底价" min-width="130">
             <template #default="{ row }">
               <template v-if="row.floor_price !== null">
-                <div class="small">底价 {{ fmtMoney(row.floor_price) }} · 最多 {{ row.max_rounds }} 轮</div>
-                <div v-if="row.gifts" class="muted small ellipsis">赠品：{{ row.gifts }}</div>
+                <div class="small font-medium">{{ fmtMoney(row.floor_price) }} ({{ row.max_rounds }}轮)</div>
+                <div v-if="row.gifts" class="muted small ellipsis" :title="row.gifts">赠品: {{ row.gifts }}</div>
               </template>
-              <span v-else class="muted small">未设置底价（AI 不让价）</span>
+              <span v-else class="muted small">未设底价</span>
             </template>
           </el-table-column>
           <el-table-column label="知识库" width="90">
             <template #default="{ row }">
               <el-tag v-if="row.knowledge" size="small" type="success" effect="plain">{{ row.knowledge.length }} 字</el-tag>
-              <span v-else class="muted small">未填写</span>
+              <span v-else class="muted small">-</span>
             </template>
           </el-table-column>
           <el-table-column label="自动发货" min-width="130">
