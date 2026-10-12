@@ -91,6 +91,12 @@ export function errorMessage(err: unknown): string {
   return String(err)
 }
 
+/** 页面 catch 里提示错误：响应拦截器已经弹过提示的请求错误不再重复弹，其余（非请求错误、silent 请求）照常提示 */
+export function notifyError(err: unknown, fallback = '操作失败') {
+  if (axios.isAxiosError(err) && err.response?.status !== 428 && !err.config?.silent) return
+  ElMessage.error(errorMessage(err) || fallback)
+}
+
 /** 分页列表：items 为当前页，total 为总数（来自响应头 X-Total-Count） */
 export interface Paged<T> {
   items: T[]

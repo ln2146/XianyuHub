@@ -37,7 +37,7 @@ import {
   type TaskOut,
   type UserMark,
 } from '@/api/buyer'
-import { errorMessage } from '@/api/http'
+import { notifyError } from '@/api/http'
 import EChart from '@/components/EChart.vue'
 import ItemCard, { type CardItem, type CardMenuItem } from '@/components/ItemCard.vue'
 import ItemDrawer, { type DrawerItem } from '@/components/ItemDrawer.vue'
@@ -251,7 +251,7 @@ async function quickCreate() {
     selectTask(created.id)
     await run(created)
   } catch (err) {
-    ElMessage.error(errorMessage(err) || '创建搜索任务失败')
+    notifyError(err, '创建搜索任务失败')
   } finally {
     quickLoading.value = false
   }

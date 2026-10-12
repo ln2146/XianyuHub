@@ -13,6 +13,7 @@ import {
   type LiveSearchQuery,
   type SearchItem,
 } from '@/api/buyer'
+import { notifyError } from '@/api/http'
 import { useAccountsStore } from '@/stores/accounts'
 import { useKeepScroll } from '@/composables/useKeepScroll'
 import ItemCard, { type CardItem, type CardMenuItem } from '@/components/ItemCard.vue'
@@ -366,8 +367,7 @@ async function saveTask() {
     ElMessage.success('已保存为智能搜索，结果在「智能搜索」页查看')
     taskModal.open = false
   } catch (e: unknown) {
-    const err = e as { response?: { data?: { detail?: string } }; message?: string }
-    ElMessage.error(err.response?.data?.detail || '保存智能搜索失败')
+    notifyError(e, '保存智能搜索失败')
   } finally {
     taskModal.saving = false
   }

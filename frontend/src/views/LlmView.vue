@@ -29,7 +29,7 @@ import {
   type LlmStatus,
   type TierItem,
 } from '@/api/llm'
-import { errorMessage } from '@/api/http'
+import { notifyError } from '@/api/http'
 import { useAuthStore } from '@/stores/auth'
 import { useMobile } from '@/composables/useMobile'
 import { fmtTime } from '@/utils/format'
@@ -290,7 +290,7 @@ async function saveTiers() {
     ElMessage.success('场景模型配置已保存并生效')
     await load()
   } catch (e) {
-    ElMessage.error(errorMessage(e))
+    notifyError(e)
   } finally {
     tierSaving.value = false
   }
@@ -538,7 +538,7 @@ async function save() {
     edit.open = false
     await load()
   } catch (e) {
-    ElMessage.error(errorMessage(e))
+    notifyError(e)
   } finally {
     edit.saving = false
   }

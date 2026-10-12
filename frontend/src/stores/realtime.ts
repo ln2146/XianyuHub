@@ -40,20 +40,24 @@ export const useRealtimeStore = defineStore('realtime', () => {
 
   function connect() {
     stopped = false
+    window.clearTimeout(reconnectTimer)
     const token = getItem(TOKEN_KEY)
     if (!token || ws) return
     const proto = location.protocol === 'https:' ? 'wss' : 'ws'
     const sock = new WebSocket(`${proto}://${location.host}/api/v1/ws?token=${encodeURIComponent(token)}`)
     ws = sock
     sock.onopen = () => {
+      if (ws !== sock) return
       connected.value = true
       retry = 0
       refreshUnread()
+      window.clearInterval(heartbeat)
       heartbeat = window.setInterval(() => {
         if (sock.readyState === WebSocket.OPEN) sock.send('ping')
       }, 25_000)
     }
     sock.onmessage = (e) => {
+      if (ws !== sock) return
       try {
         const ev = JSON.parse(e.data as string) as RealtimeEvent
         if (ev.event === 'message') {
@@ -65,6 +69,8 @@ export const useRealtimeStore = defineStore('realtime', () => {
       }
     }
     sock.onclose = (e) => {
+      // 断开后马上重连时，旧 socket 的 close 事件可能晚到：只处理当前这条连接，否则会把新连接的状态清掉
+      if (ws !== sock) return
       connected.value = false
       window.clearInterval(heartbeat)
       ws = null
