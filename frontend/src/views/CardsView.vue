@@ -38,7 +38,7 @@ const isMobile = useMobile()
 const route = useRoute()
 const router = useRouter()
 const tab = ref('pools')
-const showGuide = ref(localStorage.getItem('xh_delivery_guide') !== 'collapsed')
+const showGuide = ref(localStorage.getItem('xh_delivery_guide') === 'expanded')
 
 function toggleGuide() {
   showGuide.value = !showGuide.value
@@ -632,7 +632,6 @@ const accountModal = reactive({
         <el-tab-pane label="发货内容库" name="pools">
           <div class="tab-bar">
             <el-button type="primary" :icon="Plus" @click="openPoolCreate">新建发货内容</el-button>
-            <span class="muted small">支持固定网盘文本、卡密库存（一单一张）、自有系统 API 接口三种发货方式</span>
           </div>
           <div class="table-wrap">
             <el-table v-loading="poolsLoading" :data="pools">
@@ -717,7 +716,6 @@ const accountModal = reactive({
         <el-tab-pane label="商品关联规则" name="bindings">
           <div class="tab-bar">
             <el-button type="primary" :icon="Plus" @click="openBindingCreate">关联闲鱼商品</el-button>
-            <span class="muted small">只有关联了发货内容的商品，买家付款后系统才会触发自动发货</span>
           </div>
           <div class="table-wrap">
             <el-table v-loading="bindingsLoading" :data="bindings">
