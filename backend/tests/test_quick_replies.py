@@ -29,3 +29,15 @@ def test_paid_order_acknowledges_payment_without_claiming_dispatch():
 def test_sold_item_does_not_offer_to_sell_again():
     item = MyItem(title="耳机", status="sold", price=100, floor_price=80, desc="有划痕")
     assert not any(reply.tag in ("在售商品", "当前标价", "折中诚意") for reply in generate_quick_replies(item, [], 0))
+
+
+def test_long_description_is_not_truncated_into_an_unusable_or_misleading_reply():
+    from app.domains.message.router import MAX_MESSAGE_LENGTH, SendIn
+
+    item = MyItem(title="耳机", status="on_sale", price=100, desc="商品说明。" * 300 + "存在故障，不能正常使用。")
+    replies = generate_quick_replies(item, [], 0)
+    assert any(reply.tag == "查看完整说明" and "完整描述" in reply.text for reply in replies)
+    assert not any(reply.tag == "商品说明" for reply in replies)
+    for reply in replies:
+        assert len(reply.text) <= MAX_MESSAGE_LENGTH
+        SendIn(text=reply.text)

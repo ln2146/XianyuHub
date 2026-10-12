@@ -109,6 +109,9 @@ class QuickReplyItem(BaseModel):
     text: str
 
 
+MAX_MESSAGE_LENGTH = 1000
+
+
 class ConversationContextOut(BaseModel):
     conversation_id: int
     account_id: int
@@ -140,7 +143,12 @@ def generate_quick_replies(
             offer = round((item.price + item.floor_price) / 2, 2)
             replies.append(QuickReplyItem(tag="折中诚意", text=f"这件商品可以 {offer:g} 元出，运费和发货时间另行确认。"))
     if item and item.desc.strip():
-        replies.append(QuickReplyItem(tag="商品说明", text=f"商品描述：{item.desc.strip()}"))
+        description = f"商品描述：{item.desc.strip()}"
+        if len(description) <= MAX_MESSAGE_LENGTH:
+            replies.append(QuickReplyItem(tag="商品说明", text=description))
+        else:
+            # 不截断事实描述，避免遗漏否定词或瑕疵说明；明确引导查看完整原文。
+            replies.append(QuickReplyItem(tag="查看完整说明", text="商品描述较长，请先查看商品页的完整描述。哪些信息需要进一步核验，可以告诉我。"))
     replies.append(QuickReplyItem(tag="礼貌接待", text="在的，请问您想了解商品的哪些信息？"))
     replies.append(QuickReplyItem(tag="确认交易条件", text="运费和发货时间我确认后告诉您，请先不要急着付款。"))
 
@@ -160,7 +168,7 @@ class MessageOut(BaseModel):
 
 
 class SendIn(BaseModel):
-    text: str = Field(min_length=1, max_length=1000)
+    text: str = Field(min_length=1, max_length=MAX_MESSAGE_LENGTH)
 
 
 class TakeoverIn(BaseModel):
