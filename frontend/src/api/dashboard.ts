@@ -39,6 +39,10 @@ export interface Dashboard {
     radar: Record<string, number>
   }
   pending_manual_orders: number
+  /** 已付款未发出的订单数（含发货失败、风控暂停、待人工） */
+  to_ship: number
+  /** 近 7 天（含今天）每日付款金额与订单数 */
+  trend: { date: string; amount: number; orders: number }[]
   monitor_tasks: number
   risk_events: {
     id: number

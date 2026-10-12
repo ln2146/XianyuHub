@@ -64,14 +64,15 @@ const busy = reactive<Record<string, boolean>>({})
 const filter = reactive({
   account_id: (route.query.account_id ? Number(route.query.account_id) : undefined) as number | undefined,
   status: (typeof route.query.status === 'string' ? route.query.status : '') as string,
-  q: '',
+  q: typeof route.query.q === 'string' ? route.query.q : '',
 })
 
 watch(
-  () => [route.query.status, route.query.account_id],
-  ([newStatus, newAccId]) => {
+  () => [route.query.status, route.query.account_id, route.query.q],
+  ([newStatus, newAccId, newQ]) => {
     filter.status = typeof newStatus === 'string' ? newStatus : ''
     filter.account_id = newAccId ? Number(newAccId) : undefined
+    filter.q = typeof newQ === 'string' ? newQ : ''
     load(1)
   },
 )
@@ -413,6 +414,7 @@ async function openDetail(o: Order) {
           同步最新订单
         </el-button>
         <el-select v-model="filter.status" clearable placeholder="全部订单状态" class="w150" @change="load()">
+          <el-option :value="`paid,${NEEDS_ACTION_STATUSES}`" label="待发货" />
           <el-option :value="NEEDS_ACTION_STATUSES" label="需要我处理（待发/风控/失败）" />
           <el-option v-for="(v, k) in orderStatusMap" :key="k" :value="k" :label="v.label" />
         </el-select>

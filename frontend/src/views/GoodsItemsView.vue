@@ -32,7 +32,7 @@ const route = useRoute()
 const filter = reactive({
   account_id: (route.query.account_id ? Number(route.query.account_id) : undefined) as number | undefined,
   status: (typeof route.query.status === 'string' ? route.query.status : '') as string,
-  q: '',
+  q: typeof route.query.q === 'string' ? route.query.q : '',
 })
 
 const selectedAccountExpired = computed(() => {

@@ -58,13 +58,29 @@ async def dashboard(user: CurrentUser, session: SessionDep) -> dict[str, Any]:
     for st, n, amount in order_rows:
         orders[st] = n
         gmv += float(amount or 0)
-    unknown_payment_orders = (await session.execute(
-        select(func.count()).select_from(Order).where(
-            Order.account_id.in_(acc_ids), Order.actual_paid_at.is_(None),
-            Order.status.in_([OrderState.PAID, OrderState.DELIVERING, OrderState.DELIVERED, OrderState.COMPLETED,
-                             OrderState.MANUAL, OrderState.RISK_HOLD, OrderState.DELIVER_FAILED, OrderState.REFUNDING, OrderState.REFUNDED]),
+    unknown_payment_orders = (
+        await session.execute(
+            select(func.count())
+            .select_from(Order)
+            .where(
+                Order.account_id.in_(acc_ids),
+                Order.actual_paid_at.is_(None),
+                Order.status.in_(
+                    [
+                        OrderState.PAID,
+                        OrderState.DELIVERING,
+                        OrderState.DELIVERED,
+                        OrderState.COMPLETED,
+                        OrderState.MANUAL,
+                        OrderState.RISK_HOLD,
+                        OrderState.DELIVER_FAILED,
+                        OrderState.REFUNDING,
+                        OrderState.REFUNDED,
+                    ]
+                ),
+            )
         )
-    )).scalar_one()
+    ).scalar_one()
     pending_manual = (
         await session.execute(
             select(func.count())
@@ -75,6 +91,37 @@ async def dashboard(user: CurrentUser, session: SessionDep) -> dict[str, Any]:
             )
         )
     ).scalar_one()
+
+    # 待发货：已付款但还没发出去的（含自动发货失败、风控暂停、待人工）
+    to_ship = (
+        await session.execute(
+            select(func.count())
+            .select_from(Order)
+            .where(
+                Order.account_id.in_(acc_ids),
+                Order.status.in_([OrderState.PAID, OrderState.MANUAL, OrderState.RISK_HOLD, OrderState.DELIVER_FAILED]),
+            )
+        )
+    ).scalar_one()
+
+    # 近 7 天（含今天）按北京时间自然日汇总付款金额与订单数，口径与「今日」一致
+    trend_since = since - timedelta(days=6)
+    trend_days = [(trend_since + timedelta(days=i) + timedelta(hours=8)).date() for i in range(7)]
+    trend: dict[Any, dict[str, Any]] = {d: {"date": d.isoformat(), "amount": 0.0, "orders": 0} for d in trend_days}
+    trend_rows = await session.execute(
+        select(Order.actual_paid_at, Order.amount).where(
+            Order.account_id.in_(acc_ids), Order.actual_paid_at >= trend_since, Order.actual_paid_at < until
+        )
+    )
+    for paid_at, amount in trend_rows:
+        if paid_at.tzinfo is None:
+            paid_at = paid_at.replace(tzinfo=UTC)
+        day = (paid_at + timedelta(hours=8)).date()
+        if day in trend:
+            trend[day]["orders"] += 1
+            trend[day]["amount"] += float(amount or 0)
+    for v in trend.values():
+        v["amount"] = round(v["amount"], 2)
 
     task_ids = [t for (t,) in await session.execute(select(MonitorTask.id).where(MonitorTask.owner_id == user.id))]
     rec_rows = await session.execute(
@@ -133,6 +180,8 @@ async def dashboard(user: CurrentUser, session: SessionDep) -> dict[str, Any]:
             "radar": radar,
         },
         "pending_manual_orders": pending_manual,
+        "to_ship": to_ship,
+        "trend": list(trend.values()),
         "monitor_tasks": len(task_ids),
         "risk_events": [
             {

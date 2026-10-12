@@ -23,7 +23,7 @@ import { errorMessage } from '@/api/http'
 import BuyerRiskPanel from '@/components/BuyerRiskPanel.vue'
 import ConversationContextSidebar from '@/components/ConversationContextSidebar.vue'
 import JsonBlock from '@/components/JsonBlock.vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAccountsStore } from '@/stores/accounts'
 import { useRealtimeStore, type RealtimeEvent } from '@/stores/realtime'
 import { useMobile } from '@/composables/useMobile'
@@ -31,6 +31,7 @@ import { copyText, fmtRelative, fmtTime, intentText, itemUrl, sourceMap } from '
 
 const accounts = useAccountsStore()
 const router = useRouter()
+const route = useRoute()
 const realtime = useRealtimeStore()
 const isMobile = useMobile()
 
@@ -334,7 +335,12 @@ async function onRealtime(ev: RealtimeEvent) {
 let unsubscribe: (() => void) | undefined
 onMounted(() => {
   accounts.refreshHealth()
-  loadConvs()
+  loadConvs().then(() => {
+    // 从总览等页面带 ?conv=<id> 进来时直接打开该会话
+    const target = Number(route.query.conv)
+    const conv = target ? convs.value.find((c) => c.id === target) : undefined
+    if (conv) select(conv)
+  })
   unsubscribe = realtime.subscribe(onRealtime)
 })
 onBeforeUnmount(() => {
