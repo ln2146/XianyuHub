@@ -564,7 +564,7 @@ onActivated(() => {
 
       <div v-if="!searched && !loading" class="radar-welcome">
         <div class="welcome-icon">
-          <el-icon :size="32"><Search /></el-icon>
+          <el-icon :size="36"><Search /></el-icon>
         </div>
         <div class="welcome-title">输入关键词，开始实时搜货</div>
         <div class="welcome-sub">支持按新发布、新降价、验货宝等条件筛选在售商品</div>
@@ -695,6 +695,8 @@ onActivated(() => {
   display: flex;
   flex-direction: column;
   gap: var(--xh-space-3);
+  min-height: calc(100vh - 96px);
+  flex: 1;
 }
 
 /* ---------------- 搜索与筛选面板 */
@@ -977,7 +979,8 @@ onActivated(() => {
   display: flex;
   flex-direction: column;
   gap: var(--xh-space-3);
-  min-height: 240px;
+  flex: 1;
+  min-height: 420px;
 }
 .cooldown {
   background: var(--xh-fill) !important;
@@ -1042,41 +1045,50 @@ onActivated(() => {
   grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
   gap: var(--xh-space-4);
 }
-/* ==================== 选品雷达初始欢迎页（简约清爽） ==================== */
+/* ==================== 选品雷达初始欢迎页（居中放大，视觉聚焦） ==================== */
 .radar-welcome {
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   text-align: center;
-  padding: 72px 20px 88px;
+  padding: 48px 20px 88px;
+  min-height: 420px;
   user-select: none;
 }
 
 .welcome-icon {
-  width: 60px;
-  height: 60px;
-  border-radius: var(--xh-radius-lg);
+  width: 76px;
+  height: 76px;
+  border-radius: 22px;
   background: var(--xh-primary-soft);
   color: var(--xh-primary);
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: var(--xh-space-3);
-  box-shadow: 0 4px 14px rgba(30, 158, 106, 0.12);
+  margin-bottom: 20px;
+  border: 1px solid var(--xh-primary-border);
+  box-shadow: 0 10px 25px -4px rgba(5, 150, 105, 0.16);
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.welcome-icon:hover {
+  transform: scale(1.05);
 }
 
 .welcome-title {
-  font-size: var(--xh-fs-xl);
+  font-size: 21px;
   font-weight: 600;
+  letter-spacing: -0.015em;
   color: var(--xh-text);
-  margin-bottom: var(--xh-space-2);
+  margin-bottom: 10px;
 }
 
 .welcome-sub {
-  font-size: var(--xh-fs-sm);
+  font-size: 14px;
   color: var(--xh-muted);
-  max-width: 480px;
+  max-width: 500px;
   line-height: 1.6;
 }
 .list-item {
