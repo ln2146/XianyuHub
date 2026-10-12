@@ -4,10 +4,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   ChatDotRound,
   Check,
-  Coin,
   Connection,
   Cpu,
-  DataLine,
   Delete,
   Download,
   Edit,
@@ -19,7 +17,6 @@ import {
   Refresh,
   RefreshRight,
   Setting,
-  WarningFilled,
 } from '@element-plus/icons-vue'
 import {
   createLlmProvider,
@@ -705,406 +702,385 @@ async function remove(p: LlmProvider) {
 
 <template>
   <div class="page">
-    <!-- 1. 规范页面头部 -->
+    <!-- 1. 现代化页面头部 -->
     <div class="page-head">
-      <div class="title-row">
-        <el-icon class="title-icon"><Cpu /></el-icon>
-        <h2>模型配置</h2>
+      <div class="page-head-left">
+        <div class="title-row">
+          <div class="title-icon-box">
+            <el-icon><Cpu /></el-icon>
+          </div>
+          <div class="title-text-group">
+            <div class="title-with-pill">
+              <h2>模型配置</h2>
+              <span class="gateway-live-pill" :class="status?.gateway.available ? 'online' : 'offline'">
+                <span class="pulse-dot" :class="status?.gateway.available ? 'green' : 'red'"></span>
+                <span>{{ status?.gateway.available ? '网关运行中' : '网关未启动' }}</span>
+              </span>
+            </div>
+            <p class="page-subtitle">按场景智能调度大模型，支持客服、识图与快筛跨服务商任意混搭</p>
+          </div>
+        </div>
       </div>
-      <div class="toolbar">
+      <div class="page-head-right">
         <el-button :icon="Refresh" :loading="loading" @click="load">刷新状态</el-button>
-        <el-button v-if="auth.isAdmin" type="primary" :icon="Plus" @click="openCreate('deepseek')">添加新服务商</el-button>
+        <el-button v-if="auth.isAdmin" type="primary" :icon="Plus" @click="openCreate('deepseek')">
+          添加服务商
+        </el-button>
       </div>
     </div>
 
-    <!-- 2. 业务场景模型配置 (Top Section) -->
-    <el-card shadow="never" class="block config-card">
-      <template #header>
-        <div class="card-head">
-          <div class="card-title-group">
-            <el-icon class="title-icon"><Setting /></el-icon>
-            <div class="title-text-group">
-              <span class="section-title">业务场景模型配置</span>
-              <span class="section-hint">按场景灵活挑选生效模型，支持跨服务商任意混搭调度</span>
-            </div>
+    <!-- 2. 业务场景模型调度区块 (无套娃、简约通透) -->
+    <div class="content-section">
+      <div class="section-head-bar">
+        <div class="section-head-left">
+          <div class="section-title-wrap">
+            <el-icon class="section-title-icon"><Setting /></el-icon>
+            <h3 class="section-heading">业务场景模型路由</h3>
           </div>
-          <div class="card-head-extra">
-            <span class="gateway-live-pill" :class="status?.gateway.available ? 'online' : 'offline'">
-              <span class="pulse-dot" :class="status?.gateway.available ? 'green' : 'red'"></span>
-              <span>{{ status?.gateway.available ? '网关运行中' : '网关未就绪' }}</span>
-            </span>
-            <el-button
-              v-if="auth.isAdmin"
-              type="primary"
-              :icon="Check"
-              :loading="tierSaving"
-              :class="{ 'save-btn-unsaved': hasUnsavedTierChanges }"
-              @click="saveTiers"
-            >
-              {{ hasUnsavedTierChanges ? '保存模型配置 (有未生效修改)' : '保存模型配置' }}
-            </el-button>
-          </div>
+          <span class="section-subtext">为不同场景指派最适合的生效模型，留空则自动继承主服务商</span>
         </div>
-      </template>
+        <div class="section-head-right">
+          <el-button
+            v-if="auth.isAdmin"
+            type="primary"
+            :icon="Check"
+            :loading="tierSaving"
+            :class="{ 'save-btn-unsaved': hasUnsavedTierChanges }"
+            @click="saveTiers"
+          >
+            {{ hasUnsavedTierChanges ? '保存模型配置 (有未生效修改)' : '保存配置' }}
+          </el-button>
+        </div>
+      </div>
 
-      <!-- 场景三列卡片网格 -->
+      <!-- 3列场景卡片网格 -->
       <div class="scenario-grid">
-        <!-- 1. 智能客服问答 -->
-        <div class="scenario-card chat-scenario">
-          <div class="scenario-card-inner">
-            <div class="scenario-header">
-              <div class="scenario-icon-title">
-                <div class="scenario-icon-box chat">
-                  <el-icon><ChatDotRound /></el-icon>
-                </div>
-                <div class="scenario-meta">
-                  <span class="scenario-name">智能客服问答</span>
-                  <span class="scenario-slug">BUYER CHAT AGENT</span>
-                </div>
-              </div>
-              <el-tag size="small" type="success" effect="light" round class="scenario-badge">对话主力 · Chat</el-tag>
+        <!-- 场景 1: 智能客服问答 -->
+        <div class="scenario-card" :class="{ 'is-customized': isCustomTier('chat') }">
+          <div class="scenario-card-header">
+            <div class="scenario-icon-box chat">
+              <el-icon><ChatDotRound /></el-icon>
             </div>
-
-            <p class="scenario-desc">买家消息实时智能回复、多轮议价谈判与防封打招呼策略</p>
-
-            <div class="active-model-strip">
-              <div class="strip-left">
-                <span class="pulse-dot green"></span>
-                <span class="strip-label">当前生效：</span>
-                <span class="strip-val mono" :title="activeChatModel">{{ activeChatModel }}</span>
+            <div class="scenario-header-text">
+              <div class="scenario-title-line">
+                <span class="scenario-name">智能客服问答</span>
+                <span class="scenario-role-pill chat">对话主力</span>
               </div>
-              <span class="strip-source" :class="{ 'is-custom': isCustomTier('chat') }">
-                {{ getScenarioProviderName('chat') }}
+              <p class="scenario-desc">买家消息智能回复、多轮议价谈判与防封打招呼</p>
+            </div>
+          </div>
+
+          <div class="scenario-selector-block">
+            <div class="selector-meta-row">
+              <span class="selector-label">生效模型</span>
+              <span class="selector-state-pill" :class="isCustomTier('chat') ? 'custom' : 'inherit'">
+                {{ isCustomTier('chat') ? '自定义指定' : '跟随主服务商' }}
               </span>
             </div>
-
-            <div class="scenario-select-wrap">
-              <div class="select-label-row">
-                <label class="select-label">指定场景模型：</label>
-                <span v-if="!tierForm.chat" class="inherit-status-tag">继承主服务商</span>
-                <span v-else class="override-status-tag">自定义指定</span>
-              </div>
-              <el-select
-                v-model="tierForm.chat"
-                :placeholder="`默认继承主服务商（${defaultChatModelName}）`"
-                clearable
-                filterable
-                class="full-width scenario-select"
-                popper-class="scenario-model-popper"
-                :disabled="!auth.isAdmin"
+            <el-select
+              v-model="tierForm.chat"
+              :placeholder="`跟随主服务商（${defaultChatModelName}）`"
+              clearable
+              filterable
+              class="full-width scenario-select"
+              popper-class="scenario-model-popper"
+              :disabled="!auth.isAdmin"
+            >
+              <el-option
+                value=""
+                :label="`跟随主服务商（${defaultChatModelName}）`"
               >
-                <!-- 显式默认继承选项 -->
+                <div class="model-opt-item inherit-row">
+                  <div class="model-opt-left">
+                    <el-icon class="inherit-icon"><RefreshRight /></el-icon>
+                    <span class="inherit-title">跟随主服务商</span>
+                    <span class="inherit-desc mono">({{ defaultChatModelName }})</span>
+                  </div>
+                  <span class="model-opt-badge badge-inherit">系统默认</span>
+                </div>
+              </el-option>
+
+              <el-option-group
+                v-for="g in providerModelGroups"
+                :key="g.id"
+                :label="`${g.name} (${g.models.length} 个模型)`"
+              >
                 <el-option
-                  value=""
-                  :label="`默认继承主服务商（${defaultChatModelName}）`"
+                  v-for="m in g.models"
+                  :key="m.value"
+                  :value="m.value"
+                  :label="`${g.name} · ${m.label}`"
                 >
-                  <div class="model-opt-item inherit-row">
+                  <div class="model-opt-item">
                     <div class="model-opt-left">
-                      <el-icon class="inherit-icon"><RefreshRight /></el-icon>
-                      <span class="inherit-title">默认继承主服务商</span>
-                      <span class="inherit-desc mono">({{ defaultChatModelName }})</span>
+                      <span class="model-bullet" :class="{ 'bullet-active': tierForm.chat === m.value }"></span>
+                      <span class="model-name mono" :title="m.label">{{ m.label }}</span>
                     </div>
-                    <span class="model-opt-badge badge-inherit">系统默认</span>
+                    <span
+                      v-if="getModelBadge(m, g, 'chat')"
+                      class="model-opt-badge"
+                      :class="`badge-${getModelBadge(m, g, 'chat')!.type}`"
+                    >
+                      {{ getModelBadge(m, g, 'chat')!.text }}
+                    </span>
                   </div>
                 </el-option>
+              </el-option-group>
+            </el-select>
+          </div>
 
-                <!-- 按服务商分组展示 -->
-                <el-option-group
-                  v-for="g in providerModelGroups"
-                  :key="g.id"
-                  :label="`${g.name} (${g.models.length} 个模型)`"
-                >
-                  <el-option
-                    v-for="m in g.models"
-                    :key="m.value"
-                    :value="m.value"
-                    :label="`${g.name} · ${m.label}`"
-                  >
-                    <div class="model-opt-item">
-                      <div class="model-opt-left">
-                        <span class="model-bullet" :class="{ 'bullet-active': tierForm.chat === m.value }"></span>
-                        <span class="model-name mono" :title="m.label">{{ m.label }}</span>
-                      </div>
-                      <span
-                        v-if="getModelBadge(m, g, 'chat')"
-                        class="model-opt-badge"
-                        :class="`badge-${getModelBadge(m, g, 'chat')!.type}`"
-                      >
-                        {{ getModelBadge(m, g, 'chat')!.text }}
-                      </span>
-                    </div>
-                  </el-option>
-                </el-option-group>
-              </el-select>
+          <div class="scenario-card-footer">
+            <div class="footer-status-indicator">
+              <span class="pulse-dot-sm" :class="isCustomTier('chat') ? 'blue' : 'green'"></span>
+              <span class="footer-model-label">当前生效：</span>
+              <span class="footer-model-name mono">{{ activeChatModel }}</span>
             </div>
+            <span class="footer-provider-badge">
+              {{ getScenarioProviderName('chat') }}
+            </span>
           </div>
         </div>
 
-        <!-- 2. 看图发品与质检 -->
-        <div class="scenario-card vision-scenario">
-          <div class="scenario-card-inner">
-            <div class="scenario-header">
-              <div class="scenario-icon-title">
-                <div class="scenario-icon-box vision">
-                  <el-icon><Picture /></el-icon>
-                </div>
-                <div class="scenario-meta">
-                  <span class="scenario-name">看图发品与质检</span>
-                  <span class="scenario-slug">MULTIMODAL VISION</span>
-                </div>
-              </div>
-              <el-tag size="small" type="warning" effect="light" round class="scenario-badge">多模态视觉 · Vision</el-tag>
+        <!-- 场景 2: 看图发品与质检 -->
+        <div class="scenario-card" :class="{ 'is-customized': isCustomTier('vision') }">
+          <div class="scenario-card-header">
+            <div class="scenario-icon-box vision">
+              <el-icon><Picture /></el-icon>
             </div>
-
-            <p class="scenario-desc">以图搜款、看图自动提炼规格瑕疵文案与成色评估</p>
-
-            <div class="active-model-strip">
-              <div class="strip-left">
-                <span class="pulse-dot orange"></span>
-                <span class="strip-label">当前生效：</span>
-                <span class="strip-val mono" :title="activeVisionModel">{{ activeVisionModel }}</span>
+            <div class="scenario-header-text">
+              <div class="scenario-title-line">
+                <span class="scenario-name">看图发品与质检</span>
+                <span class="scenario-role-pill vision">多模态视觉</span>
               </div>
-              <span class="strip-source" :class="{ 'is-custom': isCustomTier('vision') }">
+              <p class="scenario-desc">以图搜款、看图提取规格瑕疵文案与成色评估</p>
+            </div>
+          </div>
+
+          <div class="scenario-selector-block">
+            <div class="selector-meta-row">
+              <span class="selector-label">生效视觉模型</span>
+              <span class="selector-state-pill" :class="isCustomTier('vision') ? 'custom' : 'inherit'">
+                {{ isCustomTier('vision') ? '自定义指定' : '跟随主服务商' }}
+              </span>
+            </div>
+            <el-select
+              v-model="tierForm.vision"
+              :placeholder="`跟随主服务商（${defaultVisionModelName}）`"
+              clearable
+              filterable
+              class="full-width scenario-select"
+              popper-class="scenario-model-popper"
+              :disabled="!auth.isAdmin"
+            >
+              <el-option
+                value=""
+                :label="`跟随主服务商（${defaultVisionModelName}）`"
+              >
+                <div class="model-opt-item inherit-row">
+                  <div class="model-opt-left">
+                    <el-icon class="inherit-icon"><RefreshRight /></el-icon>
+                    <span class="inherit-title">跟随主服务商</span>
+                    <span class="inherit-desc mono">({{ defaultVisionModelName }})</span>
+                  </div>
+                  <span class="model-opt-badge badge-inherit">系统默认</span>
+                </div>
+              </el-option>
+
+              <el-option-group
+                v-for="g in visionGroups"
+                :key="g.id"
+                :label="`${g.name} (${g.models.length} 个模型)`"
+              >
+                <el-option
+                  v-for="m in g.models"
+                  :key="m.value"
+                  :value="m.value"
+                  :label="`${g.name} · ${m.label}`"
+                >
+                  <div class="model-opt-item">
+                    <div class="model-opt-left">
+                      <span class="model-bullet" :class="{ 'bullet-active': tierForm.vision === m.value }"></span>
+                      <span class="model-name mono" :title="m.label">{{ m.label }}</span>
+                    </div>
+                    <span
+                      v-if="getModelBadge(m, g, 'vision')"
+                      class="model-opt-badge"
+                      :class="`badge-${getModelBadge(m, g, 'vision')!.type}`"
+                    >
+                      {{ getModelBadge(m, g, 'vision')!.text }}
+                    </span>
+                  </div>
+                </el-option>
+              </el-option-group>
+            </el-select>
+          </div>
+
+          <div class="scenario-card-footer">
+            <div class="footer-status-indicator">
+              <span class="pulse-dot-sm" :class="isCustomTier('vision') ? 'blue' : 'green'"></span>
+              <span class="footer-model-label">当前生效：</span>
+              <span class="footer-model-name mono">{{ activeVisionModel }}</span>
+            </div>
+            <div class="footer-right-tags">
+              <span v-if="!hasConnectedVisionModel" class="footer-warn-inline" title="当前服务商模型库中未识别到多模态视觉模型">
+                ⚠️ 需识图模型
+              </span>
+              <span class="footer-provider-badge">
                 {{ getScenarioProviderName('vision') }}
               </span>
             </div>
-
-            <div class="scenario-select-wrap">
-              <div class="select-label-row">
-                <label class="select-label">指定视觉模型（识图专用）：</label>
-                <span v-if="!tierForm.vision" class="inherit-status-tag">继承主服务商</span>
-                <span v-else class="override-status-tag">自定义指定</span>
-              </div>
-              <el-select
-                v-model="tierForm.vision"
-                :placeholder="`默认继承主服务商（${defaultVisionModelName}）`"
-                clearable
-                filterable
-                class="full-width scenario-select"
-                popper-class="scenario-model-popper"
-                :disabled="!auth.isAdmin"
-              >
-                <el-option
-                  value=""
-                  :label="`默认继承主服务商（${defaultVisionModelName}）`"
-                >
-                  <div class="model-opt-item inherit-row">
-                    <div class="model-opt-left">
-                      <el-icon class="inherit-icon"><RefreshRight /></el-icon>
-                      <span class="inherit-title">默认继承主服务商</span>
-                      <span class="inherit-desc mono">({{ defaultVisionModelName }})</span>
-                    </div>
-                    <span class="model-opt-badge badge-inherit">系统默认</span>
-                  </div>
-                </el-option>
-
-                <el-option-group
-                  v-for="g in visionGroups"
-                  :key="g.id"
-                  :label="`${g.name} (${g.models.length} 个模型)`"
-                >
-                  <el-option
-                    v-for="m in g.models"
-                    :key="m.value"
-                    :value="m.value"
-                    :label="`${g.name} · ${m.label}`"
-                  >
-                    <div class="model-opt-item">
-                      <div class="model-opt-left">
-                        <span class="model-bullet" :class="{ 'bullet-active': tierForm.vision === m.value }"></span>
-                        <span class="model-name mono" :title="m.label">{{ m.label }}</span>
-                      </div>
-                      <span
-                        v-if="getModelBadge(m, g, 'vision')"
-                        class="model-opt-badge"
-                        :class="`badge-${getModelBadge(m, g, 'vision')!.type}`"
-                      >
-                        {{ getModelBadge(m, g, 'vision')!.text }}
-                      </span>
-                    </div>
-                  </el-option>
-                </el-option-group>
-              </el-select>
-            </div>
-
-            <div v-if="!hasConnectedVisionModel" class="vision-warn-tip">
-              <el-icon><WarningFilled /></el-icon>
-              <span>提示：DeepSeek 官方暂不提供识图，建议接入阿里百炼、OpenAI 或智谱</span>
-            </div>
           </div>
         </div>
 
-        <!-- 3. 意图分类与快筛 -->
-        <div class="scenario-card fast-scenario">
-          <div class="scenario-card-inner">
-            <div class="scenario-header">
-              <div class="scenario-icon-title">
-                <div class="scenario-icon-box fast">
-                  <el-icon><Lightning /></el-icon>
-                </div>
-                <div class="scenario-meta">
-                  <span class="scenario-name">意图分类与快筛</span>
-                  <span class="scenario-slug">ULTRA-FAST ROUTING</span>
-                </div>
-              </div>
-              <el-tag size="small" type="info" effect="light" round class="scenario-badge">毫秒极速 · Fast</el-tag>
+        <!-- 场景 3: 意图分类与快筛 -->
+        <div class="scenario-card" :class="{ 'is-customized': isCustomTier('fast') }">
+          <div class="scenario-card-header">
+            <div class="scenario-icon-box fast">
+              <el-icon><Lightning /></el-icon>
             </div>
-
-            <p class="scenario-desc">买家意图毫秒级分流与转人工规则过滤，低延迟极低成本</p>
-
-            <div class="active-model-strip">
-              <div class="strip-left">
-                <span class="pulse-dot blue"></span>
-                <span class="strip-label">当前生效：</span>
-                <span class="strip-val mono" :title="activeFastModel">{{ activeFastModel }}</span>
+            <div class="scenario-header-text">
+              <div class="scenario-title-line">
+                <span class="scenario-name">意图分类与快筛</span>
+                <span class="scenario-role-pill fast">极速快筛</span>
               </div>
-              <span class="strip-source" :class="{ 'is-custom': isCustomTier('fast') }">
-                {{ getScenarioProviderName('fast') }}
+              <p class="scenario-desc">买家意图毫秒级分流与转人工过滤，低延迟极低成本</p>
+            </div>
+          </div>
+
+          <div class="scenario-selector-block">
+            <div class="selector-meta-row">
+              <span class="selector-label">生效快筛模型</span>
+              <span class="selector-state-pill" :class="isCustomTier('fast') ? 'custom' : 'inherit'">
+                {{ isCustomTier('fast') ? '自定义指定' : '跟随主服务商' }}
               </span>
             </div>
+            <el-select
+              v-model="tierForm.fast"
+              :placeholder="`跟随主服务商（${defaultFastModelName}）`"
+              clearable
+              filterable
+              class="full-width scenario-select"
+              popper-class="scenario-model-popper"
+              :disabled="!auth.isAdmin"
+            >
+              <el-option
+                value=""
+                :label="`跟随主服务商（${defaultFastModelName}）`"
+              >
+                <div class="model-opt-item inherit-row">
+                  <div class="model-opt-left">
+                    <el-icon class="inherit-icon"><RefreshRight /></el-icon>
+                    <span class="inherit-title">跟随主服务商</span>
+                    <span class="inherit-desc mono">({{ defaultFastModelName }})</span>
+                  </div>
+                  <span class="model-opt-badge badge-inherit">系统默认</span>
+                </div>
+              </el-option>
 
-            <div class="scenario-select-wrap">
-              <div class="select-label-row">
-                <label class="select-label">指定快筛模型（极速低延迟）：</label>
-                <span v-if="!tierForm.fast" class="inherit-status-tag">继承主服务商</span>
-                <span v-else class="override-status-tag">自定义指定</span>
-              </div>
-              <el-select
-                v-model="tierForm.fast"
-                :placeholder="`默认继承主服务商（${defaultFastModelName}）`"
-                clearable
-                filterable
-                class="full-width scenario-select"
-                popper-class="scenario-model-popper"
-                :disabled="!auth.isAdmin"
+              <el-option-group
+                v-for="g in providerModelGroups"
+                :key="g.id"
+                :label="`${g.name} (${g.models.length} 个模型)`"
               >
                 <el-option
-                  value=""
-                  :label="`默认继承主服务商（${defaultFastModelName}）`"
+                  v-for="m in g.models"
+                  :key="m.value"
+                  :value="m.value"
+                  :label="`${g.name} · ${m.label}`"
                 >
-                  <div class="model-opt-item inherit-row">
+                  <div class="model-opt-item">
                     <div class="model-opt-left">
-                      <el-icon class="inherit-icon"><RefreshRight /></el-icon>
-                      <span class="inherit-title">默认继承主服务商</span>
-                      <span class="inherit-desc mono">({{ defaultFastModelName }})</span>
+                      <span class="model-bullet" :class="{ 'bullet-active': tierForm.fast === m.value }"></span>
+                      <span class="model-name mono" :title="m.label">{{ m.label }}</span>
                     </div>
-                    <span class="model-opt-badge badge-inherit">系统默认</span>
+                    <span
+                      v-if="getModelBadge(m, g, 'fast')"
+                      class="model-opt-badge"
+                      :class="`badge-${getModelBadge(m, g, 'fast')!.type}`"
+                    >
+                      {{ getModelBadge(m, g, 'fast')!.text }}
+                    </span>
                   </div>
                 </el-option>
+              </el-option-group>
+            </el-select>
+          </div>
 
-                <el-option-group
-                  v-for="g in providerModelGroups"
-                  :key="g.id"
-                  :label="`${g.name} (${g.models.length} 个模型)`"
-                >
-                  <el-option
-                    v-for="m in g.models"
-                    :key="m.value"
-                    :value="m.value"
-                    :label="`${g.name} · ${m.label}`"
-                  >
-                    <div class="model-opt-item">
-                      <div class="model-opt-left">
-                        <span class="model-bullet" :class="{ 'bullet-active': tierForm.fast === m.value }"></span>
-                        <span class="model-name mono" :title="m.label">{{ m.label }}</span>
-                      </div>
-                      <span
-                        v-if="getModelBadge(m, g, 'fast')"
-                        class="model-opt-badge"
-                        :class="`badge-${getModelBadge(m, g, 'fast')!.type}`"
-                      >
-                        {{ getModelBadge(m, g, 'fast')!.text }}
-                      </span>
-                    </div>
-                  </el-option>
-                </el-option-group>
-              </el-select>
+          <div class="scenario-card-footer">
+            <div class="footer-status-indicator">
+              <span class="pulse-dot-sm" :class="isCustomTier('fast') ? 'blue' : 'green'"></span>
+              <span class="footer-model-label">当前生效：</span>
+              <span class="footer-model-name mono">{{ activeFastModel }}</span>
             </div>
+            <span class="footer-provider-badge">
+              {{ getScenarioProviderName('fast') }}
+            </span>
           </div>
         </div>
       </div>
+    </div>
 
-      <!-- 3. 网关运行信息指标条 (Metrics Strip) -->
-      <div v-if="status" class="gateway-metrics-strip">
-        <div class="metric-cell">
-          <div class="metric-icon-box source">
-            <el-icon><Connection /></el-icon>
-          </div>
-          <div class="metric-info">
-            <span class="metric-label">网关生效来源</span>
-            <div class="metric-val-wrap">
-              <el-tag v-if="status.using_env" size="small" type="warning" effect="light">.env 环境变量</el-tag>
-              <span v-else class="metric-val-text font-medium">{{ status.active_source }}</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="metric-cell">
-          <div class="metric-icon-box calls">
-            <el-icon><DataLine /></el-icon>
-          </div>
-          <div class="metric-info">
-            <span class="metric-label">今日总调用量</span>
-            <div class="metric-val-wrap">
-              <span class="metric-val-num">{{ status.gateway.usage_today.calls }}</span>
-              <span class="metric-unit">次</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="metric-cell">
-          <div class="metric-icon-box tokens">
-            <el-icon><Coin /></el-icon>
-          </div>
-          <div class="metric-info">
-            <span class="metric-label">Token 消耗统计</span>
-            <div class="metric-val-wrap">
-              <span class="metric-val-num">{{ tokenUsed.toLocaleString() }}</span>
-              <span class="metric-unit">tokens</span>
-              <span v-if="status.gateway.usage_today.budget" class="metric-budget">
-                / 上限 {{ status.gateway.usage_today.budget.toLocaleString() }}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <div class="metric-cell">
-          <div class="metric-icon-box status-ok">
-            <el-icon><Check /></el-icon>
-          </div>
-          <div class="metric-info">
-            <span class="metric-label">智能路由状态</span>
-            <div class="metric-val-wrap">
-              <span class="status-live-pill">
-                <span class="pulse-dot green"></span>
-                <span>按场景分发中</span>
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <div v-if="status.gateway.error" class="metric-cell error">
-          <div class="metric-icon-box err">
-            <el-icon><WarningFilled /></el-icon>
-          </div>
-          <div class="metric-info">
-            <span class="metric-label">异常告警</span>
-            <span class="err-text">{{ status.gateway.error }}</span>
-          </div>
+    <!-- 3. 网关运行信息指标条 (极简横向数据条) -->
+    <div v-if="status" class="metrics-bar">
+      <div class="metric-cell">
+        <span class="metric-caption">网关生效来源</span>
+        <div class="metric-val-wrap">
+          <el-tag v-if="status.using_env" size="small" type="warning" effect="light">.env 环境变量</el-tag>
+          <span v-else class="metric-val-text font-medium" :title="status.active_source">{{ status.active_source }}</span>
         </div>
       </div>
-    </el-card>
+
+      <div class="metric-divider"></div>
+
+      <div class="metric-cell">
+        <span class="metric-caption">今日总调用量</span>
+        <div class="metric-val-wrap">
+          <span class="metric-num-bold">{{ status.gateway.usage_today.calls }}</span>
+          <span class="metric-sub-unit">次</span>
+        </div>
+      </div>
+
+      <div class="metric-divider"></div>
+
+      <div class="metric-cell">
+        <span class="metric-caption">Token 消耗统计</span>
+        <div class="metric-val-wrap">
+          <span class="metric-num-bold">{{ tokenUsed.toLocaleString() }}</span>
+          <span class="metric-sub-unit">tokens</span>
+          <span v-if="status.gateway.usage_today.budget" class="metric-budget-hint">
+            / 上限 {{ status.gateway.usage_today.budget.toLocaleString() }}
+          </span>
+        </div>
+      </div>
+
+      <div class="metric-divider"></div>
+
+      <div class="metric-cell">
+        <span class="metric-caption">智能路由状态</span>
+        <div class="metric-val-wrap">
+          <span class="status-live-pill">
+            <span class="pulse-dot green"></span>
+            <span>按场景分发中</span>
+          </span>
+        </div>
+      </div>
+    </div>
 
     <!-- 4. 已接入服务商管理 (Connected Providers List) -->
     <div v-if="auth.isAdmin" class="providers-section">
-      <div class="section-header-row">
-        <div class="section-header-left">
-          <h3>已接入服务商</h3>
+      <div class="section-head-bar">
+        <div class="section-head-left">
+          <div class="section-title-wrap">
+            <el-icon class="section-title-icon"><Connection /></el-icon>
+            <h3 class="section-heading">已接入服务商</h3>
+          </div>
           <span class="section-count-badge">{{ providers.length }} 个已配置</span>
         </div>
-        <el-button text bg size="small" :icon="Plus" @click="openCreate('deepseek')">
-          添加服务商
-        </el-button>
+        <div class="section-head-right">
+          <el-button text bg size="small" :icon="Plus" @click="openCreate('deepseek')">
+            添加服务商
+          </el-button>
+        </div>
       </div>
 
       <div v-if="!loading && !providers.length" class="empty-state-card">
@@ -1408,9 +1384,9 @@ async function remove(p: LlmProvider) {
 </template>
 
 <style scoped>
-/* ================= 1. 页面头部 ================= */
+/* ================= 1. 现代化页面头部 ================= */
 .page {
-  padding-bottom: 24px;
+  padding-bottom: 32px;
 }
 
 .page-head {
@@ -1418,328 +1394,364 @@ async function remove(p: LlmProvider) {
   justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
-  gap: var(--xh-space-3);
-  margin-bottom: var(--xh-space-4);
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.page-head-left {
+  min-width: 0;
 }
 
 .title-row {
   display: flex;
   align-items: center;
-  gap: var(--xh-space-2);
+  gap: 14px;
 }
 
-.title-row h2 {
-  margin: 0;
-  font-size: var(--xh-fs-xl);
-  font-weight: 600;
-  color: var(--xh-text);
-}
-
-.title-icon {
-  font-size: var(--xh-fs-xl);
-  color: var(--xh-primary);
-}
-
-.toolbar {
+.title-icon-box {
+  width: 42px;
+  height: 42px;
+  border-radius: var(--xh-radius-md, 10px);
+  background: var(--xh-primary-soft, #ecfdf5);
+  color: var(--xh-primary, #10b981);
   display: flex;
   align-items: center;
-  gap: var(--xh-space-2);
+  justify-content: center;
+  font-size: 22px;
+  flex-shrink: 0;
 }
 
-.toolbar :deep(.el-button + .el-button) {
-  margin-left: 0;
-}
-
-.block {
-  margin-bottom: 20px;
-}
-
-/* ================= 2. 顶部配置卡片 ================= */
-.config-card {
-  border-radius: var(--xh-radius-lg);
-  border: 1px solid var(--xh-border);
-  background: var(--xh-card);
-  box-shadow: var(--xh-shadow-sm);
-}
-
-.card-head {
+.title-text-group {
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.title-with-pill {
+  display: flex;
   align-items: center;
-  flex-wrap: wrap;
   gap: 12px;
 }
 
-.card-title-group {
+.title-with-pill h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--xh-text, #0f172a);
+  letter-spacing: -0.2px;
+}
+
+.page-subtitle {
+  margin: 0;
+  font-size: 13px;
+  color: var(--xh-muted, #64748b);
+  line-height: 1.4;
+}
+
+.page-head-right {
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
-.title-text-group {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 8px;
+.page-head-right :deep(.el-button + .el-button) {
+  margin-left: 0;
 }
 
-.section-title {
-  font-size: var(--xh-fs-md);
-  font-weight: 600;
-  color: var(--xh-text);
-}
-
-.section-hint {
-  font-size: var(--xh-fs-xs);
-  color: var(--xh-muted);
-}
-
-.card-head-extra {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
+/* 状态药丸胶囊 */
 .gateway-live-pill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 10px;
-  border-radius: var(--xh-radius-full);
-  font-size: var(--xh-fs-xs);
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 12px;
   font-weight: 500;
-  background: var(--xh-fill);
-  border: 1px solid var(--xh-border);
+  background: var(--xh-fill, #f8fafc);
+  border: 1px solid var(--xh-border, #e2e8f0);
 }
 
 .gateway-live-pill.online {
-  color: var(--xh-primary);
-  background: var(--xh-primary-soft);
+  color: #059669;
+  background: #ecfdf5;
   border-color: rgba(16, 185, 129, 0.25);
 }
 
 .gateway-live-pill.offline {
-  color: var(--xh-danger);
-  background: rgba(239, 68, 68, 0.1);
+  color: var(--xh-danger, #ef4444);
+  background: rgba(239, 68, 68, 0.08);
   border-color: rgba(239, 68, 68, 0.2);
 }
 
-/* ================= 3. 场景卡片网格 ================= */
+/* ================= 2. 业务场景模型调度区块 ================= */
+.content-section {
+  margin-bottom: 24px;
+}
+
+.section-head-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.section-head-left {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.section-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.section-title-icon {
+  font-size: 16px;
+  color: var(--xh-primary, #10b981);
+}
+
+.section-heading {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--xh-text, #0f172a);
+}
+
+.section-subtext {
+  font-size: 12px;
+  color: var(--xh-muted, #64748b);
+}
+
 .scenario-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 16px;
-  margin-bottom: 20px;
 }
 
-@media (max-width: 960px) {
+@media (max-width: 1024px) {
   .scenario-grid {
     grid-template-columns: 1fr;
   }
 }
 
 .scenario-card {
-  background: var(--xh-card);
-  border: 1px solid var(--xh-border);
-  border-radius: var(--xh-radius-lg);
+  background: var(--xh-card, #ffffff);
+  border: 1px solid var(--xh-border, #e2e8f0);
+  border-radius: 14px;
   padding: 18px 20px;
-  box-shadow: var(--xh-shadow-sm);
-  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s ease, border-color 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 220px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03), 0 1px 2px rgba(0, 0, 0, 0.02);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
-  overflow: hidden;
-  height: 100%;
 }
 
 .scenario-card:hover {
   transform: translateY(-2px);
-  box-shadow: var(--xh-shadow-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+  border-color: rgba(16, 185, 129, 0.3);
 }
 
-.scenario-card.chat-scenario {
-  border-top: 3px solid var(--xh-primary);
+.scenario-card.is-customized {
+  border-color: rgba(59, 130, 246, 0.3);
 }
 
-.scenario-card.vision-scenario {
-  border-top: 3px solid #f59e0b;
-}
-
-.scenario-card.fast-scenario {
-  border-top: 3px solid #6366f1;
-}
-
-.scenario-card-inner {
+.scenario-card-header {
   display: flex;
-  flex-direction: column;
+  align-items: flex-start;
   gap: 12px;
-  height: 100%;
-}
-
-.scenario-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.scenario-icon-title {
-  display: flex;
-  align-items: center;
-  gap: 10px;
 }
 
 .scenario-icon-box {
   width: 38px;
   height: 38px;
-  border-radius: var(--xh-radius-md);
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 19px;
+  font-size: 18px;
   flex-shrink: 0;
 }
 
 .scenario-icon-box.chat {
-  background: var(--xh-primary-soft);
-  color: var(--xh-primary);
+  background: #ecfdf5;
+  color: #059669;
 }
 
 .scenario-icon-box.vision {
-  background: rgba(245, 158, 11, 0.12);
+  background: #fffbeb;
   color: #d97706;
 }
 
 .scenario-icon-box.fast {
-  background: rgba(99, 102, 241, 0.12);
-  color: #6366f1;
+  background: #eef2ff;
+  color: #4f46e5;
 }
 
-.scenario-meta {
-  display: flex;
-  flex-direction: column;
+.scenario-header-text {
+  flex: 1;
+  min-width: 0;
 }
 
-.scenario-name {
-  font-weight: 600;
-  font-size: var(--xh-fs-base);
-  color: var(--xh-text);
-  line-height: 1.3;
-}
-
-.scenario-slug {
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--xh-muted);
-  letter-spacing: 0.5px;
-}
-
-.scenario-desc {
-  font-size: var(--xh-fs-xs);
-  color: var(--xh-muted);
-  margin: 0;
-  line-height: 1.45;
-  min-height: 34px;
-}
-
-/* 生效模型条 */
-.active-model-strip {
+.scenario-title-line {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  background: var(--xh-fill);
-  border: 1px solid var(--xh-border);
-  border-radius: var(--xh-radius-md);
-  padding: 7px 12px;
-  font-size: var(--xh-fs-xs);
 }
 
-.strip-left {
+.scenario-name {
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--xh-text, #0f172a);
+}
+
+.scenario-role-pill {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 1px 8px;
+  border-radius: 12px;
+  white-space: nowrap;
+}
+
+.scenario-role-pill.chat {
+  color: #059669;
+  background: #ecfdf5;
+}
+
+.scenario-role-pill.vision {
+  color: #d97706;
+  background: #fffbeb;
+}
+
+.scenario-role-pill.fast {
+  color: #4f46e5;
+  background: #eef2ff;
+}
+
+.scenario-desc {
+  font-size: 12px;
+  color: var(--xh-muted, #64748b);
+  margin: 4px 0 0;
+  line-height: 1.45;
+}
+
+.scenario-selector-block {
+  margin: 16px 0 10px;
+}
+
+.selector-meta-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.selector-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--xh-text-2, #475569);
+}
+
+.selector-state-pill {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.selector-state-pill.inherit {
+  color: var(--xh-muted, #64748b);
+  background: var(--xh-fill-strong, #f1f5f9);
+}
+
+.selector-state-pill.custom {
+  color: #2563eb;
+  background: rgba(59, 130, 246, 0.1);
+  font-weight: 500;
+}
+
+.scenario-card-footer {
+  padding-top: 10px;
+  border-top: 1px dashed var(--xh-border, #f1f5f9);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  gap: 8px;
+}
+
+.footer-status-indicator {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   min-width: 0;
   overflow: hidden;
 }
 
-.strip-label {
-  color: var(--xh-muted);
+.footer-model-label {
+  color: var(--xh-muted, #94a3b8);
+  font-size: 11px;
   flex-shrink: 0;
-  font-size: 12px;
 }
 
-.strip-val {
+.footer-model-name {
+  color: var(--xh-text, #0f172a);
   font-weight: 600;
-  color: var(--xh-text);
+  font-size: 11.5px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
 }
 
-.strip-source {
-  font-size: 11px;
-  color: var(--xh-muted);
-  background: var(--xh-card);
-  border: 1px solid var(--xh-border);
-  padding: 1px 7px;
+.footer-right-tags {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.footer-provider-badge {
+  color: var(--xh-muted, #64748b);
+  background: var(--xh-fill-strong, #f1f5f9);
+  padding: 2px 7px;
   border-radius: 4px;
+  font-size: 10.5px;
   white-space: nowrap;
   flex-shrink: 0;
 }
 
-.strip-source.is-custom {
-  color: var(--xh-primary);
-  background: var(--xh-primary-soft);
-  border-color: rgba(16, 185, 129, 0.3);
-  font-weight: 500;
+.pulse-dot-sm {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
 }
 
-.scenario-select-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: auto;
+.pulse-dot-sm.green {
+  background: #10b981;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
 }
 
-.select-label-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+.pulse-dot-sm.blue {
+  background: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
 }
 
-.select-label {
-  font-size: var(--xh-fs-xs);
-  font-weight: 500;
-  color: var(--xh-text-2);
-}
-
-.inherit-status-tag {
-  font-size: 11px;
-  color: var(--xh-muted);
-  background: var(--xh-fill-strong);
-  padding: 1px 6px;
-  border-radius: 4px;
-}
-
-.override-status-tag {
-  font-size: 11px;
-  color: var(--xh-primary);
-  background: var(--xh-primary-soft);
-  padding: 1px 6px;
-  border-radius: 4px;
-  font-weight: 500;
-}
-
-.vision-warn-tip {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+.footer-warn-inline {
+  color: #d97706;
   background: #fffbe6;
-  border: 1px solid #ffe58f;
-  padding: 6px 10px;
-  border-radius: var(--xh-radius-sm);
+  padding: 1px 6px;
+  border-radius: 4px;
   font-size: 11px;
-  color: #d46b08;
-  line-height: 1.3;
+  flex-shrink: 0;
 }
 
 .save-btn-unsaved {
@@ -1755,82 +1767,42 @@ async function remove(p: LlmProvider) {
   }
 }
 
-/* ================= 4. 网关统计指标条 ================= */
-.gateway-metrics-strip {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-  padding: 14px 16px;
-  background: var(--xh-fill);
-  border-radius: var(--xh-radius-md);
-  border: 1px solid var(--xh-border);
+/* ================= 3. 网关运行信息指标条 (极简横向数据条) ================= */
+.metrics-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--xh-card, #ffffff);
+  border: 1px solid var(--xh-border, #e2e8f0);
+  border-radius: 12px;
+  padding: 14px 24px;
+  margin-bottom: 24px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
 }
 
-@media (max-width: 900px) {
-  .gateway-metrics-strip {
+@media (max-width: 800px) {
+  .metrics-bar {
+    display: grid;
     grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
   }
-}
-
-@media (max-width: 600px) {
-  .gateway-metrics-strip {
-    grid-template-columns: 1fr;
+  .metric-divider {
+    display: none;
   }
 }
 
 .metric-cell {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-
-.metric-icon-box {
-  width: 32px;
-  height: 32px;
-  border-radius: var(--xh-radius-sm);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 16px;
-  flex-shrink: 0;
-}
-
-.metric-icon-box.source {
-  background: rgba(16, 185, 129, 0.12);
-  color: var(--xh-primary);
-}
-
-.metric-icon-box.calls {
-  background: rgba(59, 130, 246, 0.12);
-  color: #3b82f6;
-}
-
-.metric-icon-box.tokens {
-  background: rgba(245, 158, 11, 0.12);
-  color: #f59e0b;
-}
-
-.metric-icon-box.status-ok {
-  background: rgba(16, 185, 129, 0.12);
-  color: var(--xh-primary);
-}
-
-.metric-icon-box.err {
-  background: rgba(239, 68, 68, 0.12);
-  color: var(--xh-danger);
-}
-
-.metric-info {
-  display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   min-width: 0;
+  flex: 1;
 }
 
-.metric-label {
-  font-size: 11px;
-  color: var(--xh-muted);
+.metric-caption {
+  font-size: 12px;
+  color: var(--xh-muted, #64748b);
+  font-weight: 500;
 }
 
 .metric-val-wrap {
@@ -1840,39 +1812,48 @@ async function remove(p: LlmProvider) {
   min-width: 0;
 }
 
-.metric-val-num {
-  font-size: var(--xh-fs-md);
-  font-weight: 700;
-  color: var(--xh-text);
-  line-height: 1.2;
-}
-
 .metric-val-text {
-  font-size: var(--xh-fs-xs);
+  font-size: 13px;
   font-weight: 600;
-  color: var(--xh-text);
+  color: var(--xh-text, #0f172a);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.metric-unit {
-  font-size: 11px;
-  color: var(--xh-muted);
+.metric-num-bold {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--xh-text, #0f172a);
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
 }
 
-.metric-budget {
+.metric-sub-unit {
   font-size: 11px;
-  color: var(--xh-muted);
+  color: var(--xh-muted, #64748b);
+}
+
+.metric-budget-hint {
+  font-size: 11px;
+  color: var(--xh-muted, #64748b);
+}
+
+.metric-divider {
+  width: 1px;
+  height: 28px;
+  background: var(--xh-border, #e2e8f0);
+  margin: 0 16px;
+  flex-shrink: 0;
 }
 
 .status-live-pill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: var(--xh-fs-xs);
+  font-size: 12px;
   font-weight: 500;
-  color: var(--xh-primary);
+  color: #059669;
 }
 
 .err-text {
@@ -1880,7 +1861,7 @@ async function remove(p: LlmProvider) {
   color: var(--xh-danger);
 }
 
-/* ================= 5. 已接入服务商管理网格 ================= */
+/* ================= 4. 已接入服务商管理网格 ================= */
 .providers-section {
   margin-top: 20px;
 }
