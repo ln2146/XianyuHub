@@ -379,7 +379,7 @@ function cardMenu(r: ResultOut): CardMenuItem[] {
     { key: 'bought', label: r.mark === 'bought' ? '取消「已买」' : '标记为已买', icon: CircleCheck, active: r.mark === 'bought' },
     { key: 'ignored', label: '不感兴趣', icon: CircleClose, danger: true, active: r.mark === 'ignored' },
     { key: 'history', label: '价格走势', icon: TrendCharts, divided: true },
-    { key: 'watch', label: '加入价格监控', icon: Bell },
+    { key: 'watch', label: '添加到监控', icon: Bell },
     { key: 'resell', label: '转手发品', icon: Upload },
     { key: 'open', label: '去闲鱼查看', icon: TopRight, divided: true, external: true },
   ]
@@ -684,6 +684,7 @@ onBeforeUnmount(stopTimer)
           <a :href="itemLink(r)" target="_blank" rel="noopener" class="ct-title">{{ r.item.title }}</a>
           <div class="ct-ops">
             <el-button size="small" link type="primary" @click="compareOpen = false; openDetail(r)">详情</el-button>
+            <el-button size="small" link :icon="Bell" @click="watchPrice(r)">添加到监控</el-button>
             <el-button size="small" link @click="toggleCompare(r)">移除</el-button>
           </div>
         </div>
@@ -746,7 +747,7 @@ onBeforeUnmount(stopTimer)
       </template>
       <template #actions>
         <el-button v-if="detail.result" :icon="TrendCharts" @click="openHistory(detail.result)">价格走势</el-button>
-        <el-button v-if="detail.result" :icon="Bell" @click="watchPrice(detail.result)">加入价格监控</el-button>
+        <el-button v-if="detail.result" :icon="Bell" @click="watchPrice(detail.result)">添加到监控</el-button>
         <el-button v-if="detail.result" :icon="Upload" @click="quickResell(detail.result)">转手发品</el-button>
       </template>
     </ItemDrawer>

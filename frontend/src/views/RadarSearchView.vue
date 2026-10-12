@@ -138,7 +138,7 @@ function toCard(it: SearchItem): CardItem {
 }
 
 const cardMenu: CardMenuItem[] = [
-  { key: 'watch', label: '加入价格监控', icon: Bell },
+  { key: 'watch', label: '添加到监控', icon: Bell },
   { key: 'resell', label: '转手发品', icon: Upload },
   { key: 'open', label: '去闲鱼查看', icon: TopRight, divided: true, external: true },
 ]
@@ -615,11 +615,11 @@ onActivated(() => {
               <span class="muted small">{{ fmtRelative(row.publish_time) || '—' }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="200" fixed="right">
+          <el-table-column label="操作" width="220" fixed="right">
             <template #default="{ row }">
               <div @click.stop>
                 <el-button size="small" link type="primary" @click="openDetail(row as SearchItem)">详情</el-button>
-                <el-button size="small" link :icon="Bell" @click="watchPrice(row as SearchItem)">监控</el-button>
+                <el-button size="small" link :icon="Bell" @click="watchPrice(row as SearchItem)">添加到监控</el-button>
                 <el-button size="small" link :icon="Upload" @click="quickResell(row as SearchItem)">转手</el-button>
               </div>
             </template>
@@ -643,7 +643,7 @@ onActivated(() => {
       :account-id="searchForm.account_id > 0 ? searchForm.account_id : null"
     >
       <template #actions>
-        <el-button v-if="detail.item" :icon="Bell" @click="watchPrice(detail.item)">加入价格监控</el-button>
+        <el-button v-if="detail.item" :icon="Bell" @click="watchPrice(detail.item)">添加到监控</el-button>
         <el-button v-if="detail.item" :icon="Upload" @click="quickResell(detail.item)">转手发品</el-button>
       </template>
     </ItemDrawer>

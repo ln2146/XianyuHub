@@ -264,7 +264,7 @@ const historyOption = computed(() => {
     <RadarNav current="watch">
       <template #actions>
         <el-button :icon="Refresh" :loading="loading" @click="load()">刷新</el-button>
-        <el-button type="primary" :icon="Plus" @click="openCreate()">添加监控</el-button>
+        <el-button type="primary" :icon="Plus" @click="openCreate()">粘贴链接添加</el-button>
       </template>
     </RadarNav>
 
@@ -286,10 +286,7 @@ const historyOption = computed(() => {
       <div v-if="!loading && !shown.length" class="empty-box">
         <el-empty :description="watches.length ? '该状态下暂无监控' : '暂无监控商品'">
           <template v-if="!watches.length">
-            <div class="empty-actions">
-              <el-button type="primary" :icon="Plus" @click="openCreate()">粘贴链接添加</el-button>
-              <el-button @click="router.push('/radar/smart')">去智能搜索挑选</el-button>
-            </div>
+            <el-button type="primary" :icon="Plus" @click="openCreate()">粘贴链接添加</el-button>
           </template>
         </el-empty>
       </div>
