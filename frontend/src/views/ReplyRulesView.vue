@@ -5,6 +5,7 @@ import { ElMessage, ElMessageBox, type UploadRequestOptions } from 'element-plus
 import {
   ArrowRight,
   Check,
+  Coin,
   Delete,
   Document,
   Goods,
@@ -12,7 +13,6 @@ import {
   Plus,
   Refresh,
   Search,
-  Setting,
   Tickets,
   Upload,
   WarningFilled,
@@ -43,16 +43,16 @@ const accounts = useAccountsStore()
 const isMobile = useMobile()
 
 // ---------------------------------------------------------------- Tab 状态
-const activeTab = ref<'rules' | 'ai'>('rules')
-if (route.query.tab && ['rules', 'ai'].includes(String(route.query.tab))) {
-  activeTab.value = route.query.tab as 'rules' | 'ai'
+const activeTab = ref<'rules' | 'ai' | 'guard'>('rules')
+if (route.query.tab && ['rules', 'ai', 'guard'].includes(String(route.query.tab))) {
+  activeTab.value = route.query.tab as 'rules' | 'ai' | 'guard'
 }
 
 watch(
   () => route.query.tab,
   (t) => {
-    if (t && ['rules', 'ai'].includes(String(t))) {
-      activeTab.value = t as 'rules' | 'ai'
+    if (t && ['rules', 'ai', 'guard'].includes(String(t))) {
+      activeTab.value = t as 'rules' | 'ai' | 'guard'
     }
   },
 )
@@ -475,96 +475,66 @@ onMounted(() => {
 
 <template>
   <div class="page rules-page">
-    <!-- 顶部标题与快捷操作 -->
-    <div class="page-head">
-      <div class="head-left">
-        <h2>消息中心 · 自动回复</h2>
-        <span class="head-subtitle">关键词规则优先命中；未命中时由 AI 结合店铺人设与知识库资料智能应答</span>
-      </div>
-      <div class="toolbar">
-        <el-button :icon="Refresh" :loading="loading || docsLoading" round @click="refreshAll">刷新</el-button>
-        <el-button v-if="activeTab === 'rules'" type="primary" :icon="Plus" round @click="openCreate">新建规则</el-button>
-      </div>
-    </div>
-
-    <!-- 账号回复策略概览条 (精简横向卡片，去除凌乱感) -->
-    <div class="account-strip-card">
-      <div class="strip-header">
-        <div class="strip-title">
-          <el-icon class="title-icon"><Setting /></el-icon>
-          <span>账号回复策略</span>
-          <span class="strip-tip">总开关关闭时该账号不回复任何消息；AI 回复在关键词未命中时代替人工</span>
-        </div>
-        <el-link type="primary" class="nav-link" @click="router.push('/accounts')">
-          前往账号配置 <el-icon><ArrowRight /></el-icon>
-        </el-link>
-      </div>
-
-      <div v-if="!accounts.list.length" class="empty-acc-banner">
-        尚未添加闲鱼账号，请先在「账号配置」中接入账号以启用自动回复。
-      </div>
-
-      <div v-else class="acc-capsule-list">
-        <div
-          v-for="a in accounts.list"
-          :key="a.id"
-          class="acc-capsule"
-          :class="{ active: selectedAccountId === a.id }"
-          @click="selectedAccountId = a.id"
-        >
-          <div class="capsule-profile">
-            <div class="capsule-avatar">{{ (a.remark || a.nickname || '闲')[0] }}</div>
-            <div class="capsule-info">
-              <div class="capsule-name" :title="a.remark || a.nickname || a.unb">
-                {{ a.remark || a.nickname || a.unb }}
-              </div>
-              <div class="capsule-status">
-                <StatusTag :value="a.status" :map="accountStatusMap" />
-                <span v-if="!a.settings?.auto_reply" class="status-warning">
-                  <el-icon><WarningFilled /></el-icon> 总开关已关
-                </span>
-              </div>
+    <!-- 顶部统一控制台横幅：页面标题 + 账号选择 + 总开关 + 刷新 -->
+    <div class="studio-header-card">
+      <div class="studio-header-main">
+        <div class="header-left">
+          <div class="title-row">
+            <h2 class="page-title">自动回复</h2>
+            <div class="status-pill" :class="{ active: currentAccount?.settings?.auto_reply }">
+              <span class="status-pulse-dot" />
+              <span>{{ currentAccount?.settings?.auto_reply ? '自动回复运行中' : '自动回复已暂停' }}</span>
             </div>
           </div>
+          <p class="page-subtitle">
+            毫秒级精准命中关键词 · 未命中由 AI 结合【宝贝专属知识】与【店铺人设】智能应答
+          </p>
+        </div>
 
-          <div class="capsule-controls" @click.stop>
-            <div class="ctrl-group">
-              <span class="ctrl-label">总开关</span>
-              <el-switch
-                :model-value="a.settings?.auto_reply ?? false"
-                :loading="busyAccount[`ar-${a.id}`]"
-                inline-prompt
-                active-text="开"
-                inactive-text="关"
-                size="default"
-                @change="(v: string | number | boolean) => toggleAccountAutoReply(a, !!v)"
-              />
-            </div>
+        <div class="header-right">
+          <!-- 账号切换器 -->
+          <div v-if="accounts.list.length > 1" class="header-account-picker">
+            <span class="picker-label">当前账号：</span>
+            <el-select v-model="selectedAccountId" size="default" class="account-select">
+              <el-option
+                v-for="a in accounts.list"
+                :key="a.id"
+                :value="a.id"
+                :label="a.remark || a.nickname || a.unb"
+              >
+                <div class="account-opt-item">
+                  <span>{{ a.remark || a.nickname || a.unb }}</span>
+                  <StatusTag :value="a.status" :map="accountStatusMap" />
+                </div>
+              </el-option>
+            </el-select>
+          </div>
+          <div v-else-if="currentAccount" class="single-account-badge">
+            <span class="badge-label">配置账号：</span>
+            <span class="badge-name">{{ currentAccount.remark || currentAccount.nickname || currentAccount.unb }}</span>
+            <StatusTag :value="currentAccount.status" :map="accountStatusMap" />
+          </div>
 
-            <div class="ctrl-group">
-              <span class="ctrl-label">精准回复</span>
-              <el-switch
-                :model-value="a.settings?.keyword_reply ?? false"
-                :loading="busyAccount[`kw-${a.id}`]"
-                :disabled="!a.settings?.auto_reply"
-                inline-prompt
-                active-text="开"
-                inactive-text="关"
-                size="default"
-                @change="(v: string | number | boolean) => toggleAccountKeywordReply(a, !!v)"
-              />
-            </div>
+          <!-- 总开关 -->
+          <div v-if="currentAccount" class="master-switch-box">
+            <span class="switch-label">总开关</span>
+            <el-switch
+              :model-value="currentAccount.settings?.auto_reply ?? false"
+              :loading="busyAccount[`ar-${currentAccount.id}`]"
+              inline-prompt
+              active-text="开"
+              inactive-text="关"
+              size="default"
+              @change="(v: string | number | boolean) => currentAccount && toggleAccountAutoReply(currentAccount, !!v)"
+            />
+          </div>
 
-            <div class="ctrl-group ctrl-ai">
-              <span class="ctrl-label">AI回复</span>
-              <el-segmented
-                :model-value="a.settings?.ai_mode ?? 'off'"
-                :options="aiModeOptions"
-                size="default"
-                :disabled="busyAccount[`ai-${a.id}`]"
-                @change="(v: string | number | boolean) => setAiMode(a, v as 'off' | 'suggest' | 'auto')"
-              />
-            </div>
+          <!-- 操作按钮与链接 -->
+          <div class="header-action-group">
+            <el-button :icon="Refresh" :loading="loading || docsLoading" circle @click="refreshAll" title="刷新数据" />
+            <el-link type="info" :underline="false" class="nav-account-link" @click="router.push('/accounts')">
+              账号管理 <el-icon><ArrowRight /></el-icon>
+            </el-link>
           </div>
         </div>
       </div>
@@ -578,47 +548,20 @@ onMounted(() => {
           <template #label>
             <div class="tab-label-inner">
               <el-icon><Tickets /></el-icon>
-              <span>精准回复</span>
+              <span>精准回复规则</span>
               <el-badge v-if="rules.length" :value="rules.length" class="tab-count-badge" type="info" />
             </div>
           </template>
 
           <div class="tab-body">
-            <!-- 精准回复功能状态与控制栏 -->
-            <div class="feature-status-banner">
-              <div class="banner-left">
-                <div class="status-indicator" :class="{ active: currentAccount?.settings?.keyword_reply && currentAccount?.settings?.auto_reply }">
-                  <span class="status-dot" />
-                  <span class="status-title">精准回复功能：</span>
-                </div>
-                <el-switch
-                  :model-value="currentAccount?.settings?.keyword_reply ?? false"
-                  :loading="currentAccount ? busyAccount[`kw-${currentAccount.id}`] : false"
-                  :disabled="!currentAccount || !currentAccount.settings?.auto_reply"
-                  inline-prompt
-                  active-text="开"
-                  inactive-text="关"
-                  size="default"
-                  @change="(v: string | number | boolean) => currentAccount && toggleAccountKeywordReply(currentAccount, !!v)"
-                />
-                <span class="banner-desc">
-                  <template v-if="!currentAccount?.settings?.auto_reply">
-                    <span class="desc-warning"><el-icon><WarningFilled /></el-icon> 账号总开关已关，精准回复暂不执行</span>
-                    <el-button link type="primary" size="small" @click="currentAccount && toggleAccountAutoReply(currentAccount, true)">开启总开关</el-button>
-                  </template>
-                  <template v-else-if="currentAccount?.settings?.keyword_reply">
-                    <span class="desc-success">已开启</span> · 买家发消息时，只要命中下方任一规则即自动回复；未命中时由 AI 兜底
-                  </template>
-                  <template v-else>
-                    <span class="desc-muted">已停用</span> · 暂停按关键词自动回复买家
-                  </template>
-                </span>
-              </div>
-              <div v-if="accounts.list.length > 1 && currentAccount" class="banner-right">
-                <span class="muted smaller">当前配置账号：<b>{{ currentAccount.remark || currentAccount.nickname || currentAccount.unb }}</b></span>
-              </div>
+            <!-- 总开关关闭时的轻量警告提示 -->
+            <div v-if="!currentAccount?.settings?.auto_reply" class="inline-warning-bar">
+              <el-icon><WarningFilled /></el-icon>
+              <span>账号自动回复总开关已关闭，所有精准回复规则暂不触发。</span>
+              <el-button link type="primary" size="small" @click="currentAccount && toggleAccountAutoReply(currentAccount, true)">立即开启总开关</el-button>
             </div>
-            <!-- 搜索与筛选工具条 -->
+
+            <!-- 搜索与筛选工具条（内嵌精准回复开关） -->
             <div class="table-toolbar">
               <div class="toolbar-left">
                 <el-input
@@ -645,6 +588,19 @@ onMounted(() => {
               </div>
 
               <div class="toolbar-right">
+                <div class="kw-switch-item">
+                  <span class="kw-switch-label">精准回复：</span>
+                  <el-switch
+                    :model-value="currentAccount?.settings?.keyword_reply ?? false"
+                    :loading="currentAccount ? busyAccount[`kw-${currentAccount.id}`] : false"
+                    :disabled="!currentAccount || !currentAccount.settings?.auto_reply"
+                    inline-prompt
+                    active-text="开"
+                    inactive-text="关"
+                    size="default"
+                    @change="(v: string | number | boolean) => currentAccount && toggleAccountKeywordReply(currentAccount, !!v)"
+                  />
+                </div>
                 <el-button type="primary" :icon="Plus" @click="openCreate">新建规则</el-button>
               </div>
             </div>
@@ -767,87 +723,103 @@ onMounted(() => {
           </div>
         </el-tab-pane>
 
-        <!-- 标签页 2: AI 回复 -->
+        <!-- 标签页 2: AI 客服与知识库 -->
         <el-tab-pane name="ai">
           <template #label>
             <div class="tab-label-inner">
               <el-icon><MagicStick /></el-icon>
-              <span>AI回复</span>
+              <span>AI客服与知识库</span>
             </div>
           </template>
 
           <div class="tab-body">
-            <!-- 1. AI 运行状态与工作流横幅 (轻量优雅，消除重复卡片) -->
-            <div class="ai-status-hero-card">
-              <div class="hero-status-left">
-                <div class="status-indicator-badge" :class="currentAccount?.settings?.ai_mode ?? 'off'">
-                  <span class="status-indicator-dot" />
-                  <span class="status-indicator-label">
-                    <template v-if="currentAccount?.settings?.ai_mode === 'auto'">
-                      {{ currentAccount?.settings?.auto_reply ? '全自动智能托管中' : '全自动模式 (总开关未开)' }}
-                    </template>
-                    <template v-else-if="currentAccount?.settings?.ai_mode === 'suggest'">
-                      人工把关模式 (建议卡片)
-                    </template>
-                    <template v-else>
-                      AI 回复已关闭
-                    </template>
-                  </span>
-                </div>
-                <div class="hero-status-desc">
-                  <template v-if="!currentAccount?.settings?.auto_reply && currentAccount?.settings?.ai_mode === 'auto'">
-                    <span class="desc-warning">
-                      <el-icon><WarningFilled /></el-icon> 账号总开关已关闭，全自动发送需开启总开关
-                    </span>
-                    <el-button link type="primary" size="small" @click="currentAccount && toggleAccountAutoReply(currentAccount, true)">立即开启总开关</el-button>
-                  </template>
-                  <template v-else-if="currentAccount?.settings?.ai_mode === 'auto'">
-                    买家消息未命中精准规则时，AI 自动结合【买家所问商品的专属知识】与【店铺人设】直接发送给买家
-                  </template>
-                  <template v-else-if="currentAccount?.settings?.ai_mode === 'suggest'">
-                    AI 仅在收件箱中生成建议回复，由人工确认后再一键发送，适合前期磨合与精准把控
-                  </template>
-                  <template v-else>
-                    仅按精准规则回复，未命中的消息不调用 AI 大模型（可节省 Token 与避免误回复）
-                  </template>
-                </div>
+            <!-- AI 运行模式紧凑切换栏 -->
+            <div class="ai-mode-strip">
+              <div class="strip-left">
+                <span class="mode-strip-label">AI 回复模式：</span>
+                <el-segmented
+                  :model-value="currentAccount?.settings?.ai_mode ?? 'off'"
+                  :options="aiModeOptions"
+                  size="default"
+                  :disabled="!currentAccount || busyAccount[`ai-${currentAccount.id}`]"
+                  @change="(v: string | number | boolean) => currentAccount && setAiMode(currentAccount, v as 'off' | 'suggest' | 'auto')"
+                />
               </div>
-
-              <div class="hero-status-right">
-                <div class="hero-ctrl-item">
-                  <span class="ctrl-sublabel">当前模式：</span>
-                  <el-segmented
-                    :model-value="currentAccount?.settings?.ai_mode ?? 'off'"
-                    :options="aiModeOptions"
-                    size="default"
-                    :disabled="!currentAccount || busyAccount[`ai-${currentAccount.id}`]"
-                    @change="(v: string | number | boolean) => currentAccount && setAiMode(currentAccount, v as 'off' | 'suggest' | 'auto')"
-                  />
-                </div>
-                <div v-if="accounts.list.length > 1" class="hero-ctrl-item">
-                  <span class="ctrl-sublabel">配置账号：</span>
-                  <el-select v-model="selectedAccountId" size="default" class="account-select-hero">
-                    <el-option
-                      v-for="a in accounts.list"
-                      :key="a.id"
-                      :value="a.id"
-                      :label="a.remark || a.nickname || a.unb"
-                    />
-                  </el-select>
-                </div>
+              <div class="strip-right-desc">
+                <template v-if="!currentAccount?.settings?.auto_reply && currentAccount?.settings?.ai_mode === 'auto'">
+                  <span class="desc-warning">
+                    <el-icon><WarningFilled /></el-icon> 总开关已关闭，全自动需开启总开关
+                  </span>
+                  <el-button link type="primary" size="small" @click="currentAccount && toggleAccountAutoReply(currentAccount, true)">开启总开关</el-button>
+                </template>
+                <template v-else-if="currentAccount?.settings?.ai_mode === 'auto'">
+                  <span class="status-tag-lead text-success">全自动智能托管</span> · 关键词未命中时，AI 自动检索【对应宝贝专属知识】并结合【店铺人设】直接回复买家
+                </template>
+                <template v-else-if="currentAccount?.settings?.ai_mode === 'suggest'">
+                  <span class="status-tag-lead text-primary">人工把关模式</span> · 收到咨询后在收件箱生成建议回复卡片，由人工一键确认后再发送
+                </template>
+                <template v-else>
+                  <span class="status-tag-lead text-muted">AI 回复已关闭</span> · 仅按精准规则回复，未命中的消息不调用 AI 大模型
+                </template>
               </div>
             </div>
 
-            <!-- 2. 双核知识库体系展示 (商品专属知识库 vs 全店通用资料) -->
-            <div class="knowledge-arch-section">
-              <div class="section-lead-header">
-                <div class="lead-title-wrap">
-                  <span class="lead-title">闲鱼双核知识库体系</span>
-                  <span class="lead-desc">闲鱼交易以「一物一况」为主，买家 90% 以上咨询具体宝贝参数成色；AI 回复采用双层知识检索体系</span>
+            <!-- 左右分栏工作台 (左：人设发货；右：双核知识库) -->
+            <div class="ai-studio-grid">
+              <!-- 左侧 54%：店铺人设与全局回复习惯 -->
+              <div class="studio-col-left">
+                <div class="ai-column-panel persona-panel">
+                  <div class="panel-header">
+                    <div class="panel-title">
+                      <span class="title-text">店铺人设与发货习惯</span>
+                      <span class="title-desc">定义 AI 的身份、语气、快递与截单时间（关键词未命中时生效）</span>
+                    </div>
+                    <el-button
+                      type="primary"
+                      size="small"
+                      :loading="savingInstr"
+                      :disabled="!instrDirty"
+                      @click="saveInstructions"
+                    >
+                      保存人设
+                    </el-button>
+                  </div>
+
+                  <!-- 快捷人设词签 -->
+                  <div class="prompt-chips-bar">
+                    <span class="chips-title">参考词：</span>
+                    <div class="chips-list">
+                      <span
+                        v-for="chip in promptChips"
+                        :key="chip"
+                        class="prompt-chip"
+                        @click="appendPromptChip(chip)"
+                      >
+                        + {{ chip }}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div class="textarea-wrap">
+                    <el-input
+                      v-model="instructions"
+                      type="textarea"
+                      :rows="8"
+                      :maxlength="MAX_INSTRUCTIONS"
+                      show-word-limit
+                      placeholder="用自然的语言告诉 AI 你的身份、店铺规矩和回复习惯，例如：&#10;· 我是个人自用转让，商品均实拍，谢绝恶意砍价&#10;· 回复亲切自然，可以适当称呼“宝”或“朋友”&#10;· 统一发中通快递，每天下午 5 点前拍下当天发出&#10;· 电子卡券拍下系统自动发货，发出后不支持退换"
+                    />
+                  </div>
+
+                  <div class="panel-foot-notice">
+                    <el-icon><WarningFilled /></el-icon>
+                    <span>保障底线：商品专属底价与违规拦截始终最高优先，人设中写了也不会突破。</span>
+                  </div>
                 </div>
               </div>
 
-              <div class="knowledge-cards-grid">
+              <!-- 右侧 46%：双核知识库体系 -->
+              <div class="studio-col-right">
                 <!-- 卡片 1: 核心生效层 · 商品专属知识库 (针对具体宝贝) -->
                 <div class="arch-card item-kb-card">
                   <div class="arch-card-header">
@@ -857,24 +829,22 @@ onMounted(() => {
                     </div>
                     <div class="arch-title">
                       <el-icon class="arch-title-icon"><Goods /></el-icon>
-                      <span>商品专属知识库</span>
+                      <span>商品专属知识库 (一物一况)</span>
                     </div>
                   </div>
 
                   <div class="arch-body">
                     <div class="arch-concept-box">
                       <p class="concept-point">
-                        <strong>🎯 一物一况精准应答：</strong>
-                        成色瑕疵、电池健康度、是否在保、正品发票、随附配件、个人自用转让原因等。
+                        <strong>🎯 一物一况专属应答：</strong>成色划痕、电池健康度、是否在保、正品发票、随附配件等。
                       </p>
                       <p class="concept-point">
-                        <strong>🛡️ 宝贝独立底价保护：</strong>
-                        每个商品可在商品中心单独设置底价与议价幅度，AI 绝不越界。
+                        <strong>🛡️ 独立底价保护：</strong>商品中心可为每个宝贝单独设底价，AI 绝不越界。
                       </p>
                     </div>
 
                     <div class="arch-explain-text">
-                      当买家从某个商品链接进入咨询时，AI 会<b>自动优先检索该商品的专属知识库</b>，彻底避免多宝贝间的“串款与幻觉”。
+                      买家咨询特定宝贝时，AI <b>自动优先检索该商品的专属知识</b>，彻底杜绝多宝贝串款幻觉。
                     </div>
                   </div>
 
@@ -883,7 +853,7 @@ onMounted(() => {
                       前往【商品管理】维护宝贝专属知识
                     </el-button>
                     <div class="arch-footer-tip">
-                      提示：在商品管理列表中，点击任一商品的「知识库」即可补充最高 8000 字专属说明
+                      在商品列表中点击任一商品的「知识库」即可补充最高 8000 字专属说明
                     </div>
                   </div>
                 </div>
@@ -893,7 +863,7 @@ onMounted(() => {
                   <div class="arch-card-header">
                     <div class="arch-tag-row">
                       <el-tag type="info" size="small" effect="plain" class="arch-badge">全局补充层</el-tag>
-                      <span class="arch-subtag">全店或指定账号共享 · 兜底辅助 (可选)</span>
+                      <span class="arch-subtag">全店/账号共享 · 兜底辅助 (可选)</span>
                     </div>
                     <div class="arch-title">
                       <el-icon class="arch-title-icon"><Document /></el-icon>
@@ -904,25 +874,21 @@ onMounted(() => {
                   <div class="arch-body">
                     <div class="doc-upload-strip">
                       <div class="scope-picker">
-                        <span class="scope-label">上传归属：</span>
+                        <span class="scope-label">归属：</span>
                         <el-radio-group v-model="uploadScope" size="small">
-                          <el-radio-button value="all">所有账号通用</el-radio-button>
-                          <el-radio-button value="account">仅当前账号</el-radio-button>
+                          <el-radio-button value="all">通用</el-radio-button>
+                          <el-radio-button value="account">当前</el-radio-button>
                         </el-radio-group>
                       </div>
                       <el-upload :show-file-list="false" :accept="ACCEPT" :http-request="upload" multiple>
-                        <el-button size="small" type="primary" plain :icon="Upload">上传新文档</el-button>
+                        <el-button size="small" type="primary" plain :icon="Upload">上传文档</el-button>
                       </el-upload>
-                    </div>
-
-                    <div class="doc-support-tip">
-                      支持 txt / md / csv / pdf / docx，适合上传通用的售后退换细则、品牌说明等
                     </div>
 
                     <div v-loading="docsLoading" class="docs-mini-list-wrap">
                       <div v-if="!visibleDocs.length" class="empty-docs-compact">
                         <el-icon class="empty-docs-icon"><Document /></el-icon>
-                        <div class="empty-text">暂无全局通用文档（非必须，宝贝详情与人设通常已足够）</div>
+                        <div class="empty-text">暂无全局通用文档（非必须，宝贝知识通常已足够）</div>
                       </div>
 
                       <div v-else class="docs-mini-list">
@@ -932,7 +898,7 @@ onMounted(() => {
                             <div class="doc-title-row">
                               <span class="doc-name" :title="d.name">{{ d.name }}</span>
                               <el-tag size="small" :type="d.account_id === null ? 'info' : 'primary'" effect="plain">
-                                {{ d.account_id === null ? '通用' : '仅当前账号' }}
+                                {{ d.account_id === null ? '通用' : '当前' }}
                               </el-tag>
                             </div>
                             <div class="doc-sub">{{ d.chars.toLocaleString() }} 字 · {{ d.preview || '已建立索引' }}</div>
@@ -953,103 +919,97 @@ onMounted(() => {
                 </div>
               </div>
             </div>
+          </div>
+        </el-tab-pane>
 
-            <!-- 3. 店铺人设与特别说明 -->
-            <div class="ai-column-panel persona-panel">
-              <div class="panel-header">
-                <div class="panel-title">
-                  <span class="title-text">店铺人设与全局回复习惯</span>
-                  <span class="title-desc">告诉 AI 你的身份、语气风格、统一发货习惯与特殊声明（关键词未命中时生效）</span>
-                </div>
-                <el-button
-                  type="primary"
-                  size="small"
-                  :loading="savingInstr"
-                  :disabled="!instrDirty"
-                  @click="saveInstructions"
-                >
-                  保存人设说明
-                </el-button>
-              </div>
-
-              <!-- 快捷人设词签 -->
-              <div class="prompt-chips-bar">
-                <span class="chips-title">快捷参考词：</span>
-                <div class="chips-list">
-                  <span
-                    v-for="chip in promptChips"
-                    :key="chip"
-                    class="prompt-chip"
-                    @click="appendPromptChip(chip)"
-                  >
-                    + {{ chip }}
-                  </span>
-                </div>
-              </div>
-
-              <div class="textarea-wrap">
-                <el-input
-                  v-model="instructions"
-                  type="textarea"
-                  :rows="7"
-                  :maxlength="MAX_INSTRUCTIONS"
-                  show-word-limit
-                  placeholder="用自然的语言告诉 AI 你的身份、店铺规矩和回复习惯，例如：&#10;· 我是个人自用转让，商品均实拍，谢绝恶意砍价&#10;· 回复亲切自然，可以适当称呼“宝”或“朋友”&#10;· 统一发中通快递，每天下午 5 点前拍下当天发出&#10;· 电子卡券拍下系统自动发货，发出后不支持退换"
-                />
-              </div>
-
-              <div class="panel-foot-notice">
-                <el-icon><WarningFilled /></el-icon>
-                <span>安全底线保障：商品单独底价、防封号规则与平台违规拦截始终最高优先，人设中哪怕写了也不会突破底线。</span>
-              </div>
+        <!-- 标签页 3: 议价与安全底线 -->
+        <el-tab-pane name="guard">
+          <template #label>
+            <div class="tab-label-inner">
+              <el-icon><Coin /></el-icon>
+              <span>议价与安全底线</span>
             </div>
+          </template>
 
-            <!-- 4. 默认议价范围与安全护栏 -->
-            <div class="ai-column-panel guard-panel">
-              <div class="panel-header">
-                <div class="panel-title">
-                  <span class="title-text">默认议价范围与 AI 禁用词</span>
-                  <span class="title-desc">当商品未单独设置底价时套用此默认议价规则；命中禁用词的回复会被系统拦截重写</span>
+          <div class="tab-body">
+            <div class="guard-studio-grid">
+              <!-- 左侧：默认议价与让价规则 -->
+              <div class="ai-column-panel guard-card">
+                <div class="panel-header">
+                  <div class="panel-title">
+                    <span class="title-text">默认议价与让价规则</span>
+                    <span class="title-desc">仅对未单独设置底价的宝贝生效；单独设置了底价的商品不受影响</span>
+                  </div>
+                  <el-button type="primary" size="small" :loading="savingGuard" :disabled="!guardDirty" @click="saveGuard">
+                    保存议价设置
+                  </el-button>
                 </div>
-                <el-button type="primary" size="small" :loading="savingGuard" :disabled="!guardDirty" @click="saveGuard">
-                  保存议价与护栏
-                </el-button>
+
+                <el-form label-width="120px" :label-position="isMobile ? 'top' : 'right'" class="guard-form">
+                  <el-form-item label="默认允许议价">
+                    <el-switch v-model="guard.bargain_default" />
+                    <span class="form-tip inline-tip">
+                      关闭则咬死标价不让步；开启后允许 AI 在下方安全区间内与买家议价
+                    </span>
+                  </el-form-item>
+                  <template v-if="guard.bargain_default">
+                    <el-form-item label="最多让价">
+                      <div class="bargain-row-wrap">
+                        <el-input-number v-model="guard.bargain_max_percent" :min="1" :max="50" :step="1" />
+                        <span class="unit">%</span>
+                        <span class="unit-sep">且不超过</span>
+                        <el-input-number v-model="guard.bargain_max_amount" :min="0" :step="10" placeholder="不限" />
+                        <span class="unit">元</span>
+                      </div>
+                      <div class="form-tip">双重上限保障：百分比与封顶金额同时生效，取更严谨的一方</div>
+                    </el-form-item>
+                    <el-form-item label="最多议价轮次">
+                      <div class="bargain-row-wrap">
+                        <el-input-number v-model="guard.bargain_max_rounds" :min="1" :max="10" />
+                        <span class="unit">轮，之后坚持最终一口价不再让步</span>
+                      </div>
+                      <div class="form-tip">达到上限后，AI 将温和而坚定地表示“已经是诚意底价，不能再少啦”</div>
+                    </el-form-item>
+                  </template>
+                </el-form>
               </div>
 
-              <el-form label-width="120px" :label-position="isMobile ? 'top' : 'right'" class="guard-form">
-                <el-form-item label="默认允许议价">
-                  <el-switch v-model="guard.bargain_default" />
-                  <span class="form-tip inline-tip">
-                    若商品在「商品中心」单独设置了底价，则优先按商品的底价执行，此处的默认规则仅对未单独设底价的商品生效
-                  </span>
-                </el-form-item>
-                <template v-if="guard.bargain_default">
-                  <el-form-item label="最多让价">
-                    <div class="bargain-row-wrap">
-                      <el-input-number v-model="guard.bargain_max_percent" :min="1" :max="50" :step="1" />
-                      <span class="unit">%</span>
-                      <span class="unit-sep">且不超过</span>
-                      <el-input-number v-model="guard.bargain_max_amount" :min="0" :step="10" placeholder="不限" />
-                      <span class="unit">元</span>
+              <!-- 右侧：平台合规防封与转人工机制 -->
+              <div class="ai-column-panel safety-card">
+                <div class="panel-header">
+                  <div class="panel-title">
+                    <span class="title-text">AI 敏感词过滤 (防封号)</span>
+                    <span class="title-desc">命中敏感词的回复会在发出前自动拦截并重写，杜绝平台违规</span>
+                  </div>
+                  <el-button type="primary" size="small" :loading="savingGuard" :disabled="!guardDirty" @click="saveGuard">
+                    保存禁用词
+                  </el-button>
+                </div>
+
+                <div class="safety-body">
+                  <div class="banned-words-wrap">
+                    <el-input-tag
+                      v-model="guard.ai_banned_words"
+                      placeholder="输入违规敏感词后按回车，例如微信、电话、其他平台名、加V等"
+                      save-on-blur
+                      :max="100"
+                    />
+                    <div class="form-tip">
+                      系统内置防封号过滤器：当 AI 输出中包含上述词汇时，直接触发静默拦截与重新组织语言。
                     </div>
-                  </el-form-item>
-                  <el-form-item label="最多议价轮次">
-                    <div class="bargain-row-wrap">
-                      <el-input-number v-model="guard.bargain_max_rounds" :min="1" :max="10" />
-                      <span class="unit">轮，之后坚持最终一口价不再让步</span>
+                  </div>
+
+                  <div class="handoff-rule-box">
+                    <div class="box-title">
+                      <el-icon class="box-icon text-warning"><WarningFilled /></el-icon>
+                      <strong>纠纷与高风险咨询自动转人工</strong>
                     </div>
-                  </el-form-item>
-                </template>
-                <el-form-item label="AI 禁用词">
-                  <el-input-tag
-                    v-model="guard.ai_banned_words"
-                    placeholder="输入敏感词后按回车，例如微信、电话、其他平台名或禁提话题"
-                    save-on-blur
-                    :max="100"
-                  />
-                  <div class="form-tip">若 AI 回复中包含以上敏感词，系统会在发送前自动拦截并要求重新组织语言，防止账号受限</div>
-                </el-form-item>
-              </el-form>
+                    <p class="box-desc">
+                      当买家消息涉及【售后纠纷、质量投诉、申请退款、恶意辱骂】等高敏感意图时，系统会自动暂停 AI 回复并通知你人工接管，保障店铺信誉与资金安全。
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </el-tab-pane>
@@ -1140,185 +1100,163 @@ onMounted(() => {
   gap: var(--xh-space-3);
 }
 
-.page-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: var(--xh-space-2);
-}
-
-.head-left h2 {
-  font-size: var(--xh-fs-xl);
-  font-weight: 700;
-  color: var(--xh-text);
-  margin: 0;
-}
-
-.head-subtitle {
-  font-size: var(--xh-fs-xs);
-  color: var(--xh-muted);
-  margin-top: 2px;
-  display: block;
-}
-
-.toolbar {
-  display: flex;
-  align-items: center;
-  gap: var(--xh-space-2);
-}
-
-/* 账号回复策略概览条 */
-.account-strip-card {
+/* 顶部统一控制台横幅 */
+.studio-header-card {
   background: var(--xh-card);
   border: 1px solid var(--xh-border);
   border-radius: var(--xh-radius-md);
-  padding: 12px 16px;
+  padding: 14px 18px;
   box-shadow: var(--xh-shadow-1);
 }
 
-.strip-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
-}
-
-.strip-title {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: var(--xh-fs-sm);
-  font-weight: 600;
-  color: var(--xh-text);
-}
-
-.title-icon {
-  color: var(--xh-primary);
-  font-size: 15px;
-}
-
-.strip-tip {
-  font-size: var(--xh-fs-xs);
-  font-weight: normal;
-  color: var(--xh-muted);
-  margin-left: 6px;
-}
-
-.nav-link {
-  font-size: var(--xh-fs-xs);
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-}
-
-.empty-acc-banner {
-  font-size: var(--xh-fs-xs);
-  color: var(--xh-muted);
-  padding: 8px 0;
-}
-
-.acc-capsule-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.acc-capsule {
+.studio-header-main {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 8px 14px;
-  background: var(--xh-fill);
-  border: 1px solid var(--xh-border);
-  border-radius: var(--xh-radius-sm);
-  flex: 1 1 420px;
-  max-width: 100%;
-  transition: all 0.18s ease;
-  cursor: pointer;
+  flex-wrap: wrap;
 }
 
-.acc-capsule:hover {
-  border-color: var(--xh-primary-border);
+.header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
-.acc-capsule.active {
-  border-color: var(--xh-primary);
-  background: var(--xh-primary-soft);
-}
-
-.capsule-profile {
+.title-row {
   display: flex;
   align-items: center;
   gap: 10px;
-  min-width: 0;
 }
 
-.capsule-avatar {
-  width: 32px;
-  height: 32px;
+.page-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--xh-text);
+  letter-spacing: -0.02em;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+}
+
+.status-pulse-dot {
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background: var(--xh-card);
-  color: var(--xh-primary);
-  border: 1px solid var(--xh-primary-border);
+  background: #94a3b8;
+}
+
+.status-pill.active {
+  background: var(--xh-primary-soft);
+  color: var(--xh-primary-dark-2);
+  border-color: var(--xh-primary-border);
+}
+
+.status-pill.active .status-pulse-dot {
+  background: var(--xh-primary);
+  box-shadow: 0 0 0 3px rgba(30, 158, 106, 0.2);
+}
+
+.page-subtitle {
+  margin: 0;
+  font-size: 12px;
+  color: var(--xh-muted);
+}
+
+.header-right {
   display: flex;
   align-items: center;
-  justify-content: center;
-  font-size: 13px;
-  font-weight: 700;
-  flex-shrink: 0;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
-.capsule-info {
-  min-width: 0;
-}
-
-.capsule-name {
-  font-size: var(--xh-fs-sm);
-  font-weight: 600;
-  color: var(--xh-text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 140px;
-}
-
-.capsule-status {
+.header-account-picker {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-top: 2px;
 }
 
-.status-warning {
-  font-size: 11px;
-  color: var(--xh-warning-text);
-  background: #fef3c7;
-  padding: 0 4px;
-  border-radius: 3px;
+.picker-label {
+  font-size: 12px;
+  color: var(--xh-muted);
+  font-weight: 500;
+}
+
+.account-select {
+  width: 170px;
+}
+
+.account-opt-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.single-account-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: var(--xh-fill);
+  border: 1px solid var(--xh-border);
+  border-radius: var(--xh-radius-sm);
+}
+
+.badge-label {
+  font-size: 12px;
+  color: var(--xh-muted);
+}
+
+.badge-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--xh-text);
+}
+
+.master-switch-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  background: var(--xh-fill);
+  border: 1px solid var(--xh-border);
+  border-radius: var(--xh-radius-sm);
+}
+
+.switch-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--xh-text);
+}
+
+.header-action-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.nav-account-link {
+  font-size: 12px;
+  color: var(--xh-muted);
   display: inline-flex;
   align-items: center;
   gap: 2px;
 }
 
-.capsule-controls {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  flex-shrink: 0;
-}
-
-.ctrl-group {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-}
-
-.ctrl-label {
-  font-size: 11px;
-  color: var(--xh-muted);
+.nav-account-link:hover {
+  color: var(--xh-primary);
 }
 
 /* 核心 Tab 容器 */
@@ -1391,119 +1329,70 @@ onMounted(() => {
 }
 
 /* Tab 顶部功能控制条 */
-.feature-status-banner {
+/* 精准回复内嵌样式 */
+.inline-warning-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 8px 14px;
+  background: #fffbeb;
+  border: 1px solid #fef3c7;
+  border-radius: var(--xh-radius-sm);
+  font-size: 12px;
+  color: var(--xh-warning-text);
+}
+
+.kw-switch-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 4px;
+}
+
+.kw-switch-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--xh-text-2);
+}
+
+/* AI 运行模式紧凑切换栏 */
+.ai-mode-strip {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px;
+  gap: 16px;
+  padding: 10px 14px;
   background: var(--xh-fill);
   border: 1px solid var(--xh-border);
   border-radius: var(--xh-radius-md);
-  padding: 12px 16px;
-  margin-bottom: 14px;
-}
-
-/* AI 运行状态条 Hero */
-.ai-status-hero-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  background: #ffffff;
-  border: 1px solid var(--xh-border);
-  border-radius: var(--xh-radius-md);
-  padding: 14px 18px;
   margin-bottom: 16px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
   flex-wrap: wrap;
 }
 
-.hero-status-left {
+.strip-left {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-  flex: 1;
-  min-width: 280px;
-}
-
-.status-indicator-badge {
-  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  font-size: var(--xh-fs-sm);
-  font-weight: 700;
-  padding: 3px 10px;
-  border-radius: 999px;
-  width: fit-content;
+  gap: 10px;
 }
 
-.status-indicator-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
+.mode-strip-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--xh-text);
 }
 
-.status-indicator-badge.auto {
-  background: var(--xh-primary-soft);
-  color: var(--xh-primary-dark-2);
-  border: 1px solid var(--xh-primary-border);
-}
-.status-indicator-badge.auto .status-indicator-dot {
-  background: var(--xh-primary);
-  box-shadow: 0 0 0 3px rgba(30, 158, 106, 0.2);
-}
-
-.status-indicator-badge.suggest {
-  background: #eff6ff;
-  color: #1d4ed8;
-  border: 1px solid #bfdbfe;
-}
-.status-indicator-badge.suggest .status-indicator-dot {
-  background: #2563eb;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
-}
-
-.status-indicator-badge.off {
-  background: #f1f5f9;
-  color: #475569;
-  border: 1px solid #cbd5e1;
-}
-.status-indicator-badge.off .status-indicator-dot {
-  background: #94a3b8;
-}
-
-.hero-status-desc {
-  font-size: var(--xh-fs-xs);
+.strip-right-desc {
+  font-size: 12px;
   color: var(--xh-muted);
-  line-height: 1.5;
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
   gap: 6px;
-}
-
-.hero-status-right {
-  display: flex;
-  align-items: center;
-  gap: 16px;
   flex-wrap: wrap;
 }
 
-.hero-ctrl-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.ctrl-sublabel {
-  font-size: var(--xh-fs-xs);
-  color: var(--xh-muted);
-  font-weight: 500;
-}
-
-.account-select-hero {
-  width: 160px;
+.status-tag-lead {
+  font-weight: 600;
 }
 
 /* 工具条 */
@@ -1719,50 +1608,37 @@ onMounted(() => {
   margin-top: auto;
 }
 
-/* 闲鱼双核知识库体系展示区 */
-.knowledge-arch-section {
-  margin-bottom: 16px;
-}
-
-.section-lead-header {
-  margin-bottom: 10px;
-}
-
-.lead-title-wrap {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.lead-title {
-  font-size: var(--xh-fs-sm);
-  font-weight: 700;
-  color: var(--xh-text);
-}
-
-.lead-desc {
-  font-size: 11px;
-  color: var(--xh-muted);
-}
-
-.knowledge-cards-grid {
+/* AI 左右分栏工作台 */
+.ai-studio-grid {
   display: grid;
-  grid-template-columns: 1.1fr 0.9fr;
+  grid-template-columns: 54% 46%;
   gap: 16px;
+  align-items: start;
 }
 
 @media (max-width: 992px) {
-  .knowledge-cards-grid {
+  .ai-studio-grid {
     grid-template-columns: 1fr;
   }
 }
 
+.studio-col-left {
+  display: flex;
+  flex-direction: column;
+}
+
+.studio-col-right {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* 知识库卡片 */
 .arch-card {
   background: #ffffff;
   border: 1px solid var(--xh-border);
   border-radius: var(--xh-radius-md);
-  padding: 16px;
+  padding: 14px 16px;
   display: flex;
   flex-direction: column;
   transition: all 0.2s ease;
@@ -1771,11 +1647,11 @@ onMounted(() => {
 
 .item-kb-card {
   border-color: #bbf7d0;
-  background: linear-gradient(180deg, #f0fdf4 0%, #ffffff 75px);
+  background: linear-gradient(180deg, #f0fdf4 0%, #ffffff 65px);
 }
 
 .item-kb-card:hover {
-  box-shadow: 0 4px 14px rgba(22, 163, 74, 0.09);
+  box-shadow: 0 4px 12px rgba(22, 163, 74, 0.08);
   border-color: #86efac;
 }
 
@@ -1786,16 +1662,16 @@ onMounted(() => {
 .arch-card-header {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-bottom: 12px;
+  gap: 4px;
+  margin-bottom: 10px;
   border-bottom: 1px solid var(--xh-border);
-  padding-bottom: 10px;
+  padding-bottom: 8px;
 }
 
 .arch-tag-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .arch-badge {
@@ -1810,14 +1686,14 @@ onMounted(() => {
 .arch-title {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 15px;
+  gap: 6px;
+  font-size: 14px;
   font-weight: 700;
   color: var(--xh-text);
 }
 
 .arch-title-icon {
-  font-size: 18px;
+  font-size: 16px;
   color: var(--xh-primary);
 }
 
@@ -1829,24 +1705,24 @@ onMounted(() => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .arch-concept-box {
   background: rgba(255, 255, 255, 0.9);
   border: 1px dashed #86efac;
   border-radius: var(--xh-radius-sm);
-  padding: 10px 12px;
+  padding: 8px 10px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .concept-point {
   margin: 0;
   font-size: var(--xh-fs-xs);
   color: var(--xh-text-2);
-  line-height: 1.5;
+  line-height: 1.45;
 }
 
 .concept-point strong {
@@ -1856,14 +1732,14 @@ onMounted(() => {
 .arch-explain-text {
   font-size: 11px;
   color: var(--xh-muted);
-  line-height: 1.5;
+  line-height: 1.45;
 }
 
 .arch-footer {
-  margin-top: 14px;
+  margin-top: 10px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .arch-footer-tip {
@@ -1877,14 +1753,14 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
 .scope-picker {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 
 .scope-label {
@@ -1892,14 +1768,9 @@ onMounted(() => {
   color: var(--xh-muted);
 }
 
-.doc-support-tip {
-  font-size: 11px;
-  color: var(--xh-muted);
-}
-
 .docs-mini-list-wrap {
   flex: 1;
-  min-height: 110px;
+  min-height: 90px;
   display: flex;
   flex-direction: column;
 }
@@ -1910,17 +1781,17 @@ onMounted(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 18px 12px;
+  padding: 14px 10px;
   background: #f8fafc;
   border: 1px dashed var(--xh-border);
   border-radius: var(--xh-radius-sm);
   color: var(--xh-muted);
   text-align: center;
-  gap: 6px;
+  gap: 4px;
 }
 
 .empty-docs-icon {
-  font-size: 24px;
+  font-size: 20px;
   color: var(--xh-border-strong);
 }
 
@@ -1931,16 +1802,16 @@ onMounted(() => {
 .docs-mini-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  max-height: 180px;
+  gap: 6px;
+  max-height: 140px;
   overflow-y: auto;
 }
 
 .doc-card-compact {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 10px;
+  gap: 8px;
+  padding: 6px 8px;
   background: #f8fafc;
   border: 1px solid var(--xh-border);
   border-radius: 6px;
@@ -1952,7 +1823,7 @@ onMounted(() => {
 }
 
 .doc-file-icon {
-  font-size: 18px;
+  font-size: 16px;
   color: var(--xh-primary);
   flex-shrink: 0;
 }
@@ -1965,7 +1836,7 @@ onMounted(() => {
 .doc-title-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .doc-name {
@@ -1980,7 +1851,7 @@ onMounted(() => {
 .doc-sub {
   font-size: 11px;
   color: var(--xh-muted);
-  margin-top: 2px;
+  margin-top: 1px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1989,11 +1860,11 @@ onMounted(() => {
 .doc-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-shrink: 0;
 }
 
-/* 人设与通用面板卡片 */
+/* 人设面板与通用面板卡片 */
 .ai-column-panel {
   border: 1px solid var(--xh-border);
   border-radius: var(--xh-radius-md);
@@ -2001,10 +1872,6 @@ onMounted(() => {
   background: #ffffff;
   display: flex;
   flex-direction: column;
-}
-
-.persona-panel {
-  margin-bottom: 16px;
 }
 
 .panel-header {
@@ -2086,6 +1953,24 @@ onMounted(() => {
   border: 1px solid #fef3c7;
 }
 
+/* 议价与安全底线 Tab */
+.guard-studio-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 992px) {
+  .guard-studio-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.guard-form :deep(.el-form-item) {
+  margin-bottom: 12px;
+}
+
 .bargain-row-wrap {
   display: flex;
   align-items: center;
@@ -2099,26 +1984,14 @@ onMounted(() => {
   color: var(--xh-muted);
 }
 
-.w-full {
-  width: 100%;
-}
-
-.guard-panel {
-  margin-top: 16px;
-}
-
-.guard-form :deep(.el-form-item) {
-  margin-bottom: 12px;
+.unit {
+  margin: 0 6px;
+  font-size: var(--xh-fs-sm);
+  color: var(--xh-text-2);
 }
 
 .inline-tip {
-  margin: 0 0 0 10px;
-}
-
-.unit {
-  margin: 0 8px;
-  font-size: var(--xh-fs-sm);
-  color: var(--xh-text-2);
+  margin: 0 0 0 8px;
 }
 
 .form-tip {
@@ -2126,5 +1999,51 @@ onMounted(() => {
   color: var(--xh-muted);
   line-height: 1.5;
   margin-top: 4px;
+}
+
+.safety-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.banned-words-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.handoff-rule-box {
+  background: #f8fafc;
+  border: 1px dashed var(--xh-border-strong);
+  border-radius: var(--xh-radius-sm);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.box-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--xh-text);
+}
+
+.box-icon {
+  font-size: 16px;
+  color: var(--xh-warning-text);
+}
+
+.box-desc {
+  margin: 0;
+  font-size: 12px;
+  color: var(--xh-muted);
+  line-height: 1.5;
+}
+
+.w-full {
+  width: 100%;
 }
 </style>
