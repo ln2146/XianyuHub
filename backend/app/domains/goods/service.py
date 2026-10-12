@@ -226,6 +226,19 @@ UNCERTAIN_PUBLISH_HINT = (
 )
 
 
+def validate_publish_draft(draft: PublishDraftRecord) -> None:
+    """所有发布入口共用检查；草稿可以保存不完整内容，但不能发布未核验事实。"""
+    if not draft.title.strip() or not draft.desc.strip() or not draft.image_ids:
+        raise ValueError("草稿缺少标题、描述或图片，请补全后发布")
+    if not draft.price or draft.price <= 0:
+        raise ValueError("请先填写有效售价后发布")
+    if draft.floor_price is not None and draft.floor_price > draft.price:
+        raise ValueError("底价不能高于售价")
+    pending = [fact for fact in (draft.ai_meta or {}).get("uncertain", []) if fact not in (draft.confirmed_facts or [])]
+    if pending:
+        raise ValueError(f"还有 {len(pending)} 项商品信息未核验：{'；'.join(pending)}。请在确认页核验后发布")
+
+
 async def publish_draft(draft_id: int, user_id: int | None = None) -> str:
     gateway = get_runtime().gateway
     async with session_factory()() as s:
@@ -245,6 +258,12 @@ async def publish_draft(draft_id: int, user_id: int | None = None) -> str:
             raise ValueError("草稿不存在")
         if claimed.rowcount != 1:
             raise ValueError("草稿已发布或正在发布")
+        try:
+            validate_publish_draft(d)
+        except ValueError as e:
+            d.status, d.error = DraftStatus.FAILED, str(e)
+            await s.commit()
+            raise
         if not await _creator_can_use(s, d):
             # 定时发布不经过接口鉴权：再确认一次创建者仍有该账号的权限（授权可能已被收回）
             d.status, d.error = DraftStatus.FAILED, "草稿创建者已无权使用该闲鱼账号"

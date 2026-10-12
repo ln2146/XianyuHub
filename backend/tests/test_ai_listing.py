@@ -108,11 +108,18 @@ async def test_ai_draft_endpoint_regenerate_and_publish_guard(admin_client):
     assert any("自动删除" in w for w in meta["warnings"]) and meta["market"]["sample"] == 6
     assert len(calls[0]["images"]) == 2 and "自用半年" in calls[0]["messages"][0].content
 
+    editable = {key: d[key] for key in ("account_id", "title", "desc", "image_ids", "price")}
+    confirmed = await admin_client.put(
+        f"/api/v1/goods/drafts/{d['id']}", json={**editable, "confirmed_facts": ["是否有购买发票"]}
+    )
+    assert confirmed.status_code == 200 and confirmed.json()["confirmed_facts"] == ["是否有购买发票"]
+
     # 重新生成：覆盖同一份草稿；无法估价时售价为 0，禁止直接发布
     r = await admin_client.post(
         "/api/v1/goods/ai-draft", json={"account_id": acc_id, "image_ids": ids, "draft_id": d["id"]}
     )
     assert r.status_code == 201 and r.json()["id"] == d["id"] and r.json()["price"] == 0
+    assert r.json()["confirmed_facts"] == []
     assert "无法估价" in r.json()["ai_meta"]["warnings"][0]
     r = await admin_client.post(f"/api/v1/goods/drafts/{d['id']}/publish")
     assert r.status_code == 400 and "售价" in r.json()["detail"]

@@ -168,6 +168,7 @@ function fillFromDraft(d: DraftOut) {
   aiMeta.value = d.ai_meta
   for (const k of Object.keys(confirmed)) delete confirmed[Number(k)]
   if (d.ai_meta) {
+    d.ai_meta.uncertain.forEach((fact, i) => { confirmed[i] = d.confirmed_facts.includes(fact) })
     gen.hint = d.ai_meta.hint || ''
     gen.strategy = d.ai_meta.strategy || 'market'
   }
@@ -247,6 +248,7 @@ function toBody(): DraftIn | null {
     is_virtual: form.is_virtual,
     location: form.location,
     scheduled_at: form.scheduled_at ? form.scheduled_at.toISOString() : null,
+    confirmed_facts: uncertain.value.filter((_, i) => confirmed[i]),
   }
 }
 
@@ -294,6 +296,7 @@ async function persist(body: DraftIn): Promise<DraftOut> {
 }
 
 async function saveDraft() {
+  if (form.scheduled_at && unconfirmedCount.value) return ElMessage.warning('请先核验所有商品信息，再设置定时发布')
   const body = toBody()
   if (!body) return
   saving.value = true
@@ -320,6 +323,7 @@ function publishConfirmText(title: string, price: number, accountId: number, pen
 
 /** 确认页：保存修改后立即发布 */
 async function confirmAndPublish() {
+  if (unconfirmedCount.value) return ElMessage.warning('请先核验所有商品信息后发布')
   const body = toBody()
   if (!body) return
   if (needLocation()) return
@@ -427,6 +431,10 @@ function openDraft(d: DraftOut) {
 }
 
 async function publishFromList(d: DraftOut) {
+  if (d.ai_meta?.uncertain.some((fact) => !d.confirmed_facts.includes(fact))) {
+    openDraft(d)
+    return ElMessage.warning('该草稿还有未核验的商品信息，请核验后发布')
+  }
   if (!d.price || d.price <= 0) {
     openDraft(d)
     return ElMessage.warning('该草稿还没有售价，请先补全')
@@ -646,7 +654,7 @@ onBeforeUnmount(() => window.clearInterval(timer))
             <div v-if="uncertain.length" class="confirm-box">
               <div class="confirm-head">
                 <el-icon><Warning /></el-icon>
-                请确认以下 AI 无法从图片判断的信息（已确认 {{ uncertain.length - unconfirmedCount }}/{{ uncertain.length }}）
+                发布前必须核验以下信息，并据实际情况修正描述（已核验 {{ uncertain.length - unconfirmedCount }}/{{ uncertain.length }}）
               </div>
               <el-checkbox v-for="(u, i) in uncertain" :key="i" v-model="confirmed[i]" class="confirm-item">{{ u }}</el-checkbox>
             </div>
@@ -773,7 +781,7 @@ onBeforeUnmount(() => window.clearInterval(timer))
             </el-collapse>
 
             <el-form-item class="publish-form-actions">
-              <el-button type="primary" :loading="publishing" :disabled="gen.loading" @click="confirmAndPublish">
+              <el-button type="primary" :loading="publishing" :disabled="gen.loading || unconfirmedCount > 0" @click="confirmAndPublish">
                 {{ form.scheduled_at ? '确认并定时发布' : '确认并发布' }}
               </el-button>
               <el-button :loading="saving" :disabled="gen.loading" @click="saveDraft">保存草稿</el-button>

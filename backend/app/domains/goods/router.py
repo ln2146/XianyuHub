@@ -82,6 +82,7 @@ class DraftIn(BaseModel):
     is_virtual: bool = False
     location: ItemLocation | None = None  # 宝贝所在地；为空时沿用账号上次使用的所在地
     scheduled_at: datetime | None = None
+    confirmed_facts: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _check(self) -> "DraftIn":
@@ -116,6 +117,7 @@ class DraftOut(BaseModel):
     error: str | None
     created_at: datetime
     ai_meta: dict[str, Any] | None = None
+    confirmed_facts: list[str] = Field(default_factory=list)
 
 
 class AiDraftIn(BaseModel):
@@ -432,6 +434,7 @@ async def ai_draft(body: AiDraftIn, user: CurrentUser, session: SessionDep) -> P
     draft.scheduled_at = None
     draft.error = None
     draft.ai_meta = {**out.meta, "hint": body.hint}
+    draft.confirmed_facts = []
     await session.commit()
     await record_audit(
         "goods.ai_draft",
@@ -458,6 +461,13 @@ async def list_drafts(user: CurrentUser, session: SessionDep) -> list[PublishDra
 async def create_draft(body: DraftIn, user: CurrentUser, session: SessionDep) -> PublishDraftRecord:
     await get_account_for(session, user, body.account_id)
     d = PublishDraftRecord(**body.model_dump(), created_by=user.id)
+    if body.confirmed_facts:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "手动草稿没有 AI 待核验事项")
+    if body.scheduled_at:
+        try:
+            service.validate_publish_draft(d)
+        except ValueError as e:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
     d.status = DraftStatus.SCHEDULED if body.scheduled_at else DraftStatus.DRAFT
     session.add(d)
     await session.commit()
@@ -474,8 +484,16 @@ async def update_draft(draft_id: int, body: DraftIn, user: CurrentUser, session:
         await get_account_for(session, user, body.account_id)  # 换发布账号：新账号也必须有权限
     if d.status in (DraftStatus.PUBLISHING, DraftStatus.PUBLISHED):
         raise HTTPException(status.HTTP_409_CONFLICT, "已发布的草稿不能修改")
+    required = (d.ai_meta or {}).get("uncertain", [])
+    if any(fact not in required for fact in body.confirmed_facts):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "核验事项已变化，请重新打开草稿确认")
     for k, v in body.model_dump().items():
         setattr(d, k, v)
+    if body.scheduled_at:
+        try:
+            service.validate_publish_draft(d)
+        except ValueError as e:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
     d.status = DraftStatus.SCHEDULED if body.scheduled_at else DraftStatus.DRAFT
     await session.commit()
     return d

@@ -89,3 +89,5 @@ class PublishDraftRecord(IdMixin, TimestampMixin, Base):
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     # AI 生成草稿时的附加信息（候选标题、定价依据、待确认事项等），人工创建的草稿为空
     ai_meta: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    # 卖家已核验的 AI 待确认事项；重新生成后清空。
+    confirmed_facts: Mapped[list[str]] = mapped_column(JSON, default=list)

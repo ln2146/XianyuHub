@@ -105,6 +105,7 @@ export interface DraftIn {
   /** 为空时沿用账号上次使用的所在地 */
   location: ItemLocation | null
   scheduled_at: string | null
+  confirmed_facts: string[]
 }
 
 export interface DraftOut extends DraftIn {
