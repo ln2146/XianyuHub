@@ -44,7 +44,7 @@ import StatusTag from '@/components/StatusTag.vue'
 import { useAccountsStore } from '@/stores/accounts'
 import { useAuthStore } from '@/stores/auth'
 import { useMobile } from '@/composables/useMobile'
-import { accountStatusMap, fmtTime, friendlyError, roleMap } from '@/utils/format'
+import { accountStatusMap, fmtRelative, fmtTime, friendlyError, roleMap } from '@/utils/format'
 
 const store = useAccountsStore()
 const auth = useAuthStore()
@@ -701,11 +701,14 @@ onBeforeUnmount(() => {
               <div v-if="row.status === 'cooldown' && row.cooldown_until" class="muted small">至 {{ fmtTime(row.cooldown_until) }}</div>
             </template>
           </el-table-column>
-          <el-table-column label="健康度" width="150">
+          <el-table-column label="健康度" width="130">
             <template #default="{ row }">
-              <el-progress :percentage="row.health_score" :color="healthColor(row.health_score)" :stroke-width="8" />
-              <el-tooltip v-if="row.strikes" content="触发平台限制的累计次数，次数越多，每次暂停保护的时间越长" placement="top">
-                <div class="muted small">异常次数 {{ row.strikes }}</div>
+              <div class="health-cell">
+                <el-progress :percentage="row.health_score" :color="healthColor(row.health_score)" :stroke-width="6" :show-text="false" />
+                <span class="health-num mono" :style="{ color: healthColor(row.health_score) }">{{ row.health_score }}%</span>
+              </div>
+              <el-tooltip v-if="row.strikes" content="触发平台限制的累计次数" placement="top">
+                <div class="muted smaller">异常 {{ row.strikes }} 次</div>
               </el-tooltip>
             </template>
           </el-table-column>
@@ -724,11 +727,14 @@ onBeforeUnmount(() => {
               </div>
             </template>
           </el-table-column>
-          <el-table-column label="最近检查 / 错误" min-width="190">
+          <el-table-column label="最近检查 / 异常" min-width="180">
             <template #default="{ row }">
-              <div class="small">{{ fmtTime(row.last_probe_at) }}</div>
+              <el-tooltip v-if="row.last_probe_at" :content="`上次检查时间：${fmtTime(row.last_probe_at, true)}`" placement="top">
+                <div class="small mono">{{ fmtRelative(row.last_probe_at) }}</div>
+              </el-tooltip>
+              <div v-else class="small muted">-</div>
               <div v-if="isSessionExpired(row)" class="session-expired-hint">
-                <el-tag size="small" type="danger" effect="plain" class="expired-tag">登录已失效</el-tag>
+                <el-tag size="small" type="danger" class="expired-tag">登录已失效</el-tag>
               </div>
               <el-tooltip v-if="row.last_error && row.status !== 'active'" :content="row.last_error" placement="top">
                 <div class="small err ellipsis">{{ friendlyError(row.last_error) }}</div>
@@ -1265,6 +1271,18 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+.health-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.health-num {
+  font-size: 12px;
+  font-weight: 600;
+  width: 32px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 .acc-info {
   min-width: 0;
