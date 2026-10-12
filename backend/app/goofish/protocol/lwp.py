@@ -28,6 +28,7 @@ IM_UA = (
 )
 
 TokenProvider = Callable[[], Awaitable[str]]
+CookieProvider = Callable[[], Awaitable[str]]
 EventHandler = Callable[[ImEvent], Awaitable[None]]
 StatusHandler = Callable[[str, str | None], Awaitable[None]]
 
@@ -38,13 +39,16 @@ class LwpClient:
         *,
         my_id: str,
         device_id: str,
-        cookie_header: str,
+        cookie_header: str | CookieProvider,
         token_provider: TokenProvider,
         on_event: EventHandler,
         on_status: StatusHandler | None = None,
         heartbeat_interval: float = 15.0,
         heartbeat_timeout: float = 10.0,
         token_ttl: float = 55 * 60,
+        stable_after: float = 60.0,
+        min_backoff: float = 1.0,
+        max_backoff: float = 60.0,
         connect: Callable[..., Any] | None = None,
         url: str = WSS_URL,
     ) -> None:
@@ -57,6 +61,9 @@ class LwpClient:
         self.heartbeat_interval = heartbeat_interval
         self.heartbeat_timeout = heartbeat_timeout
         self.token_ttl = token_ttl
+        self.stable_after = stable_after  # 连接存活超过这个时长才算稳定，断开后才从头退避
+        self.min_backoff, self.max_backoff = min_backoff, max_backoff
+        self._connected_at: float | None = None
         self._connect = connect or websockets.connect
         self.url = url
         self._ws: Any = None
@@ -67,21 +74,29 @@ class LwpClient:
 
     # ------------------------------------------------------------------ 公共 API
     async def run_forever(self) -> None:
-        backoff = 1.0
+        backoff = self.min_backoff
         while not self._stop.is_set():
+            self._connected_at = None
             try:
-                await self._run_once()
-                backoff = 1.0
+                if await self._run_once() == "token_ttl":
+                    backoff = self.min_backoff
+                    continue  # 主动换 token：立即重连
+                reason = "服务端关闭了连接"
             except asyncio.CancelledError:
                 raise
             except Exception as e:  # noqa: BLE001
-                logger.warning("IM 连接断开 uid={} err={!r}，{}s 后重连", self.my_id, e, int(backoff))
-                await self._emit_status("disconnected", repr(e))
-                if self._stop.is_set():
-                    break
-                with contextlib.suppress(TimeoutError):
-                    await asyncio.wait_for(self._stop.wait(), timeout=backoff + random.random())
-                backoff = min(backoff * 2, 60.0)
+                reason = repr(e)
+            if self._stop.is_set():
+                break
+            # 服务端正常关闭也要退避：鉴权被拒时服务端往往直接关连接，立即重连会反复刷 token、触发风控。
+            # 只有稳定连接过一段时间后断开，才从头开始退避
+            if self._connected_at is not None and time.monotonic() - self._connected_at >= self.stable_after:
+                backoff = self.min_backoff
+            logger.warning("IM 连接断开 uid={} reason={}，{}s 后重连", self.my_id, reason, int(backoff))
+            await self._emit_status("disconnected", reason)
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(self._stop.wait(), timeout=backoff + random.random())
+            backoff = min(backoff * 2, self.max_backoff)
 
     async def stop(self) -> None:
         self._stop.set()
@@ -192,10 +207,13 @@ class LwpClient:
             )
         )
 
-    async def _run_once(self) -> None:
+    async def _run_once(self) -> str:
+        """返回 "token_ttl"（主动换 token）或 "closed"（服务端关闭）；异常断开直接抛出。"""
         token = await self._token_provider()
+        # 每次重连都取最新 Cookie：登录态保活 / 网关刷新后的 Cookie 才能用上
+        cookie = self.cookie_header if isinstance(self.cookie_header, str) else await self.cookie_header()
         headers = {
-            "Cookie": self.cookie_header,
+            "Cookie": cookie,
             "Origin": "https://www.goofish.com",
             "User-Agent": IM_UA.split(" DingTalk", 1)[0],
             "Accept-Language": "zh-CN,zh;q=0.9",
@@ -206,14 +224,15 @@ class LwpClient:
             self._last_pong = time.monotonic()
             self.connected.set()
             await self._emit_status("connected")
-            started = time.monotonic()
+            started = self._connected_at = time.monotonic()
             hb = asyncio.create_task(self._heartbeat_loop(ws))
             try:
                 async for raw in ws:
                     await self._on_frame(ws, raw)
                     if time.monotonic() - started > self.token_ttl:
                         logger.info("IM token 到期，主动重连 uid={}", self.my_id)
-                        break
+                        return "token_ttl"
+                return "closed"
             finally:
                 hb.cancel()
                 with contextlib.suppress(asyncio.CancelledError):

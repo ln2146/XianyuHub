@@ -54,6 +54,9 @@ async def default_client_factory(account_id: int, on_event: EventHandler, on_sta
     async def token_provider() -> str:
         return await rt.gateway.get_im_token(account_id, device_id)
 
+    async def cookie_provider() -> str:
+        return await rt.gateway.cookie_header(account_id)
+
     async def _on_event(ev: ImEvent) -> None:
         await on_event(account_id, ev)
 
@@ -63,7 +66,7 @@ async def default_client_factory(account_id: int, on_event: EventHandler, on_sta
     return LwpClient(
         my_id=unb,
         device_id=device_id,
-        cookie_header=await rt.gateway.cookie_header(account_id),
+        cookie_header=cookie_provider,
         token_provider=token_provider,
         on_event=_on_event,
         on_status=_on_status,

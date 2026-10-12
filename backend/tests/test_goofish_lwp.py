@@ -101,3 +101,58 @@ async def test_lwp_register_ack_dispatch_and_send():
 
     await client.stop()
     await asyncio.wait_for(task, 2)
+
+
+async def test_lwp_backs_off_when_server_keeps_closing_and_refreshes_cookie(monkeypatch):
+    # 服务端一连上就正常关闭（如鉴权被拒）：不能立即无限重连；每次重连都要取最新 Cookie
+    import app.goofish.protocol.lwp as lwp
+
+    monkeypatch.setattr(lwp.random, "random", lambda: 0.0)
+
+    async def no_register(self, ws, token):
+        pass
+
+    monkeypatch.setattr(LwpClient, "_register", no_register)
+    connects: list[str] = []
+    statuses: list[tuple[str, str | None]] = []
+    cookies = iter(f"unb=1000; v={i}" for i in range(1000))
+
+    @contextlib.asynccontextmanager
+    async def connect(url, additional_headers, **kwargs):
+        connects.append(additional_headers["Cookie"])
+        ws = FakeWS()
+        await ws.inbox.put(None)  # 立刻结束迭代 = 服务端正常关闭
+        yield ws
+
+    async def token():
+        return "ACCESS"
+
+    async def cookie():
+        return next(cookies)
+
+    async def on_status(status, detail):
+        statuses.append((status, detail))
+
+    async def on_event(_):
+        pass
+
+    client = LwpClient(
+        my_id="1000",
+        device_id="DEV-1000",
+        cookie_header=cookie,
+        token_provider=token,
+        on_event=on_event,
+        on_status=on_status,
+        heartbeat_interval=100,
+        min_backoff=0.01,
+        max_backoff=0.08,
+        connect=connect,
+    )
+    task = asyncio.create_task(client.run_forever())
+    await asyncio.sleep(0.3)
+    await client.stop()
+    await asyncio.wait_for(task, 2)
+    # 退避 0.01 → 0.02 → 0.04 → 0.08 …：0.3 秒内只会重连几次（修复前会连上成千上万次）
+    assert 3 <= len(connects) <= 10
+    assert connects[0] != connects[1]  # 每次重连都是新取的 Cookie
+    assert ("disconnected", "服务端关闭了连接") in statuses
