@@ -13,7 +13,7 @@ _ZHIMA_ORDER = ["信用较差", "信用中等", "信用良好", "信用优秀", 
 class ItemRules(BaseModel):
     include_any: list[str] = Field(default_factory=list, description="标题至少包含其中一个（为空不限）")
     include_all: list[str] = Field(default_factory=list, description="标题必须全部包含")
-    exclude: list[str] = Field(default_factory=list, description="标题/描述包含任一则排除")
+    exclude: list[str] = Field(default_factory=list, description="商品文字开头一句包含任一则排除（全文交给 AI 判定）")
     min_price: float | None = None
     max_price: float | None = None
     areas: list[str] = Field(default_factory=list, description="发货地包含其一（为空不限）")
@@ -35,17 +35,35 @@ def _contains(text: str, word: str) -> bool:
     return w in _norm(text)
 
 
+_CLAUSE_SPLIT = re.compile(r"[，,。.！!？?；;：:\n|｜]+|\s{2,}")
+
+
+def headline(title: str, min_chars: int = 12) -> str:
+    """商品文字的开头一句：卖家在这里说明“这是什么东西”。
+
+    闲鱼没有独立标题，搜索结果里的 title 就是整段发帖文字（平均 160 字），后面满是“包邮”“屏幕无坏点”
+    “没有拆机维修”这类与排除意图无关的用法。排除词只看开头，按分句累积到至少 min_chars 个字为止。
+    """
+    out = ""
+    for part in _CLAUSE_SPLIT.split(title.strip()):
+        out += part + " "
+        if len(re.sub(r"\s", "", out)) >= min_chars:
+            break
+    return out[:40]
+
+
 def check_item(item: MarketItem, rules: ItemRules, *, zhima: str = "", reg_days: int | None = None) -> list[str]:
     """返回不满足的原因列表；为空表示通过。"""
     reasons: list[str] = []
     title = item.title.lower()
-    full = f"{title} {item.desc.lower()}"
     if rules.include_any and not any(_contains(title, w) for w in rules.include_any):
         reasons.append("标题不含关键词")
     missing = [w for w in rules.include_all if not _contains(title, w)]
     if missing:
         reasons.append(f"标题缺少：{','.join(missing)}")
-    hit = [w for w in rules.exclude if _contains(full, w)]
+    # 排除词只看开头一句（见 headline）；成色、故障等写在后文的问题交给 AI 判定
+    head = headline(title)
+    hit = [w for w in rules.exclude if _contains(head, w)]
     if hit:
         reasons.append(f"命中排除词：{','.join(hit)}")
     if item.price is not None:

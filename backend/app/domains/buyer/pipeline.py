@@ -352,14 +352,24 @@ async def _collect_and_evaluate(task: MonitorTask, stats: RunStats) -> None:
         for item in seen.values():
             rec, old_price = await upsert_market_item(s, item)
             res = existing.get(item.item_id)
+            score = deal_score(item.price, price_stats)
             if res is not None:
                 await _check_price_drop(task, res, rec, old_price, stats)
-                continue
-            stats.new += 1
-            score = deal_score(item.price, price_stats)
-            reasons = check_item(item, rules)
-            res = TaskResult(task_id=task.id, item_id=item.item_id, deal_score=score, price_at_eval=item.price)
-            s.add(res)
+                # 规则筛除、上次被打断还没判定、或判定出错的商品，再次搜到时按当前规则重查：
+                # 用户改了规则后它们能重新进入判定，而不是永远停在「已筛除」
+                if not _rule_filtered(res):
+                    continue
+                res.deal_score, res.price_at_eval = score, item.price
+                reasons = check_item(item, rules)
+                if reasons:
+                    res.stage, res.filter_reasons = ResultStage.FILTERED, reasons
+                    continue
+                res.filter_reasons = []
+            else:
+                stats.new += 1
+                res = TaskResult(task_id=task.id, item_id=item.item_id, deal_score=score, price_at_eval=item.price)
+                s.add(res)
+                reasons = check_item(item, rules)
             if reasons:
                 res.stage, res.filter_reasons = ResultStage.FILTERED, reasons
                 stats.filtered += 1
@@ -405,6 +415,12 @@ async def _collect_and_evaluate(task: MonitorTask, stats: RunStats) -> None:
     await _notify_new_recommendations(task)
 
 
+def _rule_filtered(res: TaskResult) -> bool:
+    """还没有结论、下次搜到时值得重查的商品：被规则筛掉的、通过规则但还没来得及判定的（新结果默认就是 filtered），
+    以及上次判定时因网络或模型输出异常出错的。"""
+    return res.stage in (ResultStage.FILTERED, ResultStage.ERROR) and res.verdict is None
+
+
 async def _result(s: AsyncSession, task_id: int, item_id: str) -> TaskResult:
     return (
         await s.execute(select(TaskResult).where(TaskResult.task_id == task_id, TaskResult.item_id == item_id))
@@ -419,8 +435,12 @@ async def _evaluate_candidate(task, item_id, rules, price_stats, llm, stats: Run
         title, price = rec.title, rec.price
 
     if task.ai_prescreen and llm.available:
-        pre = await prescreen_item(llm, criteria=task.criteria, title=title, price=price)
-        if not pre.keep:
+        try:
+            pre = await prescreen_item(llm, criteria=task.criteria, title=title, price=price)
+        except LLMError:
+            # 粗筛只是为了省掉明显不相关商品的详情请求；模型输出异常时不淘汰，交给正式判定
+            pre = None
+        if pre is not None and not pre.keep:
             async with session_factory()() as s:
                 res = await _result(s, task.id, item_id)
                 res.stage, res.verdict, res.reason = ResultStage.PRESCREEN_REJECTED, Verdict.REJECT, pre.reason

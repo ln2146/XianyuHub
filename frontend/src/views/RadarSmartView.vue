@@ -110,12 +110,15 @@ function stopTimer() {
 const statusLabel: Record<string, { label: string; type: 'success' | 'danger' | 'warning' }> = {
   ok: { label: '成功', type: 'success' },
   error: { label: '失败', type: 'danger' },
-  risk: { label: '风控', type: 'warning' },
+  risk: { label: '被闲鱼限制', type: 'warning' },
 }
 
 function selectTask(id: number | undefined) {
   if (filters.task_id === id) return
   filters.task_id = id
+  // 记进地址栏：刷新或从别的页面返回时停在同一个搜索，而不是退回「全部结果」把各个搜索的商品混在一起
+  lastQueryTaskId = id
+  router.replace({ query: { ...route.query, task_id: id ? String(id) : undefined } })
   runningStartTime.value = null
   taskProgress.value = currentTask.value?.running ? 30 : 0
   progressStageIndex.value = currentTask.value?.running ? 2 : 1
@@ -666,7 +669,7 @@ onBeforeUnmount(stopTimer)
           @keyup.enter="selectTask(t.id)"
         >
           <div class="t-row">
-            <span class="dot" :class="t.running ? 'running' : t.retry_at ? 'wait' : t.paused_reason || (t.last_status && t.last_status !== 'ok') ? 'bad' : t.enabled ? 'on' : 'off'" />
+            <span class="dot" :class="t.running ? 'running' : t.retry_at || t.last_status === 'risk' ? 'wait' : t.paused_reason || (t.last_status && t.last_status !== 'ok') ? 'bad' : t.enabled ? 'on' : 'off'" />
             <span class="t-name ellipsis">{{ t.name }}</span>
             <span v-if="t.running" class="t-state">搜索中</span>
             <span v-else-if="t.result_counts.recommend" class="t-count" title="推荐数量">{{ t.result_counts.recommend }}</span>
@@ -676,6 +679,7 @@ onBeforeUnmount(stopTimer)
           </div>
           <div v-if="t.paused_reason" class="t-paused" :title="`已暂停：${t.paused_reason}`">已暂停，需手动恢复</div>
           <div v-else-if="t.retry_at && !t.running" class="t-wait" :title="t.last_error || ''">闲鱼临时限制，{{ retryText(t) }}</div>
+          <div v-else-if="t.last_status === 'risk' && !t.running" class="t-wait" :title="t.last_error || ''">闲鱼临时限制，稍后再搜</div>
           <div class="t-ops" @click.stop>
             <el-button size="small" link type="primary" :icon="CaretRight" :loading="busy[`run-${t.id}`]" :disabled="t.running" @click="run(t)">搜索</el-button>
             <el-button size="small" link :icon="Edit" title="编辑" aria-label="编辑" @click="openEdit(t)" />

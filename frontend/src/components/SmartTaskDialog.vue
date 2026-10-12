@@ -286,7 +286,7 @@ async function save() {
                 <el-input-tag v-model="state.form.rules.include_all" placeholder="回车添加" save-on-blur />
               </el-form-item>
               <el-form-item label="排除词">
-                <el-input-tag v-model="state.form.rules.exclude" placeholder="标题或描述包含任一则排除，如：维修、配件、求购" save-on-blur />
+                <el-input-tag v-model="state.form.rules.exclude" placeholder="商品开头一句含这些词就排除，如：配件、求购、保护壳" save-on-blur />
               </el-form-item>
               <el-form-item label="发货地包含">
                 <el-input-tag v-model="state.form.rules.areas" placeholder="如：深圳、广州，为空不限" save-on-blur />

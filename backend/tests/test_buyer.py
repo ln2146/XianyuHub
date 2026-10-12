@@ -108,6 +108,75 @@ async def test_buyer_pipeline_end_to_end(admin_client):
 
 
 @respx.mock
+async def test_interrupted_candidates_are_judged_on_next_run(admin_client):
+    # 上次运行在判定前被打断：结果行停在默认的 filtered、没有原因也没有结论。下次搜到时应补判，而不是永远被当成已处理
+    set_llm(LLMGateway(provider=FakeLLM()))
+    search = load("search_response.json")["data"]
+    search["resultInfo"]["hasNextPage"] = False
+    mock_market(search)
+    task_id = (await admin_client.post("/api/v1/buyer/tasks", json=TASK)).json()["id"]
+    async with session_factory()() as s:
+        s.add(TaskResult(task_id=task_id, item_id="900000000001"))
+        await s.commit()
+
+    stats = await run_task(task_id)
+    assert stats.new == 1  # 只有另一件是新商品；卡住的那件是补判
+    assert stats.evaluated == 1 and stats.recommended == 1
+    async with session_factory()() as s:
+        res = (
+            await s.execute(
+                select(TaskResult).where(TaskResult.task_id == task_id, TaskResult.item_id == "900000000001")
+            )
+        ).scalar_one()
+        assert res.stage == "evaluated" and res.verdict == "recommend"
+    set_llm(None)
+
+
+class BrokenPrescreenLLM(FakeLLM):
+    async def complete(self, **kw):
+        if "keep" in kw["schema"]["properties"]:
+            self.calls.append(kw)
+            return LLMResult(text='{"keep": false, "reason": "电池充不进电、只能插电使', model="m")  # 被截断
+        return await super().complete(**kw)
+
+
+@respx.mock
+async def test_broken_prescreen_output_does_not_drop_the_item(admin_client):
+    set_llm(LLMGateway(provider=BrokenPrescreenLLM()))
+    search = load("search_response.json")["data"]
+    search["resultInfo"]["hasNextPage"] = False
+    mock_market(search)
+    task_id = (await admin_client.post("/api/v1/buyer/tasks", json=TASK)).json()["id"]
+    stats = await run_task(task_id)
+    # 粗筛输出坏掉时不记成出错，照常进入正式判定
+    assert stats.errors == 0 and stats.evaluated == 1 and stats.recommended == 1
+    set_llm(None)
+
+
+@respx.mock
+async def test_rule_filtered_items_are_rechecked_after_rules_change(admin_client):
+    set_llm(LLMGateway(provider=FakeLLM()))
+    search = load("search_response.json")["data"]
+    search["resultInfo"]["hasNextPage"] = False
+    mock_market(search)
+    # 第一次：用标题里的词把第一件筛掉
+    title = search["resultList"][0]["data"]["item"]["main"]["exContent"]["title"]
+    word = next(w for w in ("macbook", "MacBook", "air", "Air", "M1", "m1") if w in title)
+    body = {**TASK, "rules": {"exclude": [word]}}
+    task_id = (await admin_client.post("/api/v1/buyer/tasks", json=body)).json()["id"]
+    stats = await run_task(task_id)
+    assert stats.recommended == 0
+
+    # 用户放宽规则后再跑：已筛除的商品按新规则重查并进入判定，不算作新商品
+    body["rules"] = {"exclude": ["配件"]}
+    assert (await admin_client.put(f"/api/v1/buyer/tasks/{task_id}", json=body)).status_code == 200
+    mock_market(search)
+    stats = await run_task(task_id)
+    assert stats.new == 0 and stats.recommended == 1
+    set_llm(None)
+
+
+@respx.mock
 async def test_buyer_task_backs_off_on_risk_instead_of_pausing(admin_client):
     from datetime import UTC, datetime
 

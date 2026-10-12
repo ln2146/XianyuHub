@@ -134,13 +134,32 @@ def test_pricing():
     sug = suggest_price(st)
     assert sug and sug.quick_sale < sug.market < sug.premium
     assert deal_score(100, market_stats([1, 2])) is None
+    # 大多数同款挂同一个价（电子资料常见 ¥1）：其它价格不能被当成异常全删掉，三档建议价也要拉开
+    clustered = market_stats([1] * 23 + [1.5, 2, 3, 5, 9.9, 9.9, 19.9])
+    assert clustered.count == 29 and clustered.max == 9.9  # 只去掉偏离 10 倍以上的 19.9
+    sug = suggest_price(market_stats([1] * 23))
+    assert sug and sug.quick_sale < sug.market < sug.premium
+    assert (sug.quick_sale, sug.market, sug.premium) == (0.9, 1.0, 1.2)
 
 
 def test_item_rules():
     item = MarketItem(item_id="1", title="自用 MacBook Air M1 8+256", price=3200, area="上海", desc="无拆修")
     assert check_item(item, ItemRules(include_all=["m1", "air"], max_price=3500, areas=["上海"])) == []
     assert check_item(item, ItemRules(include_all=["m12"]))  # 整词匹配
-    assert check_item(item, ItemRules(exclude=["拆修"]))
+    assert check_item(item, ItemRules(exclude=["air"]))
+    # 闲鱼的 title 是整段发帖文字：排除词只看开头一句，后文的“包邮”“屏幕无坏点”“没有拆机维修”不能把好货筛掉
+    long_item = MarketItem(
+        item_id="2",
+        title="MacBook Air 13寸 2017款，i5处理器，功能正常，屏幕无坏点，没有拆机维修，带原装配件，包邮",
+        price=800,
+    )
+    assert check_item(long_item, ItemRules(exclude=["坏", "维修", "配件", "包"])) == []
+    assert check_item(
+        MarketItem(item_id="3", title="MAC魅可口红 543，正装3g，包邮", price=50), ItemRules(exclude=["口红"])
+    )
+    assert check_item(
+        MarketItem(item_id="4", title="求购 MacBook Air，预算 800", price=800), ItemRules(exclude=["求购"])
+    )
     assert check_item(item, ItemRules(min_seller_zhima="信用极好"), zhima="信用良好")
 
 

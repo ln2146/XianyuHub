@@ -96,17 +96,20 @@ async def judge_item(
 async def prescreen_item(llm: LLMGateway, *, criteria: str, title: str, price: float | None) -> PrescreenOut:
     system = (
         "你在帮买家快速初筛闲鱼商品。只根据标题和价格判断是否明显不符合需求（型号不对、配件而非整机、求购帖、明显不相关）。"
-        "拿不准时 keep=true。"
+        "拿不准时 keep=true。reason 不超过 30 个字。"
     )
     user = f"需求标准：\n{criteria[:1500]}\n\n商品标题：{title}\n价格：{price}"
-    return await llm.complete_json(Tier.FAST, system, user, PrescreenOut, max_tokens=300, effort="low")
+    # 300 token 时中文理由一长就被截断成半截 JSON，推理型模型还会把额度花在思考上输出为空
+    return await llm.complete_json(Tier.FAST, system, user, PrescreenOut, max_tokens=1000, effort="low")
 
 
 async def draft_task(llm: LLMGateway, description: str) -> TaskDraft:
     system = (
         "你帮用户把闲鱼蹲货需求转换成智能搜索配置。\n"
         "- keywords：2~4 个搜索关键词（含常见别称 / 暗语，如“mba”“丐版”）\n"
-        "- include_all：标题必须包含的词（谨慎，只放型号等硬条件）；exclude：排除词（如 配件、求购、坏、维修）\n"
+        "- include_all：标题必须包含的词（谨慎，只放型号等硬条件）\n"
+        "- exclude：排除词，只匹配商品文字的开头一句，用来排掉“根本不是要买的东西”（如 配件、求购、保护壳、口红），"
+        "至少两个字；不要放“坏”“维修”“包”“膜”这类单字或成色 / 故障描述，这些写进 criteria 的危险信号由 AI 判断\n"
         "- criteria：用 Markdown 写判定标准，包含“必须满足（一票否决）”“加分项”“危险信号”三部分，简洁即可\n"
         "- 价格：“2000 以内 / 以下 / 不超过 2000”→ max_price=2000；“1500 到 2000”→ min_price=1500、max_price=2000\n"
         "- 地区：“同城 / 我在杭州 / 杭州的”→ city=杭州，province 填对应省份（浙江）；没提到地区填 null\n"
