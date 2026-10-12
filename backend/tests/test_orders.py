@@ -56,9 +56,9 @@ def mock_trade(detail=DETAIL_PAID, consign_ok=True):
 
 
 async def paid(account_id, order_id):
-    await receive(
-        account_id, chat("[我已付款，等待你发货]", is_system=True, notice=SystemNotice.PAID, order_id=order_id)
-    )
+    event = chat("[我已付款，等待你发货]", is_system=True, notice=SystemNotice.PAID, order_id=order_id)
+    event.created_at = datetime.now(UTC)
+    await receive(account_id, event)
 
 
 @respx.mock
@@ -229,6 +229,40 @@ async def test_dashboard(admin_client, im):  # noqa: F811
     assert d["accounts"][0]["im_connected"] and d["today"]["messages_in"] == 1
     assert d["today"]["deliveries"] == 1 and d["today"]["orders"]["delivered"] == 1
     assert d["today"]["gmv"] == 19.9 and "llm" in d["system"]
+    assert d["today"]["paid_orders"] == 1 and d["today"]["unknown_payment_orders"] == 0
+
+
+@respx.mock
+async def test_sync_without_payment_event_does_not_invent_actual_payment_time(admin_client, im):  # noqa: F811
+    account_id, _ = im
+    mock_trade()
+    async with session_factory()() as session:
+        order = Order(account_id=account_id, order_id="no-payment-time", status=OrderState.PENDING_PAY)
+        session.add(order)
+        await session.commit()
+        order_pk = order.id
+    await order_service.handle_paid(order_pk, confirmed=True)
+    async with session_factory()() as session:
+        order = await session.get(Order, order_pk)
+        assert order.paid_at is not None  # 保留观察时间供履约提醒使用。
+        assert order.actual_paid_at is None
+    today = (await admin_client.get("/api/v1/dashboard")).json()["today"]
+    assert today["paid_orders"] == 0 and today["paid_amount"] == 0
+    assert today["unknown_payment_orders"] == 1
+
+
+@respx.mock
+async def test_verified_payment_event_preserves_original_time(admin_client, im):  # noqa: F811
+    account_id, _ = im
+    mock_trade()
+    timestamp = datetime.now(UTC) - timedelta(days=1)
+    event = chat("[我已付款，等待你发货]", is_system=True, notice=SystemNotice.PAID, order_id="late-event")
+    event.created_at = timestamp
+    await receive(account_id, event)
+    order = (await admin_client.get("/api/v1/orders")).json()[0]
+    actual = datetime.fromisoformat(order["actual_paid_at"])
+    assert actual.replace(tzinfo=UTC) == timestamp
+    assert (await admin_client.get("/api/v1/dashboard")).json()["today"]["paid_orders"] == 0
 
 
 def test_delivery_template_always_carries_the_content():

@@ -29,6 +29,7 @@ export interface Order {
   remote_status: string
   is_bargain: boolean
   paid_at: string | null
+  actual_paid_at: string | null
   delivered_at: string | null
   fail_reason: string | null
   retry_count: number

@@ -117,6 +117,8 @@ class Order(IdMixin, TimestampMixin, Base):
     remote_status: Mapped[str] = mapped_column(String(32), default="")
     is_bargain: Mapped[bool] = mapped_column(Boolean, default=False)
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # 平台付款事件时间；paid_at 的历史值可能是创建/观察时间，不能用于日成交统计。
+    actual_paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     fail_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     retry_count: Mapped[int] = mapped_column(Integer, default=0)

@@ -162,6 +162,7 @@ async def handle_event(account_id: int, ev: ImEvent) -> None:
                 "status_text": ev.status_text,
                 "item_id": ev.item_id,
                 "cid": None,
+                "event_at": ev.created_at.isoformat() if ev.created_at else None,
             },
         )
         return
@@ -240,6 +241,7 @@ async def handle_event(account_id: int, ev: ImEvent) -> None:
                     "status_text": ev.text,
                     "item_id": item_id,
                     "cid": ev.cid,
+                    "event_at": ev.created_at.isoformat() if ev.created_at else None,
                 },
             )
         return

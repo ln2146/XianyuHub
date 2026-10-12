@@ -382,7 +382,7 @@ const statusTagType = (st: string) => {
               </div>
 
               <div v-if="ord.paid_at" class="oc-time-row">
-                <span class="oc-label">付款时间：</span>
+                <span class="oc-label">平台付款通知：</span>
                 <span class="oc-val">{{ fmtTime(ord.paid_at) }}</span>
               </div>
 

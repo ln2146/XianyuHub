@@ -53,6 +53,7 @@ class OrderOut(BaseModel):
     remote_status: str
     is_bargain: bool
     paid_at: datetime | None
+    actual_paid_at: datetime | None
     delivered_at: datetime | None
     fail_reason: str | None
     retry_count: int

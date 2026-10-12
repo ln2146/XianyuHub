@@ -196,7 +196,8 @@ async def on_order_event(payload: dict[str, Any]) -> None:
         await s.commit()
         order_pk, status = order.id, order.status
     if notice == SystemNotice.PAID:
-        await handle_paid(order_pk)
+        payment_at = datetime.fromisoformat(payload["event_at"]) if payload.get("event_at") else None
+        await handle_paid(order_pk, payment_at=payment_at)
     elif notice == SystemNotice.REFUND:
         await _notify_owner(
             account_id,
@@ -208,7 +209,7 @@ async def on_order_event(payload: dict[str, Any]) -> None:
         await maybe_rate(order_pk)
 
 
-async def handle_paid(order_pk: int, *, confirmed: bool = False) -> None:
+async def handle_paid(order_pk: int, *, confirmed: bool = False, payment_at: datetime | None = None) -> None:
     """confirmed=True 表示已从闲鱼订单列表确认已付款（订单同步）。
     来自聊天里的付款通知时不可信（买家可以手打一段伪造的通知），必须由订单详情确认已付款才发货。"""
     """付款：用订单详情接口二次校验（防止伪造的聊天文案触发发货），然后按设置自动发货。"""
@@ -243,6 +244,10 @@ async def handle_paid(order_pk: int, *, confirmed: bool = False) -> None:
             return
         if order.status == OrderState.PENDING_PAY:
             await transition(s, order, OrderState.PAID)
+        # 只使用平台付款通知携带的时间，并要求订单详情确认已付款。
+        # 列表同步、消息缺少时间或详情查询失败时，不能把“现在”冒充实际付款时间。
+        if payment_at is not None and remote is not None and remote.status == OrderStatus.PAID and order.actual_paid_at is None:
+            order.actual_paid_at = _aware(payment_at)
         if order.paid_at is None:
             order.paid_at = datetime.now(UTC)
         await s.commit()

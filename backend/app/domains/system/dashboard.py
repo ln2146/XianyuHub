@@ -39,6 +39,7 @@ async def dashboard(user: CurrentUser, session: SessionDep) -> dict[str, Any]:
     guard = get_runtime().guard
     im = await im_status_snapshot()
     since = _today_start()
+    until = since + timedelta(days=1)
 
     msg_rows = await session.execute(
         select(ChatMessage.source, func.count())
@@ -49,15 +50,21 @@ async def dashboard(user: CurrentUser, session: SessionDep) -> dict[str, Any]:
 
     order_rows = await session.execute(
         select(Order.status, func.count(), func.coalesce(func.sum(Order.amount), 0))
-        .where(Order.account_id.in_(acc_ids), Order.created_at >= since)
+        .where(Order.account_id.in_(acc_ids), Order.actual_paid_at >= since, Order.actual_paid_at < until)
         .group_by(Order.status)
     )
     orders: dict[str, int] = {}
     gmv = 0.0
     for st, n, amount in order_rows:
         orders[st] = n
-        if st not in (OrderState.PENDING_PAY, OrderState.CLOSED, OrderState.REFUNDED):
-            gmv += float(amount or 0)
+        gmv += float(amount or 0)
+    unknown_payment_orders = (await session.execute(
+        select(func.count()).select_from(Order).where(
+            Order.account_id.in_(acc_ids), Order.actual_paid_at.is_(None),
+            Order.status.in_([OrderState.PAID, OrderState.DELIVERING, OrderState.DELIVERED, OrderState.COMPLETED,
+                             OrderState.MANUAL, OrderState.RISK_HOLD, OrderState.DELIVER_FAILED, OrderState.REFUNDING, OrderState.REFUNDED]),
+        )
+    )).scalar_one()
     pending_manual = (
         await session.execute(
             select(func.count())
@@ -119,6 +126,10 @@ async def dashboard(user: CurrentUser, session: SessionDep) -> dict[str, Any]:
             "deliveries": messages.get("delivery", 0),
             "orders": orders,
             "gmv": round(gmv, 2),
+            "paid_orders": sum(orders.values()),
+            "paid_amount": round(gmv, 2),
+            "payment_basis": "按北京时间当日平台付款通知时间（经订单状态核实）；含退款订单，退款未扣除，不代表净收入",
+            "unknown_payment_orders": unknown_payment_orders,
             "radar": radar,
         },
         "pending_manual_orders": pending_manual,

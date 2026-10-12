@@ -32,6 +32,10 @@ export interface Dashboard {
     deliveries: number
     orders: Record<string, number>
     gmv: number
+    paid_orders: number
+    paid_amount: number
+    payment_basis: string
+    unknown_payment_orders: number
     radar: Record<string, number>
   }
   pending_manual_orders: number

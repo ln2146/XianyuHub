@@ -104,7 +104,8 @@ async def test_ai_draft_endpoint_regenerate_and_publish_guard(admin_client):
     assert d["image_ids"] == [ids[1], ids[0]]  # AI 选的封面放到第一张
     assert "Q：能小刀吗" in d["knowledge"] and d["shipping"] == "free"
     meta = d["ai_meta"]
-    assert meta["uncertain"] == ["是否有购买发票"] and "同款行情" in meta["price_source"]
+    assert meta["uncertain"] == ["是否有购买发票"] and "在售挂牌价" in meta["price_source"]
+    assert "非实际成交价" in meta["price_source"]
     assert any("自动删除" in w for w in meta["warnings"]) and meta["market"]["sample"] == 6
     assert len(calls[0]["images"]) == 2 and "自用半年" in calls[0]["messages"][0].content
 

@@ -299,7 +299,7 @@ async def conversation_context(conv_id: int, user: CurrentUser, session: Session
                 amount=o.amount,
                 status=o.status,
                 status_label=ORDER_STATE_LABELS.get(o.status, o.status),
-                paid_at=o.paid_at,
+                paid_at=o.actual_paid_at,
                 delivered_at=o.delivered_at,
                 is_bargain=o.is_bargain,
                 fail_reason=o.fail_reason,

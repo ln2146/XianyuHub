@@ -19,7 +19,7 @@ from app.intelligence.llm import ImageInput, LLMGateway, Tier
 from app.intelligence.pricing import PriceSuggestion
 
 Strategy = Literal["quick", "market", "premium"]
-STRATEGY_LABEL = {"quick": "快速出手", "market": "市场价", "premium": "高价试水"}
+STRATEGY_LABEL = {"quick": "低价挂牌", "market": "挂牌参考价", "premium": "高价试水"}
 
 _BANNED = [re.compile(p, re.IGNORECASE) for p in (*OFF_PLATFORM_PATTERNS, *PROMISE_PATTERNS)]
 # 不该出现在公开描述里的“元叙述”：不确定的信息应放进待确认清单，而不是写给买家看
@@ -120,7 +120,7 @@ def decide_pricing(
         price, source = ai.user_price, "卖家说明中给出的价格"
     elif suggestion is not None:
         price = {"quick": suggestion.quick_sale, "market": suggestion.market, "premium": suggestion.premium}[strategy]
-        source = f"同款行情（{suggestion.basis.count} 个在售样本，{STRATEGY_LABEL[strategy]}）"
+        source = f"同类在售挂牌价参考（{suggestion.basis.count} 个样本，{STRATEGY_LABEL[strategy]}；非实际成交价）"
     elif ai.price_guess and ai.price_guess > 0:
         price, source = ai.price_guess, "AI 估价"
         warnings.append("同款在售样本不足，售价为 AI 估计，请重点确认")

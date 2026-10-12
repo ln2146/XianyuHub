@@ -469,7 +469,7 @@ async function openDetail(o: Order) {
 
           <el-table-column label="付款 / 发货时间" width="160">
             <template #default="{ row }">
-              <div class="smaller"><span class="muted">付:</span> {{ fmtTime(row.paid_at) || '-' }}</div>
+              <div class="smaller" title="平台付款通知时间，经订单状态核实；没有确切时间时不推算"><span class="muted">付:</span> {{ row.actual_paid_at ? fmtTime(row.actual_paid_at) : '时间未知' }}</div>
               <div class="smaller mt-xs"><span class="muted">发:</span> {{ fmtTime(row.delivered_at) || '-' }}</div>
             </template>
           </el-table-column>
@@ -602,7 +602,7 @@ async function openDetail(o: Order) {
             <el-descriptions-item label="买家">{{ detail.order.buyer_nick || '-' }} <span class="muted small">{{ detail.order.buyer_id }}</span></el-descriptions-item>
             <el-descriptions-item label="金额">{{ fmtMoney(detail.order.amount) }} × {{ detail.order.quantity }}{{ detail.order.is_bargain ? '（议价成交）' : '' }}</el-descriptions-item>
             <el-descriptions-item label="下单时间">{{ fmtTime(detail.order.created_at, true) }}</el-descriptions-item>
-            <el-descriptions-item label="付款时间">{{ fmtTime(detail.order.paid_at, true) }}</el-descriptions-item>
+            <el-descriptions-item label="平台付款通知时间">{{ detail.order.actual_paid_at ? fmtTime(detail.order.actual_paid_at, true) : '时间未知，未纳入日统计' }}</el-descriptions-item>
             <el-descriptions-item label="发货时间">{{ fmtTime(detail.order.delivered_at, true) }}</el-descriptions-item>
             <el-descriptions-item label="重试次数">{{ detail.order.retry_count }}</el-descriptions-item>
             <el-descriptions-item v-if="detail.order.fail_reason" label="失败原因"><span class="err">{{ detail.order.fail_reason }}</span></el-descriptions-item>

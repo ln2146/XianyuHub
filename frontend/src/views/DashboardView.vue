@@ -113,12 +113,6 @@ onBeforeUnmount(() => {
 
 const kpis = computed(() => {
   const t = data.value?.today
-  const allOrders = t ? Object.values(t.orders).reduce((a, b) => a + b, 0) : 0
-  const paidOrders = t
-    ? Object.entries(t.orders)
-        .filter(([st]) => !['pending_pay', 'closed', 'refunded'].includes(st))
-        .reduce((a, [_, b]) => a + b, 0)
-    : 0
   const radar = t ? (t.radar.recommend || 0) + (t.radar.conditional || 0) : 0
   const list = [
     {
@@ -149,18 +143,18 @@ const kpis = computed(() => {
       path: '/orders/cards',
     },
     {
-      label: '今日成交订单',
-      value: paidOrders,
-      hint: allOrders > paidOrders ? `含待付款共 ${allOrders} 笔` : '全部已支付履约',
+      label: '今日付款订单',
+      value: t?.paid_orders ?? 0,
+      hint: '按实际付款时间，含退款订单',
       icon: Box,
       color: '#f97316',
       bg: 'rgba(249, 115, 22, 0.1)',
       path: '/orders/list',
     },
     {
-      label: '今日成交 GMV',
-      value: fmtMoney(t?.gmv ?? 0),
-      hint: '成交金额 (扣除退款)',
+      label: '今日付款金额',
+      value: fmtMoney(t?.paid_amount ?? 0),
+      hint: '退款未扣除，不代表净收入',
       icon: Money,
       color: '#eab308',
       bg: 'rgba(234, 179, 8, 0.1)',
@@ -206,6 +200,16 @@ const autoDeliveryOn = computed(() => autoDeliveryState.value.cls === 'online')
 const restrictedCount = computed(
   () => data.value?.accounts.filter((a) => a.status !== 'disabled' && !working(a)).length || 0,
 )
+const firstNeedLoginAccount = computed(() =>
+  data.value?.accounts.find((a) => a.status === 'need_login'),
+)
+function goAccounts() {
+  if (firstNeedLoginAccount.value) {
+    router.push({ path: '/accounts', query: { relogin: String(firstNeedLoginAccount.value.id) } })
+  } else {
+    router.push('/accounts')
+  }
+}
 const imOnlineCount = computed(() => data.value?.accounts.filter((a) => a.im_connected).length || 0)
 const autoManagedCount = computed(
   () => data.value?.accounts.filter((a) => a.auto_reply || a.auto_delivery).length || 0,
@@ -314,6 +318,10 @@ function fmtJobNextRun(v: string | null | undefined): string {
       <el-button link type="primary" :loading="loading" @click="load">重新读取</el-button>
     </el-alert>
     <div v-if="lastUpdated && !loadError" class="muted small">数据更新于 {{ lastUpdated.toLocaleString('zh-CN') }}</div>
+    <div v-if="data" class="muted small">统计口径：{{ data.today.payment_basis }}</div>
+    <el-alert v-if="data && data.today.unknown_payment_orders > 0" type="warning" :closable="false" show-icon :title="`${data.today.unknown_payment_orders} 笔已付款订单缺少确切付款时间，未纳入今日统计`">
+      历史创建时间与同步时间不会当作付款时间；这不影响订单发货和处理。
+    </el-alert>
     <template v-if="data">
     <!-- 核心指标卡片矩阵 (紧凑单行 6 列) -->
     <section class="kpi-section">
@@ -535,7 +543,7 @@ function fmtJobNextRun(v: string | null | undefined): string {
                     </div>
                   </div>
 
-                  <div class="telemetry-card" @click="router.push('/accounts')">
+                  <div class="telemetry-card" @click="goAccounts">
                     <div class="tc-top">
                       <span class="tc-label">账号状态</span>
                       <span class="tc-status" :class="restrictedCount ? 'warn' : 'online'">{{ restrictedCount ? '有账号需处理' : '全部正常' }}</span>
@@ -666,10 +674,10 @@ function fmtJobNextRun(v: string | null | undefined): string {
                           </el-link>
                           <router-link
                             v-if="r.state === 'need_login'"
-                            to="/accounts"
+                            :to="{ path: '/accounts', query: { relogin: String(r.account_id) } }"
                             class="small inline-block text-primary"
                           >
-                            去账号管理重新登录 &gt;
+                            去重新登录此账号 &gt;
                           </router-link>
                         </div>
                       </el-timeline-item>

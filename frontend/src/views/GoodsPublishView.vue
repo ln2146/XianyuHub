@@ -107,11 +107,11 @@ const pools = ref<PoolOut[]>([])
 const gen = reactive({ hint: '', strategy: 'market' as PriceStrategy, loading: false, elapsed: 0 })
 let timer: number | undefined
 
-const strategyLabel: Record<PriceStrategy, string> = { quick: '快速出手', market: '市场价', premium: '高价试水' }
+const strategyLabel: Record<PriceStrategy, string> = { quick: '低价挂牌', market: '挂牌参考价', premium: '高价试水' }
 const strategyDesc: Record<PriceStrategy, string> = {
-  quick: '比同款低价位再低一点，尽快成交',
-  market: '参考同款成交中位价，稳妥',
-  premium: '按同款偏高价位挂，适合不急卖',
+  quick: '参考同类在售商品的较低挂牌价，不保证成交速度',
+  market: '参考同类在售商品的挂牌中位数，并非实际成交价',
+  premium: '参考同类在售商品的较高挂牌价，适合不急卖',
 }
 const strategies = Object.keys(strategyLabel) as PriceStrategy[]
 
@@ -814,7 +814,7 @@ onBeforeUnmount(() => window.clearInterval(timer))
             </el-form-item>
 
             <el-collapse v-if="aiMeta?.market" class="mb">
-              <el-collapse-item :title="`同款行情（关键词「${aiMeta.market.keyword}」，${aiMeta.market.sample} 个样本）`">
+              <el-collapse-item :title="`同类在售挂牌价参考（关键词「${aiMeta.market.keyword}」，${aiMeta.market.sample} 个样本）`">
                 <MarketPanel :data="aiMeta.market" :my-price="form.price" @pick="pickPrice" />
               </el-collapse-item>
             </el-collapse>

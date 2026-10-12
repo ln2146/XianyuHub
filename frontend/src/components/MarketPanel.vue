@@ -9,16 +9,16 @@ const emit = defineEmits<{ (e: 'pick', price: number): void }>()
 
 <template>
   <div class="market">
-    <div class="muted small">关键词「{{ data.keyword }}」· 有效样本 {{ data.sample }} 个</div>
+    <div class="muted small">关键词「{{ data.keyword }}」· 在售挂牌样本 {{ data.sample }} 个；不是实际成交价</div>
     <el-empty v-if="!data.suggestion" description="样本不足，无法给出建议价" :image-size="50" />
     <template v-else>
       <div class="sugs">
         <div class="sug" @click="emit('pick', data.suggestion.quick_sale)">
-          <div class="label">快速出手</div>
+          <div class="label">低价挂牌</div>
           <div class="val">{{ fmtMoney(data.suggestion.quick_sale) }}</div>
         </div>
         <div class="sug main" @click="emit('pick', data.suggestion.market)">
-          <div class="label">市场价</div>
+          <div class="label">挂牌参考价</div>
           <div class="val">{{ fmtMoney(data.suggestion.market) }}</div>
         </div>
         <div class="sug" @click="emit('pick', data.suggestion.premium)">
