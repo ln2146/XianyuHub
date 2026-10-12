@@ -81,9 +81,15 @@ def _prompt(ctx: ReplyContext, intent: Intent, buyer_text: str, decision: Bargai
         ]
     parts.append("【最近对话】")
     for role, text in ctx.history[-10:]:
-        parts.append(f"{'买家' if role == 'buyer' else '我'}：{text}")
-    parts.append(f"【买家最新消息】{sanitize_user_text(buyer_text)}")
+        parts.append(f"{'买家' if role == 'buyer' else '我'}：{_quote(text)}")
+    parts.append(f"【买家最新消息】{_quote(buyer_text)}")
     return "\n".join(parts)
+
+
+def _quote(text: str) -> str:
+    """聊天内容进提示词前压成一行、去掉【】：买家不能借换行伪造「【议价决策】」之类的段落。"""
+    text = sanitize_user_text(text)
+    return " ".join(text.split()).replace("【", "[").replace("】", "]")
 
 
 async def compose_reply(
