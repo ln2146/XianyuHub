@@ -376,6 +376,32 @@ async def test_refund_during_last_step_is_not_overwritten(admin_client, im):  # 
 
 
 @respx.mock
+async def test_paid_order_left_undelivered_is_picked_up(admin_client, im):  # noqa: F811
+    # 付款已确认、还没开始发货时进程重启：订单停在「已付款」，定时任务要把它补发出去
+    account_id, fake = im
+    await setup_delivery(admin_client, account_id, cards="C1")
+    mock_trade()
+    await receive(account_id, chat("在吗"))
+    async with session_factory()() as s:
+        for order_id, minutes in (("4400110", 5), ("4400111", 0), ("4400112", 60 * 24)):
+            s.add(
+                Order(
+                    account_id=account_id,
+                    order_id=order_id,
+                    item_id="900",
+                    spec_value="月卡",
+                    status=OrderState.PAID,
+                    paid_at=datetime.now(UTC) - timedelta(minutes=minutes),
+                )
+            )
+        await s.commit()
+    assert await order_service.recover_paid_orders() == 1  # 刚付款的还在正常流程里，太久以前的不补
+    statuses = {o["order_id"]: o["status"] for o in (await admin_client.get("/api/v1/orders")).json()}
+    assert statuses == {"4400110": "delivered", "4400111": "paid", "4400112": "paid"} and len(fake.sent) == 1
+    assert await order_service.recover_paid_orders() == 0
+
+
+@respx.mock
 async def test_buyer_limit_holds_under_concurrent_payments(admin_client, im):  # noqa: F811
     import asyncio
 

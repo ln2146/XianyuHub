@@ -855,8 +855,41 @@ async def recover_stuck_deliveries() -> int:
     return len(moved)
 
 
+PAID_PICKUP_AFTER = timedelta(minutes=2)
+PAID_PICKUP_WINDOW = timedelta(hours=6)
+
+
+async def recover_paid_orders() -> int:
+    """已确认付款、开了自动发货、有发货关联，却还停在「已付款」的订单（付款后、发货前进程重启或任务被取消）：补发。
+    只补最近 6 小时内付款的，免得刚打开自动发货就把很早以前的订单一股脑发出去。"""
+    now = datetime.now(UTC)
+    due: list[int] = []
+    async with session_factory()() as s:
+        rows = list(
+            (
+                await s.execute(select(Order).where(Order.status == OrderState.PAID, Order.paid_at.is_not(None)))
+            ).scalars()
+        )
+        accounts: dict[int, XyAccount | None] = {}
+        for order in rows:
+            if not (now - PAID_PICKUP_WINDOW <= _aware(order.paid_at) <= now - PAID_PICKUP_AFTER):
+                continue
+            if order.account_id not in accounts:
+                accounts[order.account_id] = await s.get(XyAccount, order.account_id)
+            acc = accounts[order.account_id]
+            if acc is None or acc.status != "active" or not acc.get_settings().auto_delivery:
+                continue
+            if await find_binding(s, order, acc.owner_id) is not None:
+                due.append(order.id)
+    for order_pk in due:
+        logger.info("订单 {} 已付款但没有发货，补发", order_pk)
+        await deliver(order_pk)
+    return len(due)
+
+
 async def retry_failed() -> None:
     await recover_stuck_deliveries()
+    await recover_paid_orders()
     now = datetime.now(UTC)
     async with session_factory()() as s:
         rows = (await s.execute(select(Order).where(Order.status == OrderState.DELIVER_FAILED))).scalars()
