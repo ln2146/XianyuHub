@@ -981,14 +981,19 @@ async function remove(c: Channel) {
 }
 
 .count-badge {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-size: var(--xh-fs-xs);
-  padding: 1px 6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
   border-radius: var(--xh-radius-pill);
   background: var(--xh-primary-soft);
   color: var(--xh-primary);
-  line-height: 1.2;
+  line-height: 1;
   font-weight: 600;
+  box-sizing: border-box;
 }
 
 .toolbar {

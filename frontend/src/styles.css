@@ -251,6 +251,23 @@ body {
   font-weight: 500;
 }
 
+/* 独立徽章（无插槽元素）：统一使用 inline-flex 垂直居中，消除继承父级行高导致的基线向下偏坠 */
+.el-badge:not(:has(.is-fixed)) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  vertical-align: middle;
+}
+.el-badge__content:not(.is-fixed) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  box-sizing: border-box;
+  vertical-align: unset;
+}
+
 /* 精致轻量滚动条 */
 ::-webkit-scrollbar {
   width: 6px;

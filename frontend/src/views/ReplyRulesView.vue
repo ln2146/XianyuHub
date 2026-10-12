@@ -1301,10 +1301,32 @@ onMounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  line-height: normal;
+}
+
+.tab-count-badge {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  line-height: 1 !important;
+  vertical-align: middle;
 }
 
 .tab-count-badge :deep(.el-badge__content) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  height: 16px;
+  min-width: 16px;
+  line-height: 1;
+  padding: 0 4px;
   margin-left: 2px;
+  border: none;
+  box-sizing: border-box;
+  vertical-align: unset;
+  transform: none;
 }
 
 .tab-body {

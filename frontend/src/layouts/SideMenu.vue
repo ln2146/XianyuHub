@@ -258,6 +258,8 @@ const activeMenu = computed(() => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  height: 100%;
+  line-height: normal;
 }
 .menu-dot-badge {
   width: 7px;
@@ -265,18 +267,45 @@ const activeMenu = computed(() => {
   border-radius: 50%;
   background-color: var(--el-color-danger);
   flex-shrink: 0;
+  display: inline-block;
+  vertical-align: middle;
 }
 .menu-item-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  padding-right: 8px;
+  height: 100%;
+  padding-right: 6px;
+  line-height: normal;
+}
+.menu-item-row > span {
+  display: inline-flex;
+  align-items: center;
+  line-height: normal;
+}
+.unread-badge {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  line-height: 1 !important;
+  flex-shrink: 0;
+  vertical-align: middle;
 }
 .unread-badge :deep(.el-badge__content) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   font-size: 11px;
-  height: 16px;
-  line-height: 16px;
+  font-weight: 600;
+  height: 18px;
+  min-width: 18px;
+  line-height: 1;
   padding: 0 5px;
+  border: 1.5px solid #ffffff;
+  border-radius: var(--xh-radius-pill, 999px);
+  box-sizing: border-box;
+  vertical-align: unset;
+  transform: none;
 }
 </style>
