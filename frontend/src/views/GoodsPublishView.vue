@@ -594,7 +594,7 @@ onBeforeUnmount(() => window.clearInterval(timer))
               </div>
             </div>
           </template>
-          <el-form label-width="90px" :label-position="isMobile ? 'top' : 'right'" class="publish-form">
+          <el-form label-width="auto" :label-position="isMobile ? 'top' : 'right'" class="publish-form">
             <el-form-item label="发布账号" required>
               <el-select v-model="form.account_id" placeholder="选择账号" class="w240">
                 <el-option
@@ -729,7 +729,7 @@ onBeforeUnmount(() => window.clearInterval(timer))
             </div>
           </template>
 
-          <el-form label-width="90px" :label-position="isMobile ? 'top' : 'right'" class="publish-form">
+          <el-form label-width="auto" :label-position="isMobile ? 'top' : 'right'" class="publish-form">
             <el-form-item label="发布账号" required>
               <el-select v-model="form.account_id" placeholder="选择账号" class="w240">
                 <el-option
@@ -826,9 +826,7 @@ onBeforeUnmount(() => window.clearInterval(timer))
                 <el-button link type="primary" @click="locationOpen = true">{{ effectiveLocation ? '更换' : '选择' }}</el-button>
               </div>
             </el-form-item>
-            <el-form-item label="客服知识库">
-              <el-input v-model="form.knowledge" type="textarea" :rows="aiMeta ? 8 : 3" placeholder="可选：FAQ、参数、瑕疵说明等，发布后供 AI 客服回答买家" />
-            </el-form-item>
+            <!-- 客服知识库不在发布时填写：AI 生成的内容随草稿保存，发布后可在「商品管理 › 策略」里查看和修改 -->
             <el-form-item label="虚拟商品">
               <el-switch v-model="form.is_virtual" />
             </el-form-item>

@@ -42,7 +42,9 @@ def market_stats(prices: Sequence[float | None], *, trim_outliers: bool = True) 
     if trim_outliers and len(vals) >= 8:
         q1, q3 = _quantile(vals, 0.25), _quantile(vals, 0.75)
         iqr = q3 - q1
-        lo, hi = q1 - 1.5 * iqr, q3 + 1.5 * iqr
+        # 一半以上样本同价（如电子资料大量挂 ¥1）时 IQR 为 0，按 1.5×IQR 会把所有不同的价格都当异常删掉、
+        # 三档建议价因此全部相同；这时只去掉偏离中间价 10 倍以上的明显乱填价
+        lo, hi = (q1 - 1.5 * iqr, q3 + 1.5 * iqr) if iqr > 0 else (q1 / 10, q3 * 10)
         trimmed = [v for v in vals if lo <= v <= hi]
         vals = trimmed or vals
     return MarketStats(
@@ -89,9 +91,10 @@ def suggest_price(stats: MarketStats) -> PriceSuggestion | None:
     def r(v: float) -> float:
         return float(int(v)) if v >= 100 else round(v, 1)
 
-    return PriceSuggestion(
-        quick_sale=r(stats.p25 * 0.97),
-        market=r(stats.median),
-        premium=r(stats.p75),
-        basis=stats,
-    )
+    quick, market, premium = r(stats.p25 * 0.97), r(stats.median), r(stats.p75)
+    # 同款挂牌价高度集中时三档会重合，给出有区别的选择：低价比参考价低 10%，高价高 20%
+    if quick >= market:
+        quick = r(market * 0.9)
+    if premium <= market:
+        premium = r(market * 1.2)
+    return PriceSuggestion(quick_sale=quick, market=market, premium=premium, basis=stats)
