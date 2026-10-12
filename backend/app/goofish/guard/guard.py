@@ -170,7 +170,9 @@ class RiskGuard:
             # 只改内存的话数据库仍是「冷却中」，重启后 IM / 订单同步 / 保活都会跳过这个账号
             await self.set_state(key, AccountState.ACTIVE, "冷却结束，自动恢复")
 
-        wait = await self.limiter.reserve(f"{key}:{action}", policy.rate, policy.per, policy.burst)
+        wait = await self.limiter.reserve(
+            f"{key}:{action}", policy.rate, policy.per, policy.burst, max_wait=policy.max_wait
+        )
         if wait > policy.max_wait:
             raise RiskBlockedError(f"{action} 操作过于频繁", state="rate_limited", retry_after=wait)
         if wait > 0:

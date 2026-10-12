@@ -55,7 +55,8 @@ def policies() -> dict[Action, ActionPolicy]:
         Action.EDIT_ITEM: ActionPolicy(rate=1, write=True, exclusive=True),
         Action.POLISH: ActionPolicy(rate=1, write=True),
         Action.RATE: ActionPolicy(rate=2, write=True),
-        Action.LOGIN: ActionPolicy(rate=2, per=300, exclusive=True, requires_login=False),
+        # 二维码生成必须及时响应，限流时直接提示等待，不能排队超过前端请求超时。
+        Action.LOGIN: ActionPolicy(rate=2, per=300, exclusive=True, requires_login=False, max_wait=0),
     }
     m = s.guard_rate_multiplier
     if m == 1:

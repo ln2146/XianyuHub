@@ -1,4 +1,6 @@
 import asyncio
+import time
+from types import SimpleNamespace
 
 import httpx
 import respx
@@ -106,7 +108,11 @@ async def test_member_cannot_see_others_accounts(admin_client, client):
 
 
 @respx.mock
-async def test_qr_login_flow(admin_client):
+async def test_qr_login_flow(admin_client, monkeypatch):
+    from app.goofish.guard import limiter as limiter_module
+
+    now = [time.monotonic()]
+    monkeypatch.setattr(limiter_module, "time", SimpleNamespace(monotonic=lambda: now[0]))
     respx.get(url__regex=r".*mini_login\.htm.*").mock(
         return_value=httpx.Response(200, text="ok", headers={"set-cookie": "XSRF-TOKEN=csrf1; Path=/"})
     )
@@ -144,6 +150,7 @@ async def test_qr_login_flow(admin_client):
     mock_probe()
     mine = (await admin_client.post("/api/v1/accounts/import", json={"cookies": COOKIES})).json()  # unb 2200888
     for target, expect_status in ((r["account_id"], "SUCCESS"), (mine["id"], "ERROR")):
+        now[0] += 150  # 新的扫码会话在登录限流间隔结束后生成。
         statuses = iter(["CONFIRMED"])
         qr = (await admin_client.post("/api/v1/accounts/qr", json={"account_id": target})).json()
         res = (await admin_client.get(f"/api/v1/accounts/qr/{qr['qr_id']}")).json()

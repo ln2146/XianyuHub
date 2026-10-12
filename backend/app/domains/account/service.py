@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import math
 import secrets
 import time
 from dataclasses import dataclass, field
@@ -21,7 +22,7 @@ from app.domains.account.models import AccountGrant, RiskEvent, XyAccount
 from app.domains.account.store import DbSessionStore
 from app.domains.system.audit import record_audit
 from app.domains.system.models import Role, User
-from app.goofish.errors import GoofishError, SessionExpiredError
+from app.goofish.errors import GoofishError, RiskBlockedError, SessionExpiredError
 from app.goofish.gateway import account_key
 from app.goofish.guard.guard import AccountState, Runtime
 from app.goofish.guard.policy import Action
@@ -330,7 +331,21 @@ class QrLoginManager:
     async def start(self, owner: User, proxy: str | None = None, expect: XyAccount | None = None) -> tuple[str, str]:
         await self._gc()
         client = QrLoginClient(proxy=proxy)
-        sess = await get_runtime().guard.run("login", Action.LOGIN, client.start)
+        try:
+            sess = await get_runtime().guard.run("login", Action.LOGIN, client.start)
+        except BaseException as exc:
+            await client.aclose()
+            if isinstance(exc, RiskBlockedError):
+                retry_after = math.ceil(exc.retry_after) if exc.retry_after is not None else None
+                headers = {"Retry-After": str(retry_after)} if retry_after is not None else None
+                if exc.state == "rate_limited":
+                    raise HTTPException(
+                        status.HTTP_429_TOO_MANY_REQUESTS,
+                        f"生成二维码过于频繁，请在 {retry_after} 秒后重试",
+                        headers=headers,
+                    ) from exc
+                raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc), headers=headers) from exc
+            raise
         qr_id = secrets.token_urlsafe(12)
         self._entries[qr_id] = _QrEntry(
             owner_id=owner.id,
