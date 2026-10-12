@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRealtimeStore } from '@/stores/realtime'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Document, MoreFilled, Refresh, Search, UserFilled, WarningFilled } from '@element-plus/icons-vue'
+import { Document, Key, MoreFilled, Refresh, Search, UserFilled, WarningFilled } from '@element-plus/icons-vue'
 import {
   closeHold,
   createBinding,
@@ -38,6 +38,21 @@ const router = useRouter()
 const accounts = useAccountsStore()
 const realtime = useRealtimeStore()
 const isMobile = useMobile()
+
+const expiredAccounts = computed(() => accounts.list.filter((a) => a.status === 'need_login'))
+
+function isAccountExpired(accountId?: number) {
+  if (!accountId) return false
+  const a = accounts.list.find((x) => x.id === accountId)
+  return a?.status === 'need_login'
+}
+
+function goToRelogin(accountId?: number) {
+  router.push({
+    path: '/accounts',
+    query: accountId ? { relogin: String(accountId) } : {},
+  })
+}
 
 const orders = ref<Order[]>([])
 const loading = ref(false)
@@ -191,6 +206,17 @@ async function sync() {
   const targetId = filter.account_id || accounts.list[0]?.id
   if (!targetId) {
     ElMessage.warning('暂无可用的闲鱼账号')
+    return
+  }
+  const targetAcc = accounts.list.find((a) => a.id === targetId)
+  if (targetAcc?.status === 'need_login') {
+    ElMessageBox.confirm(
+      `账号「${targetAcc.remark || targetAcc.nickname || targetAcc.unb}」登录态已失效，无法同步订单。是否前往重新登录？`,
+      '登录已失效',
+      { confirmButtonText: '去重新登录', cancelButtonText: '取消', type: 'warning' },
+    ).then(() => {
+      goToRelogin(targetId)
+    }).catch(() => {})
     return
   }
   syncing.value = true
@@ -394,6 +420,32 @@ async function openDetail(o: Order) {
       </div>
     </el-card>
 
+    <!-- 账号登录失效提醒横幅 -->
+    <el-alert
+      v-if="expiredAccounts.length > 0"
+      type="warning"
+      show-icon
+      :closable="false"
+      class="mb"
+    >
+      <template #title>
+        <div class="account-expired-banner-inner">
+          <span>
+            检测到闲鱼账号「<strong>{{ expiredAccounts.map((a) => a.remark || a.nickname || a.unb).join('、') }}</strong>」登录态已失效，无法自动同步订单与解密收货信息。
+          </span>
+          <el-button
+            type="primary"
+            size="small"
+            plain
+            :icon="Key"
+            @click="goToRelogin(expiredAccounts[0].id)"
+          >
+            去重新登录
+          </el-button>
+        </div>
+      </template>
+    </el-alert>
+
     <el-card shadow="never" class="table-card">
       <div class="table-wrap">
         <el-table v-loading="loading" :data="orders" @row-dblclick="(r: Order) => openDetail(r)">
@@ -414,8 +466,18 @@ async function openDetail(o: Order) {
                   {{ row.order_id }}
                 </el-link>
               </div>
-              <div class="muted smaller mt-xs">
-                <span>{{ accounts.nameOf(row.account_id) }}</span>
+              <div class="muted smaller mt-xs acc-meta-row">
+                <span :class="{ 'text-danger': isAccountExpired(row.account_id) }">{{ accounts.nameOf(row.account_id) }}</span>
+                <el-tag
+                  v-if="isAccountExpired(row.account_id)"
+                  size="small"
+                  type="danger"
+                  effect="light"
+                  class="acc-expired-tag pointer"
+                  @click.stop="goToRelogin(row.account_id)"
+                >
+                  需重新登录 ↗
+                </el-tag>
                 <span class="dot-sep">·</span>
                 <span>{{ fmtTime(row.created_at) }}</span>
               </div>
@@ -981,6 +1043,29 @@ h4 {
 }
 .w-full {
   width: 100%;
+}
+.account-expired-banner-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 12px;
+}
+.acc-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.acc-expired-tag {
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0 6px;
+  height: 20px;
+  line-height: 18px;
+}
+.text-danger {
+  color: var(--xh-danger, #ef4444) !important;
 }
 @media (max-width: 768px) {
   .w150,

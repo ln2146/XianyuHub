@@ -10,7 +10,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { isAxiosError } from 'axios'
 import { errorMessage } from '@/api/http'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Check, EditPen, Loading, Location, MagicStick, Refresh, Warning } from '@element-plus/icons-vue'
+import { Check, EditPen, Key, Loading, Location, MagicStick, Refresh, Warning } from '@element-plus/icons-vue'
 import {
   aiDraft,
   createDraft,
@@ -53,6 +53,12 @@ const publishFailure = ref<{ unknown: boolean; message: string } | null>(null)
 // ---------------------------------------------------------------- 状态
 type Mode = 'ai' | 'review' | 'manual'
 const mode = ref<Mode>('ai')
+
+const selectedAccountExpired = computed(() => {
+  if (!form.account_id) return false
+  const a = accounts.list.find((x) => x.id === form.account_id)
+  return a?.status === 'need_login'
+})
 
 interface FormState {
   account_id: number | null
@@ -488,6 +494,7 @@ async function removeDraft(d: DraftOut) {
 }
 
 const canEdit = (d: DraftOut) => !['published', 'publishing', 'unknown'].includes(d.status)
+const pendingFacts = (d: DraftOut) => d.ai_meta?.uncertain.filter((fact) => !d.confirmed_facts.includes(fact)).length ?? 0
 const titleLen = computed(() => form.title.length)
 
 type DraftFilter = 'all' | 'pending' | 'published'
@@ -590,8 +597,25 @@ onBeforeUnmount(() => window.clearInterval(timer))
           <el-form label-width="90px" :label-position="isMobile ? 'top' : 'right'" class="publish-form">
             <el-form-item label="发布账号" required>
               <el-select v-model="form.account_id" placeholder="选择账号" class="w240">
-                <el-option v-for="a in accounts.list" :key="a.id" :value="a.id" :label="a.remark || a.nickname || a.unb" />
+                <el-option
+                  v-for="a in accounts.list"
+                  :key="a.id"
+                  :value="a.id"
+                  :label="`${a.remark || a.nickname || a.unb}${a.status === 'need_login' ? ' (需重新登录)' : ''}`"
+                />
               </el-select>
+              <div v-if="selectedAccountExpired" class="account-expired-tip mt-xs">
+                <el-tag size="small" type="danger" effect="light">该账号登录已失效</el-tag>
+                <el-button
+                  link
+                  type="primary"
+                  size="small"
+                  :icon="Key"
+                  @click="router.push({ path: '/accounts', query: { relogin: String(form.account_id) } })"
+                >
+                  去重新登录 ↗
+                </el-button>
+              </div>
             </el-form-item>
             <el-form-item label="商品图片" required>
               <ImageUploader v-model="form.image_ids" v-model:uploading="uploading" :allow-cover="false" />
@@ -708,8 +732,25 @@ onBeforeUnmount(() => window.clearInterval(timer))
           <el-form label-width="90px" :label-position="isMobile ? 'top' : 'right'" class="publish-form">
             <el-form-item label="发布账号" required>
               <el-select v-model="form.account_id" placeholder="选择账号" class="w240">
-                <el-option v-for="a in accounts.list" :key="a.id" :value="a.id" :label="a.remark || a.nickname || a.unb" />
+                <el-option
+                  v-for="a in accounts.list"
+                  :key="a.id"
+                  :value="a.id"
+                  :label="`${a.remark || a.nickname || a.unb}${a.status === 'need_login' ? ' (需重新登录)' : ''}`"
+                />
               </el-select>
+              <div v-if="selectedAccountExpired" class="account-expired-tip mt-xs">
+                <el-tag size="small" type="danger" effect="light">该账号登录已失效</el-tag>
+                <el-button
+                  link
+                  type="primary"
+                  size="small"
+                  :icon="Key"
+                  @click="router.push({ path: '/accounts', query: { relogin: String(form.account_id) } })"
+                >
+                  去重新登录 ↗
+                </el-button>
+              </div>
             </el-form-item>
             <el-form-item label="图片" required>
               <ImageUploader v-model="form.image_ids" v-model:uploading="uploading" />
@@ -869,7 +910,7 @@ onBeforeUnmount(() => window.clearInterval(timer))
                     <StatusTag :value="d.status" :map="draftStatusMap" />
                     <span class="muted ellipsis">{{ accounts.nameOf(d.account_id) }}</span>
                     <span v-if="d.status === 'scheduled'" class="muted">· {{ fmtTime(d.scheduled_at) }}</span>
-                    <span v-if="d.ai_meta?.uncertain?.length && canEdit(d)" class="pending">· {{ d.ai_meta.uncertain.length }} 项待确认</span>
+                    <span v-if="pendingFacts(d) && canEdit(d)" class="pending">· {{ pendingFacts(d) }} 项待核验</span>
                   </div>
                   <div v-if="d.status === 'published' && d.delivery_setup" class="small" :class="d.delivery_setup.status === 'linked' ? 'muted' : 'err'">
                     {{ d.delivery_setup.status === 'linked' ? '发货内容已关联' : `商品已发布，发货关联未完成：${d.delivery_setup.error || '待关联'}` }}
@@ -1480,5 +1521,11 @@ onBeforeUnmount(() => window.clearInterval(timer))
   .gen-btn {
     width: 100%;
   }
+}
+.account-expired-tip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
 }
 </style>

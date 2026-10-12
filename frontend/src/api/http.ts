@@ -1,5 +1,6 @@
 import axios, { AxiosError, type AxiosResponse } from 'axios'
 import { ElMessage } from 'element-plus'
+import { h } from 'vue'
 import { getItem, removeItem, TOKEN_KEY, USER_KEY } from '@/utils/storage'
 
 export const API_BASE = '/api/v1'
@@ -128,7 +129,37 @@ http.interceptors.response.use(
       }
     } else if (status !== 428 && !(err.config as { silent?: boolean } | undefined)?.silent) {
       // 428 = 闲鱼要求先完成身份认证，由页面弹出认证二维码，不弹通用错误
-      ElMessage.error(errorMessage(err))
+      const msg = errorMessage(err)
+      if (
+        msg.includes('重新登录') ||
+        msg.includes('Session 过期') ||
+        msg.includes('Session过期') ||
+        msg.includes('登录已失效') ||
+        msg.includes('需重新登录')
+      ) {
+        ElMessage({
+          type: 'error',
+          duration: 6000,
+          showClose: true,
+          message: h('span', { style: 'display: inline-flex; align-items: center; gap: 8px;' }, [
+            h('span', msg),
+            h(
+              'a',
+              {
+                style: 'color: #10b981; text-decoration: underline; cursor: pointer; font-weight: 600; white-space: nowrap;',
+                onClick: () => {
+                  if (location.pathname !== '/accounts') {
+                    location.href = '/accounts'
+                  }
+                },
+              },
+              '前往重新登录 ↗',
+            ),
+          ]),
+        })
+      } else {
+        ElMessage.error(msg)
+      }
     }
     return Promise.reject(err)
   },

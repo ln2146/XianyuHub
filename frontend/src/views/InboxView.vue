@@ -482,7 +482,14 @@ const showThread = computed(() => !isMobile.value || !!currentId.value)
           :title="`接待账号「${accounts.nameOf(current.account_id)}」${currentProblem}`"
         >
           <span class="small">期间收不到买家新消息，自动回复和发送都会失败。</span>
-          <el-button link type="primary" size="small" @click="router.push('/accounts')">去处理</el-button>
+          <el-button
+            link
+            type="primary"
+            size="small"
+            @click="router.push({ path: '/accounts', query: current?.account_id ? { relogin: String(current.account_id) } : {} })"
+          >
+            去处理 ↗
+          </el-button>
         </el-alert>
 
         <div ref="threadEl" v-loading="msgLoading" class="thread">

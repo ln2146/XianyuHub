@@ -1,8 +1,9 @@
 <script setup lang="ts">
 // 实物订单发货：网页端没有填运单号的功能，这里给出收货信息（一键复制）和扫码去闲鱼 App 发货
 import { computed, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { CopyDocument, Refresh } from '@element-plus/icons-vue'
+import { CopyDocument, Key, Refresh, WarningFilled } from '@element-plus/icons-vue'
 import QRCode from 'qrcode'
 import { getShipping, syncOrders, type Order, type ShippingInfo } from '@/api/order'
 
@@ -12,12 +13,37 @@ const emit = defineEmits<{
   (e: 'refreshed'): void
 }>()
 
+const router = useRouter()
 const open = computed({ get: () => props.modelValue, set: (v) => emit('update:modelValue', v) })
 const info = ref<ShippingInfo | null>(null)
 const qr = ref('')
 const loading = ref(false)
 const syncing = ref(false)
 const error = ref('')
+
+const isLoginError = computed(() => {
+  if (!error.value) return false
+  const s = error.value.toLowerCase()
+  return (
+    error.value.includes('重新登录') ||
+    error.value.includes('登录态') ||
+    error.value.includes('未登录') ||
+    error.value.includes('Session') ||
+    error.value.includes('需重新登录') ||
+    s.includes('login') ||
+    s.includes('session expired') ||
+    s.includes('unauthorized')
+  )
+})
+
+function goToReLogin() {
+  open.value = false
+  const accId = props.order?.account_id
+  router.push({
+    path: '/accounts',
+    query: accId ? { relogin: String(accId) } : {},
+  })
+}
 
 watch(
   () => [props.modelValue, props.order?.id] as const,
@@ -72,7 +98,27 @@ async function shipped() {
       <p class="muted small sub">
         闲鱼网页版不支持填写运单号，实物订单需要在闲鱼 App 里发货。寄出包裹后，用手机扫下面的二维码，选快递公司、填运单号即可。
       </p>
-      <p v-if="error" class="err small">{{ error }}</p>
+
+      <!-- 账号掉登录态时的突出提醒与一键跳转 -->
+      <div v-if="isLoginError" class="login-expired-card">
+        <div class="expired-card-main">
+          <div class="expired-icon-wrap">
+            <el-icon><WarningFilled /></el-icon>
+          </div>
+          <div class="expired-text-col">
+            <div class="expired-card-title">该订单账号登录态已失效</div>
+            <div class="expired-card-desc">
+              获取买家真实收货信息需要有效的闲鱼登录态，请先重新登录该账号。
+            </div>
+          </div>
+        </div>
+        <div class="expired-card-action">
+          <el-button type="primary" size="default" :icon="Key" class="relogin-btn" @click="goToReLogin">
+            去重新登录该账号
+          </el-button>
+        </div>
+      </div>
+      <p v-else-if="error" class="err small">{{ error }}</p>
 
       <template v-if="info">
         <section class="addr">
@@ -104,7 +150,24 @@ async function shipped() {
     </div>
     <template #footer>
       <el-button @click="open = false">关闭</el-button>
-      <el-button type="primary" :icon="Refresh" :loading="syncing" :disabled="!order" @click="shipped">我已在 App 发货，刷新状态</el-button>
+      <el-button
+        v-if="isLoginError"
+        type="primary"
+        :icon="Key"
+        @click="goToReLogin"
+      >
+        去重新登录账号
+      </el-button>
+      <el-button
+        v-else
+        type="primary"
+        :icon="Refresh"
+        :loading="syncing"
+        :disabled="!order"
+        @click="shipped"
+      >
+        我已在 App 发货，刷新状态
+      </el-button>
     </template>
   </el-dialog>
 </template>
@@ -123,6 +186,51 @@ async function shipped() {
 .err {
   margin: 0;
   color: var(--xh-danger);
+}
+.login-expired-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: var(--xh-radius-md);
+}
+.expired-card-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.expired-icon-wrap {
+  color: #ef4444;
+  font-size: 22px;
+  line-height: 1;
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+.expired-text-col {
+  flex: 1;
+  min-width: 0;
+}
+.expired-card-title {
+  font-weight: 600;
+  color: #991b1b;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+.expired-card-desc {
+  color: #b91c1c;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.expired-card-action {
+  display: flex;
+  justify-content: flex-end;
+}
+.relogin-btn {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+  border: none !important;
+  font-weight: 500;
 }
 .addr {
   display: flex;

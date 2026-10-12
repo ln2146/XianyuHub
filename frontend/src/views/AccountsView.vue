@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, h, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, h, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Delete,
@@ -49,15 +50,35 @@ const store = useAccountsStore()
 const auth = useAuthStore()
 const isAdmin = computed(() => auth.user?.role === 'admin')
 const isMobile = useMobile()
+const route = useRoute()
+const router = useRouter()
 const loading = ref(false)
 const im = ref<ImStatus>({ running: false, accounts: {} })
 const busy = reactive<Record<string, boolean>>({})
+
+function checkRouteRelogin() {
+  const target = route.query.relogin
+  if (!target) return
+  const acc = store.list.find((a) => String(a.id) === String(target) || a.unb === String(target))
+  if (acc) {
+    openReLogin(acc)
+    router.replace({ path: '/accounts', query: {} })
+  }
+}
+
+watch(
+  () => route.query.relogin,
+  (val) => {
+    if (val) checkRouteRelogin()
+  },
+)
 
 async function load() {
   loading.value = true
   try {
     await store.load(true)
     im.value = await getImStatus().catch(() => ({ running: false, accounts: {} }))
+    checkRouteRelogin()
   } finally {
     loading.value = false
   }

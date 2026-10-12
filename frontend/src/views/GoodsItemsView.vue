@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { DataLine, Delete, MagicStick, MoreFilled, Plus, Refresh, Search } from '@element-plus/icons-vue'
+import { DataLine, Delete, Key, MagicStick, MoreFilled, Plus, Refresh, Search } from '@element-plus/icons-vue'
 import { getMarket, listItems, offlineItem, polishAllItems, polishItem, syncItems, updateItem, type MarketView, type MyItem } from '@/api/goods'
 import {
   createBinding,
@@ -33,6 +33,12 @@ const filter = reactive({
   account_id: (route.query.account_id ? Number(route.query.account_id) : undefined) as number | undefined,
   status: (typeof route.query.status === 'string' ? route.query.status : '') as string,
   q: '',
+})
+
+const selectedAccountExpired = computed(() => {
+  if (!filter.account_id) return false
+  const a = accounts.list.find((x) => x.id === filter.account_id)
+  return a?.status === 'need_login'
 })
 
 watch(
@@ -185,6 +191,17 @@ function goDeliveryCards(it?: MyItem | null) {
 async function sync() {
   if (!filter.account_id) {
     ElMessage.warning('请先选择要同步的账号')
+    return
+  }
+  const acc = accounts.list.find((x) => x.id === filter.account_id)
+  if (acc?.status === 'need_login') {
+    ElMessageBox.confirm(
+      `账号「${acc.remark || acc.nickname || acc.unb}」登录态已失效，无法同步商品。是否前往重新登录？`,
+      '登录已失效',
+      { confirmButtonText: '去重新登录', cancelButtonText: '取消', type: 'warning' },
+    ).then(() => {
+      router.push({ path: '/accounts', query: { relogin: String(filter.account_id) } })
+    }).catch(() => {})
     return
   }
   syncing.value = true
@@ -391,6 +408,29 @@ function listingHint(row: MyItem): { label: string; type: 'warning' | 'success';
         <el-input v-model="filter.q" placeholder="搜索标题关键字" clearable class="w220" :prefix-icon="Search" @keyup.enter="load" @clear="load" />
       </div>
     </el-card>
+
+    <el-alert
+      v-if="selectedAccountExpired"
+      type="warning"
+      show-icon
+      :closable="false"
+      class="mb"
+    >
+      <template #title>
+        <div style="display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 12px;">
+          <span>当前选中的闲鱼账号登录态已失效，无法同步商品或执行自动化擦亮。</span>
+          <el-button
+            type="primary"
+            size="small"
+            plain
+            :icon="Key"
+            @click="router.push({ path: '/accounts', query: { relogin: String(filter.account_id) } })"
+          >
+            去重新登录
+          </el-button>
+        </div>
+      </template>
+    </el-alert>
 
     <el-card shadow="never">
       <div class="table-wrap">
