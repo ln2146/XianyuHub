@@ -389,6 +389,44 @@ body {
   box-shadow: var(--xh-shadow-float);
 }
 
+/* ============ 连接器配置弹窗（固定视窗高度 + 底部按钮防截断 + 优雅滚动） ============ */
+.connector-dialog {
+  display: flex !important;
+  flex-direction: column !important;
+  max-height: 85vh !important;
+  border-radius: var(--xh-radius-lg) !important;
+  overflow: hidden !important;
+  box-shadow: var(--xh-shadow-float) !important;
+}
+
+.connector-dialog .el-dialog__header {
+  flex-shrink: 0;
+  margin-right: 0 !important;
+  padding: 18px 24px 14px !important;
+  border-bottom: 1px solid var(--xh-border);
+}
+
+.connector-dialog .el-dialog__title {
+  font-size: 16px !important;
+  font-weight: 600 !important;
+  color: var(--xh-text) !important;
+}
+
+.connector-dialog .el-dialog__body {
+  flex: 1;
+  min-height: 0;
+  padding: 0 !important;
+  overflow: hidden;
+  position: relative;
+}
+
+.connector-dialog .el-dialog__footer {
+  flex-shrink: 0;
+  padding: 14px 24px !important;
+  border-top: 1px solid var(--xh-border);
+  background: var(--xh-card);
+}
+
 /* ============ 商品卡片与操作下拉菜单（现代精致轻量） ============ */
 .el-popper.item-card-dropdown {
   border-radius: var(--xh-radius-md) !important;

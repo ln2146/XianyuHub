@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, type Component } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch, type Component } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Aim,
+  ArrowDown,
+  ArrowUp,
   Bell,
   ChatDotRound,
   Check,
@@ -273,6 +275,48 @@ const edit = reactive({
   events: [] as string[],
   enabled: true,
 })
+
+// 弹窗可滚动状态与上下滚动箭头控制
+const dialogContentRef = ref<HTMLElement | null>(null)
+const hasScroll = ref(false)
+const canScrollUp = ref(false)
+const canScrollDown = ref(false)
+
+function checkScrollability() {
+  const el = dialogContentRef.value
+  if (!el) {
+    hasScroll.value = false
+    canScrollUp.value = false
+    canScrollDown.value = false
+    return
+  }
+  const overflow = el.scrollHeight > el.clientHeight + 4
+  hasScroll.value = overflow
+  canScrollUp.value = el.scrollTop > 15
+  canScrollDown.value = el.scrollHeight - el.scrollTop - el.clientHeight > 15
+}
+
+function handleDialogScroll() {
+  checkScrollability()
+}
+
+function scrollDialog(direction: 'up' | 'down') {
+  const el = dialogContentRef.value
+  if (!el) return
+  const delta = direction === 'up' ? -260 : 260
+  el.scrollBy({ top: delta, behavior: 'smooth' })
+}
+
+watch(
+  () => edit.open,
+  (val) => {
+    if (val) {
+      nextTick(() => {
+        setTimeout(checkScrollability, 180)
+      })
+    }
+  },
+)
 
 const currentApp = computed(() => {
   return (
@@ -745,8 +789,13 @@ async function remove(c: Channel) {
       :width="isMobile ? '95%' : '680px'"
       :close-on-click-modal="false"
       class="connector-dialog"
+      align-center
     >
-      <div class="dialog-inner-content">
+      <div
+        ref="dialogContentRef"
+        class="dialog-inner-content"
+        @scroll="handleDialogScroll"
+      >
         <!-- 引导指引条 -->
         <div class="guide-banner">
           <ConnectorIcon :type="edit.type" :size="36" />
@@ -882,6 +931,32 @@ async function remove(c: Channel) {
             <WarningFilled v-else />
           </el-icon>
           <div class="feedback-message">{{ edit.testResult.message }}</div>
+        </div>
+
+        <!-- 悬浮上下滚动导航箭头（当内容超出产生滚动时在右侧边缘指引与便捷翻页） -->
+        <div v-if="hasScroll" class="dialog-scroll-arrows">
+          <button
+            type="button"
+            class="scroll-arrow-btn"
+            :class="{ disabled: !canScrollUp }"
+            :disabled="!canScrollUp"
+            title="向上滚动"
+            aria-label="向上滚动"
+            @click.stop="scrollDialog('up')"
+          >
+            <el-icon><ArrowUp /></el-icon>
+          </button>
+          <button
+            type="button"
+            class="scroll-arrow-btn"
+            :class="{ disabled: !canScrollDown }"
+            :disabled="!canScrollDown"
+            title="向下滚动"
+            aria-label="向下滚动"
+            @click.stop="scrollDialog('down')"
+          >
+            <el-icon><ArrowDown /></el-icon>
+          </button>
         </div>
       </div>
 
@@ -1603,5 +1678,78 @@ async function remove(c: Channel) {
   align-items: center;
   justify-content: space-between;
   width: 100%;
+}
+
+/* ================= 6. 连接器弹窗与滚动控制（固定视窗高度 + 侧边滚动箭头导航） ================= */
+.dialog-inner-content {
+  max-height: calc(85vh - 128px);
+  overflow-y: auto;
+  padding: 16px 20px 24px;
+  position: relative;
+  scroll-behavior: smooth;
+}
+
+/* 始终清晰可见的优雅极简滚动条 */
+.dialog-inner-content::-webkit-scrollbar {
+  width: 6px;
+}
+.dialog-inner-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+.dialog-inner-content::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+.dialog-inner-content::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* 浮动上下滚动箭头导航控件（位于红框选定区域） */
+.dialog-scroll-arrows {
+  position: sticky;
+  bottom: 12px;
+  margin-left: auto;
+  width: fit-content;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 10;
+  padding: 3px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--xh-border);
+  border-radius: var(--xh-radius-pill);
+  box-shadow: var(--xh-shadow-float);
+  animation: fadeIn 0.2s ease;
+  margin-top: -64px;
+  pointer-events: none;
+}
+
+.scroll-arrow-btn {
+  pointer-events: auto;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--xh-text-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.scroll-arrow-btn:hover:not(.disabled) {
+  background: var(--xh-primary-soft);
+  color: var(--xh-primary);
+  transform: scale(1.1);
+}
+
+.scroll-arrow-btn.disabled {
+  color: var(--xh-disabled);
+  opacity: 0.3;
+  cursor: not-allowed;
 }
 </style>
