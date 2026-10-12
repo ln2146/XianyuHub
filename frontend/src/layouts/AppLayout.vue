@@ -176,27 +176,29 @@ function onCommand(cmd: string) {
   border-right: 1px solid var(--xh-border);
   display: flex;
   flex-direction: column;
-  transition: width 0.2s;
+  transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   overflow: hidden;
 }
 .brand {
-  height: 56px;
+  height: 54px;
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 0 18px;
   font-weight: 700;
-  font-size: 16px;
+  font-size: 15px;
+  letter-spacing: -0.01em;
   color: var(--xh-primary);
   white-space: nowrap;
   flex-shrink: 0;
+  border-bottom: 1px solid var(--xh-border);
 }
 .brand.mini {
   padding: 0 16px;
 }
 .brand img {
-  width: 30px;
-  height: 30px;
+  width: 26px;
+  height: 26px;
 }
 :deep(.side-menu) {
   border-right: none;
@@ -208,13 +210,13 @@ function onCommand(cmd: string) {
   min-width: 0;
 }
 .header {
-  height: 56px;
+  height: 54px;
   background: #fff;
   border-bottom: 1px solid var(--xh-border);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 12px 0 4px;
+  padding: 0 16px 0 6px;
 }
 .header-left,
 .header-right {
@@ -248,26 +250,39 @@ function onCommand(cmd: string) {
   gap: 8px;
   cursor: pointer;
   outline: none;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: background 0.15s ease;
+}
+.user:hover {
+  background: var(--xh-fill);
 }
 .avatar {
   background: var(--xh-primary);
   color: #fff;
   font-weight: 600;
+  font-size: 12px;
+}
+.uname {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--xh-text);
 }
 .dot {
   display: inline-block;
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background: #c0c4cc;
+  background: #cbd5e1;
   margin-right: 6px;
+  transition: all 0.2s ease;
 }
 .dot.on {
-  background: #67c23a;
-  box-shadow: 0 0 0 3px rgba(103, 194, 58, 0.18);
+  background: #10b981;
+  box-shadow: 0 0 0 2.5px rgba(16, 185, 129, 0.2);
 }
 .main {
-  padding: 20px;
+  padding: 20px 24px;
   overflow-y: auto;
 }
 @media (max-width: 768px) {
