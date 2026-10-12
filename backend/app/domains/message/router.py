@@ -129,55 +129,20 @@ def generate_quick_replies(
 ) -> list[QuickReplyItem]:
     replies: list[QuickReplyItem] = []
 
-    # 1. 待发货 / 订单状态话术
-    has_paid_order = any(o.status in (OrderState.PAID, OrderState.DELIVERING) for o in orders)
-    if has_paid_order:
-        replies.append(QuickReplyItem(tag="确认发货", text="已收到您的订单，正在为您打包/下发发货内容，请稍候~"))
-        replies.append(
-            QuickReplyItem(tag="核对地址", text="亲，已核对您的收货信息，无误今天就给您安排发出，感谢支持！")
-        )
-
-    # 2. 商品及议价拉扯话术
-    if item and item.price is not None:
-        p = item.price
-        f = item.floor_price
-
-        replies.append(QuickReplyItem(tag="现货在售", text="在的亲，宝贝功能完好成色如实拍图，喜欢可以直接拍下哦~"))
-
-        if f is not None and f < p:
-            mid = round((p + f) / 2)
-            replies.append(
-                QuickReplyItem(
-                    tag="折中诚意", text=f"看您诚心要，各退一步 {mid} 元包顺丰给您，今天就能发走，您看可以的话我改价~"
-                )
-            )
-            replies.append(
-                QuickReplyItem(
-                    tag="坚守底价",
-                    text=f"朋友，{f} 元真是我这边的底线成本价了，亏本出闲置，不能再少了，爽快拍下直接发~",
-                )
-            )
-        elif f is not None:
-            replies.append(
-                QuickReplyItem(
-                    tag="底价声明", text=f"您好，标价 {p} 元已经是最低实价，成色很好不议价啦，诚心要今天可发~"
-                )
-            )
-        else:
-            replies.append(
-                QuickReplyItem(
-                    tag="小刀试探", text="亲，小刀可以接受，大刀勿扰哈，诚心要的话您报个心理价，合适就给您出~"
-                )
-            )
-
-        replies.append(
-            QuickReplyItem(
-                tag="催促促单", text="宝贝还有多位朋友在咨询，先拍先得哦！今天 17:00 前拍下可赶上今天第一批发出~"
-            )
-        )
-    else:
-        replies.append(QuickReplyItem(tag="礼貌在", text="在的亲，有什么想了解的随时问我~"))
-        replies.append(QuickReplyItem(tag="包邮说明", text="爽快不墨迹直接拍的朋友包邮发出哦~"))
+    # 仅根据持久化的订单、商品数据提供事实，不推断成色、快递、库存或时效。
+    if any(order.status in (OrderState.PAID, OrderState.DELIVERING) for order in orders):
+        replies.append(QuickReplyItem(tag="订单已付款", text="已收到您的付款，发货进度我确认后告诉您。"))
+    if item and item.status == "on_sale":
+        replies.append(QuickReplyItem(tag="在售商品", text=f"您咨询的「{item.title}」目前在售。"))
+    if item and item.status == "on_sale" and item.price is not None:
+        replies.append(QuickReplyItem(tag="当前标价", text=f"这件商品当前标价 {item.price:g} 元。"))
+        if item.floor_price is not None and 0 <= item.floor_price < item.price:
+            offer = round((item.price + item.floor_price) / 2, 2)
+            replies.append(QuickReplyItem(tag="折中诚意", text=f"这件商品可以 {offer:g} 元出，运费和发货时间另行确认。"))
+    if item and item.desc.strip():
+        replies.append(QuickReplyItem(tag="商品说明", text=f"商品描述：{item.desc.strip()}"))
+    replies.append(QuickReplyItem(tag="礼貌接待", text="在的，请问您想了解商品的哪些信息？"))
+    replies.append(QuickReplyItem(tag="确认交易条件", text="运费和发货时间我确认后告诉您，请先不要急着付款。"))
 
     return replies
 

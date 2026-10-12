@@ -4,6 +4,7 @@ import { ElMessage } from 'element-plus'
 import { ArrowDown, ArrowLeft, Cpu, Document, Goods, Promotion, Refresh, Search, User, UserFilled } from '@element-plus/icons-vue'
 import {
   conversationEvidence,
+  getConversationContext,
   handleSuggestion,
   listConversations,
   listMessages,
@@ -15,8 +16,10 @@ import {
   type ChatMessage,
   type Conversation,
   type ReplyPlan,
+  type QuickReplyItem,
   type Suggestion,
 } from '@/api/message'
+import { errorMessage } from '@/api/http'
 import BuyerRiskPanel from '@/components/BuyerRiskPanel.vue'
 import ConversationContextSidebar from '@/components/ConversationContextSidebar.vue'
 import JsonBlock from '@/components/JsonBlock.vue'
@@ -148,18 +151,29 @@ function select(c: Conversation) {
   messages.value = []
   suggestions.value = []
   draft.value = ''
+  loadQuickPhrases(c.id)
   loadThread()
 }
 
 // ---------------------------------------------------------------- 发送与快捷话术
 const draft = ref('')
-const quickPhrases = [
-  '在的亲，请问有什么可以帮您？',
-  '拍下后系统自动发货，请放心下单～',
-  '全新正品，功能完好，支持验货',
-  '价格已经非常实惠了，不议价哦亲',
-  '今天拍下当天发出，默认顺丰速递',
+const neutralPhrases: QuickReplyItem[] = [
+  { tag: '礼貌接待', text: '在的，请问您想了解商品的哪些信息？' },
+  { tag: '确认交易条件', text: '运费和发货时间我确认后告诉您，请先不要急着付款。' },
 ]
+const quickPhrases = ref<QuickReplyItem[]>(neutralPhrases)
+const phraseError = ref('')
+
+async function loadQuickPhrases(id: number) {
+  quickPhrases.value = neutralPhrases
+  phraseError.value = ''
+  try {
+    const context = await getConversationContext(id)
+    if (currentId.value === id) quickPhrases.value = context.quick_replies
+  } catch (error) {
+    if (currentId.value === id) phraseError.value = `商品话术读取失败：${errorMessage(error)}。可使用中性接待话术或重试。`
+  }
+}
 
 function insertPhrase(phrase: string) {
   draft.value = draft.value ? `${draft.value} ${phrase}` : phrase
@@ -517,14 +531,17 @@ const showThread = computed(() => !isMobile.value || !!currentId.value)
                 :key="idx"
                 type="button"
                 class="phrase-chip"
-                :title="`点击填入：${p}`"
-                @click="insertPhrase(p)"
+                :title="`点击填入：${p.text}`"
+                @click="insertPhrase(p.text)"
               >
-                {{ p }}
+                {{ p.tag }}
               </button>
             </div>
           </div>
 
+          <el-alert v-if="phraseError" :title="phraseError" type="warning" :closable="false">
+            <el-button link type="primary" @click="currentId && loadQuickPhrases(currentId)">重新读取</el-button>
+          </el-alert>
           <footer class="composer">
             <el-input
               v-model="draft"
