@@ -20,6 +20,7 @@ TASK = {
     "criteria": "必须：M1 芯片；电池 ≥ 85%",
     "cron": "*/30 8-23 * * *",
     "price_drop_percent": 5,
+    "enabled": True,
 }
 
 
@@ -186,6 +187,45 @@ async def test_task_validation(admin_client):
     assert r.status_code == 422
     r = await admin_client.post("/api/v1/buyer/tasks/generate", json={"description": "想要一台 M1 Air"})
     assert r.status_code == 503  # 未配置大模型
+
+
+@respx.mock
+async def test_one_time_search_runs_without_enabling_monitoring(admin_client):
+    body = {k: v for k, v in TASK.items() if k != "enabled"}
+    body["decision_mode"] = "rule"
+    response = await admin_client.post("/api/v1/buyer/tasks", json=body)
+    assert response.status_code == 201
+    task = response.json()
+    assert task["enabled"] is False
+
+    # 周期触发不执行手动记录；明确的手动触发仍然真实采集并保存结果。
+    assert (await run_task(task["id"])).fetched == 0
+    assert (await admin_client.get(f"/api/v1/buyer/tasks/{task['id']}")).json()["last_run_at"] is None
+    mock_market(load("search_response.json")["data"])
+    response = await admin_client.post(f"/api/v1/buyer/tasks/{task['id']}/run")
+    assert response.status_code == 202
+    from app.domains.buyer.router import _background
+
+    await asyncio.gather(*list(_background))
+    task = (await admin_client.get(f"/api/v1/buyer/tasks/{task['id']}")).json()
+    assert task["enabled"] is False and task["last_status"] == "ok"
+    assert task["last_stats"]["fetched"] == 2
+
+
+async def test_monitoring_only_registers_jobs_after_opt_in(admin_client, monkeypatch):
+    from app.domains.buyer import scheduling
+
+    jobs = {}
+    monkeypatch.setattr(scheduling, "_enabled", True)
+    monkeypatch.setattr(scheduling.scheduler, "add_cron_job", lambda key, *args, **kwargs: jobs.update({key: args}))
+    monkeypatch.setattr(scheduling.scheduler, "remove_job", lambda key: jobs.pop(key, None))
+    body = {k: v for k, v in TASK.items() if k != "enabled"}
+    task = (await admin_client.post("/api/v1/buyer/tasks", json=body)).json()
+    assert jobs == {}
+    response = await admin_client.put(f"/api/v1/buyer/tasks/{task['id']}", json={**body, "enabled": True})
+    assert response.status_code == 200 and scheduling.job_id(task["id"]) in jobs
+    await admin_client.put(f"/api/v1/buyer/tasks/{task['id']}", json={**body, "enabled": False})
+    assert jobs == {}
 
 
 @respx.mock

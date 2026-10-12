@@ -10,7 +10,6 @@ import {
   Download,
   Edit,
   MoreFilled,
-  Plus,
   Refresh,
   Search,
   TrendCharts,
@@ -222,7 +221,7 @@ async function quickCreate() {
           },
           criteria: d.criteria || '',
           decision_mode: 'ai',
-          enabled: true,
+          enabled: false,
         }
       } catch {
         const keywords = text.split(/[,，、;；\s]+/).map((k) => k.trim()).filter(Boolean).slice(0, 8)
@@ -231,7 +230,7 @@ async function quickCreate() {
           name: text.slice(0, 32),
           keywords: keywords.length ? keywords : [text.slice(0, 32)],
           criteria: text,
-          enabled: true,
+          enabled: false,
         }
       }
     } else {
@@ -240,7 +239,7 @@ async function quickCreate() {
         ...emptyTask(),
         name: (keywords[0] || text).slice(0, 32),
         keywords: keywords.length ? keywords : [text.slice(0, 32)],
-        enabled: true,
+        enabled: false,
       }
     }
 
@@ -543,7 +542,7 @@ onBeforeUnmount(stopTimer)
       </template>
     </RadarNav>
 
-    <!-- 新建：一个入口。输入关键词回车直接创建并搜索，无需弹窗二次确认；留空点击可打开完整配置弹窗 -->
+    <!-- 一次搜索仅保存手动搜索记录；持续盯货需明确选择频率后保存。 -->
     <div class="quick">
       <el-input
         v-model="quickKw"
@@ -557,11 +556,15 @@ onBeforeUnmount(stopTimer)
       <el-button
         size="large"
         type="primary"
-        :icon="quickKw.trim() ? Search : Plus"
+        :icon="Search"
         :loading="quickLoading"
+        :disabled="!quickKw.trim()"
         @click="quickCreate"
       >
-        {{ quickKw.trim() ? '直接搜索' : '新建智能搜索' }}
+        搜一次
+      </el-button>
+      <el-button size="large" :icon="Bell" :disabled="quickLoading" @click="openCreate({ enabled: true }, quickKw.trim())">
+        持续盯货
       </el-button>
     </div>
 

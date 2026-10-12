@@ -79,7 +79,7 @@ class TaskIn(BaseModel):
     price_drop_percent: float = Field(default=0, ge=0, le=90)  # 降价提醒已移交「价格监控」，新任务默认关闭
     account_id: int | None = None
     cron: str = "*/30 8-23 * * *"
-    enabled: bool = True
+    enabled: bool = False
 
     @field_validator("cron")
     @classmethod
@@ -259,7 +259,7 @@ async def trigger_task(task_id: int, user: CurrentUser, session: SessionDep) -> 
         await bus.publish(Topics.BUYER_TASK_CHANGED, {"task_id": task.id})
     # 手动搜索与实时搜货一致：匿名通道受限时这一次改用绑定的账号（不改任务设置）
     via = await fallback_account(session, user) if task.account_id is None and anon_paused() else None
-    bg = asyncio.create_task(run_task(task.id, account_id=via.id if via else None))
+    bg = asyncio.create_task(run_task(task.id, account_id=via.id if via else None, manual=True))
     _background.add(bg)
     bg.add_done_callback(_background.discard)
     return {"started": True}

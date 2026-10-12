@@ -160,7 +160,7 @@ export const emptyTask = (): TaskIn => ({
   price_drop_percent: 0,
   account_id: null,
   cron: '*/30 8-23 * * *',
-  enabled: true,
+  enabled: false,
 })
 
 export const listTasks = () => http.get<TaskOut[]>('/buyer/tasks').then((r) => r.data)

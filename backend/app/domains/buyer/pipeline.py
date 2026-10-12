@@ -184,8 +184,8 @@ async def seller_profile(
 
 
 # ---------------------------------------------------------------- 主流程
-async def run_task(task_id: int, account_id: int | None = None) -> RunStats:
-    """account_id：仅本次改用的请求账号（手动搜索时匿名受限的兜底），不改任务设置。"""
+async def run_task(task_id: int, account_id: int | None = None, *, manual: bool = False) -> RunStats:
+    """manual 允许手动运行未开启定时的任务；account_id 仅影响本次请求，不改任务设置。"""
     lock = task_lock(task_id)
     if lock.locked():
         logger.info("任务 {} 正在运行，跳过本次触发", task_id)
@@ -199,17 +199,17 @@ async def run_task(task_id: int, account_id: int | None = None) -> RunStats:
             logger.info("任务 {} 正在其他进程运行，跳过本次触发", task_id)
             return RunStats(notes=["已在其他进程运行"])
         try:
-            return await _run(task_id, account_id)
+            return await _run(task_id, account_id, manual=manual)
         finally:
             if cluster and token:
                 await cluster.unlock(f"buyer.task.{task_id}", token)
 
 
-async def _run(task_id: int, account_id: int | None = None) -> RunStats:
+async def _run(task_id: int, account_id: int | None = None, *, manual: bool = False) -> RunStats:
     stats = RunStats()
     async with session_factory()() as s:
         task = await s.get(MonitorTask, task_id)
-        if task is None or not task.enabled:
+        if task is None or (not task.enabled and not manual):
             return stats
         if task.paused_reason:
             stats.notes.append("任务已暂停")
@@ -247,7 +247,7 @@ async def _run(task_id: int, account_id: int | None = None) -> RunStats:
             task.consecutive_failures = 0
         else:
             task.consecutive_failures += 1
-            if status == "risk":
+            if status == "risk" and task.enabled:
                 delay = risk_retry_delay(task.consecutive_failures, _cooldown_left(channel))
                 task.retry_at = datetime.now(UTC) + timedelta(seconds=delay)
             elif task.consecutive_failures >= MAX_FAILURES_BEFORE_PAUSE:

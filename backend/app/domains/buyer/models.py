@@ -56,7 +56,7 @@ class MonitorTask(IdMixin, TimestampMixin, Base):
     price_drop_percent: Mapped[float] = mapped_column(Float, default=5.0)
     account_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 为空则匿名搜索
     cron: Mapped[str] = mapped_column(String(64), default="*/30 8-23 * * *")
-    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     # 运行状态
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
