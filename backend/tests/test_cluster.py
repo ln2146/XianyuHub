@@ -162,3 +162,28 @@ async def test_redis_rate_limiter_lua():
     lim = RedisRateLimiter(FakeRedis(server=FakeServer(), decode_responses=True))
     waits = [round(await lim.reserve("acc:1:search", 60, 60, 2), 1) for _ in range(4)]
     assert waits[:2] == [0.0, 0.0] and 0.9 <= waits[2] <= 1.0 and 1.9 <= waits[3] <= 2.0
+
+
+async def test_scheduled_job_runs_once_across_workers():
+    from app.workers.scheduler import once_per_cluster
+
+    server = FakeServer()
+    runs: list[str] = []
+
+    async def job():
+        runs.append("run")
+
+    workers = [Cluster(FakeRedis(server=server, decode_responses=True), "worker") for _ in range(2)]
+    try:
+        for w in workers:
+            set_cluster(w)
+            await once_per_cluster("order.retry_failed", job, 30)()
+        assert runs == ["run"]  # 第二个 worker 同一轮的触发被跳过
+        await workers[0].redis.delete("xyh:lock:job:order.retry_failed")  # 锁过期后下一轮照常执行
+        await once_per_cluster("order.retry_failed", job, 30)()
+        assert runs == ["run", "run"]
+        set_cluster(None)
+        await once_per_cluster("order.retry_failed", job, 30)()  # 单进程部署：没有集群，直接执行
+        assert len(runs) == 3
+    finally:
+        set_cluster(None)
