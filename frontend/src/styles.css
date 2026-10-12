@@ -389,6 +389,98 @@ body {
   box-shadow: var(--xh-shadow-float);
 }
 
+/* ============ 商品卡片与操作下拉菜单（现代精致轻量） ============ */
+.el-popper.item-card-dropdown {
+  border-radius: var(--xh-radius-md) !important;
+  border: 1px solid var(--xh-border) !important;
+  box-shadow: var(--xh-shadow-float) !important;
+  padding: 5px !important;
+}
+
+.item-card-dropdown .el-dropdown-menu {
+  padding: 3px !important;
+  min-width: 156px;
+}
+
+.item-card-dropdown .el-dropdown-menu__item {
+  height: 33px !important;
+  line-height: 33px !important;
+  padding: 0 10px !important;
+  border-radius: 6px !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  color: var(--xh-text) !important;
+  margin: 1px 0 !important;
+  transition: all 0.15s ease !important;
+}
+
+.item-card-dropdown .el-dropdown-menu__item:hover {
+  background-color: var(--xh-fill) !important;
+  color: var(--xh-text) !important;
+}
+
+.item-card-dropdown .el-dropdown-menu__item.is-active {
+  color: var(--xh-primary) !important;
+  background-color: var(--xh-primary-soft) !important;
+  font-weight: 600 !important;
+}
+
+.item-card-dropdown .el-dropdown-menu__item.is-active .menu-item-icon {
+  color: var(--xh-primary) !important;
+}
+
+.item-card-dropdown .el-dropdown-menu__item.is-danger {
+  color: var(--xh-danger) !important;
+}
+
+.item-card-dropdown .el-dropdown-menu__item.is-danger:hover {
+  background-color: #fff1f2 !important;
+  color: var(--xh-danger) !important;
+}
+
+.item-card-dropdown .el-dropdown-menu__item.is-danger .menu-item-icon {
+  color: var(--xh-danger) !important;
+}
+
+.item-card-dropdown .el-dropdown-menu__item--divided {
+  margin: 4px 4px !important;
+  border-top-color: var(--xh-border) !important;
+}
+
+.menu-item-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.menu-item-icon {
+  font-size: 14.5px;
+  color: var(--xh-muted);
+  flex-shrink: 0;
+  transition: color 0.15s ease;
+}
+
+.el-dropdown-menu__item:hover .menu-item-icon {
+  color: var(--xh-text);
+}
+
+.el-dropdown-menu__item.is-active:hover .menu-item-icon {
+  color: var(--xh-primary);
+}
+
+.menu-item-label {
+  flex: 1;
+  font-size: 12.5px;
+  letter-spacing: -0.01em;
+}
+
+.menu-item-ext {
+  font-size: 12px;
+  color: var(--xh-disabled);
+  flex-shrink: 0;
+}
+
 /* 移动端响应式 */
 @media (max-width: 768px) {
   .el-dialog {

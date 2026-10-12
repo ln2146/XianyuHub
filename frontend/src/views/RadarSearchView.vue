@@ -2,7 +2,7 @@
 import { computed, onActivated, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowDown, Bell, Check, Close, Grid, List, MagicStick, Search, Upload } from '@element-plus/icons-vue'
+import { ArrowDown, Bell, Check, Close, Grid, List, MagicStick, Search, TopRight, Upload } from '@element-plus/icons-vue'
 import {
   createTask,
   emptyTask,
@@ -138,9 +138,9 @@ function toCard(it: SearchItem): CardItem {
 }
 
 const cardMenu: CardMenuItem[] = [
-  { key: 'watch', label: '加入价格监控' },
-  { key: 'resell', label: '转手发品' },
-  { key: 'open', label: '去闲鱼查看', divided: true },
+  { key: 'watch', label: '加入价格监控', icon: Bell },
+  { key: 'resell', label: '转手发品', icon: Upload },
+  { key: 'open', label: '去闲鱼查看', icon: TopRight, divided: true, external: true },
 ]
 
 function onCardAction(it: SearchItem, key: string) {

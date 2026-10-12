@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 统一的闲鱼商品卡片：智能搜索、实时搜货共用。
 // 卡片只放“要不要点进去”的信息；点击打开详情抽屉，次要操作在「⋯」菜单（不依赖悬停）。
-import { MoreFilled, Picture, Star, StarFilled } from '@element-plus/icons-vue'
+import { MoreFilled, Picture, Star, StarFilled, TopRight } from '@element-plus/icons-vue'
 
 export interface CardIcon {
   name: string
@@ -38,8 +38,11 @@ export interface CardItem {
 export interface CardMenuItem {
   key: string
   label: string
+  icon?: any
   divided?: boolean
   danger?: boolean
+  active?: boolean
+  external?: boolean
 }
 
 defineProps<{
@@ -130,12 +133,27 @@ function iconStyle(ic: CardIcon, height: number) {
           >
             <el-icon><StarFilled v-if="starred" /><Star v-else /></el-icon>
           </button>
-          <el-dropdown v-if="menu?.length" trigger="click" @command="(k: string) => emit('action', k)">
+          <el-dropdown
+            v-if="menu?.length"
+            trigger="click"
+            popper-class="item-card-dropdown"
+            @command="(k: string) => emit('action', k)"
+          >
             <button type="button" class="op" title="更多操作"><el-icon><MoreFilled /></el-icon></button>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item v-for="m in menu" :key="m.key" :command="m.key" :divided="m.divided">
-                  <span :class="{ danger: m.danger }">{{ m.label }}</span>
+                <el-dropdown-item
+                  v-for="m in menu"
+                  :key="m.key"
+                  :command="m.key"
+                  :divided="m.divided"
+                  :class="{ 'is-active': m.active, 'is-danger': m.danger }"
+                >
+                  <div class="menu-item-row">
+                    <el-icon v-if="m.icon" class="menu-item-icon"><component :is="m.icon" /></el-icon>
+                    <span class="menu-item-label">{{ m.label }}</span>
+                    <el-icon v-if="m.external" class="menu-item-ext"><TopRight /></el-icon>
+                  </div>
                 </el-dropdown-item>
               </el-dropdown-menu>
             </template>

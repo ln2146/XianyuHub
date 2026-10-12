@@ -5,6 +5,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Bell,
   CaretRight,
+  CircleCheck,
+  CircleClose,
   CopyDocument,
   Delete,
   Download,
@@ -12,8 +14,10 @@ import {
   MoreFilled,
   Refresh,
   Search,
+  TopRight,
   TrendCharts,
   Upload,
+  View,
   WarningFilled,
 } from '@element-plus/icons-vue'
 import {
@@ -370,14 +374,14 @@ const compareRows: { label: string; value: (r: ResultOut) => string }[] = [
 
 function cardMenu(r: ResultOut): CardMenuItem[] {
   return [
-    { key: 'compare', label: inCompare(r) ? '移出对比' : '加入对比' },
-    { key: 'seen', label: r.mark === 'seen' ? '取消「已看」' : '标记为已看', divided: true },
-    { key: 'bought', label: r.mark === 'bought' ? '取消「已买」' : '标记为已买' },
-    { key: 'ignored', label: '不感兴趣' },
-    { key: 'history', label: '价格走势', divided: true },
-    { key: 'watch', label: '加入价格监控' },
-    { key: 'resell', label: '转手发品' },
-    { key: 'open', label: '去闲鱼查看', divided: true },
+    { key: 'compare', label: inCompare(r) ? '移出对比' : '加入对比', icon: CopyDocument, active: inCompare(r) },
+    { key: 'seen', label: r.mark === 'seen' ? '取消「已看」' : '标记为已看', icon: View, active: r.mark === 'seen', divided: true },
+    { key: 'bought', label: r.mark === 'bought' ? '取消「已买」' : '标记为已买', icon: CircleCheck, active: r.mark === 'bought' },
+    { key: 'ignored', label: '不感兴趣', icon: CircleClose, danger: true, active: r.mark === 'ignored' },
+    { key: 'history', label: '价格走势', icon: TrendCharts, divided: true },
+    { key: 'watch', label: '加入价格监控', icon: Bell },
+    { key: 'resell', label: '转手发品', icon: Upload },
+    { key: 'open', label: '去闲鱼查看', icon: TopRight, divided: true, external: true },
   ]
 }
 
@@ -563,18 +567,16 @@ onBeforeUnmount(stopTimer)
           <div class="t-meta ellipsis">
             {{ cronText(t) }}<template v-if="t.last_run_at"> · {{ statusLabel[t.last_status || '']?.label && t.last_status !== 'ok' ? statusLabel[t.last_status || ''].label + ' · ' : '' }}{{ fmtRelative(t.last_run_at) }}</template>
           </div>
-          <div v-if="t.paused_reason" class="t-paused" :title="`已暂停：${t.paused_reason}`">已暂停：{{ t.paused_reason }}</div>
+          <div v-if="t.paused_reason" class="t-paused" :title="`已暂停：${t.paused_reason}`">已暂停，需手动恢复</div>
           <div v-else-if="t.retry_at && !t.running" class="t-wait" :title="t.last_error || ''">闲鱼临时限制，{{ retryText(t) }}</div>
           <div class="t-ops" @click.stop>
             <el-button size="small" link type="primary" :icon="CaretRight" :loading="busy[`run-${t.id}`]" :disabled="t.running" @click="run(t)">搜索</el-button>
-            <el-button size="small" link :icon="Edit" @click="openEdit(t)">编辑</el-button>
+            <el-button size="small" link :icon="Edit" title="编辑" aria-label="编辑" @click="openEdit(t)" />
             <el-switch
               :model-value="t.enabled"
               :loading="busy[`en-${t.id}`]"
               size="small"
-              inline-prompt
-              active-text="定时"
-              inactive-text="手动"
+              :title="t.enabled ? '定时搜索已开启' : '仅手动搜索'"
               @change="(v: string | number | boolean) => toggle(t, !!v)"
             />
             <el-dropdown trigger="click" @command="(c: string) => onTaskCommand(t, c)">
@@ -785,7 +787,7 @@ onBeforeUnmount(stopTimer)
 }
 .layout {
   display: grid;
-  grid-template-columns: 264px minmax(0, 1fr);
+  grid-template-columns: 200px minmax(0, 1fr);
   gap: var(--xh-space-4);
   align-items: start;
 }
@@ -796,7 +798,7 @@ onBeforeUnmount(stopTimer)
   top: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--xh-space-2);
+  gap: 2px;
   max-height: calc(100vh - 140px);
   min-height: 80px;
   overflow-y: auto;
@@ -806,7 +808,7 @@ onBeforeUnmount(stopTimer)
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  padding: 0 var(--xh-space-1);
+  padding: 0 10px 6px;
   font-weight: 600;
   color: var(--xh-text);
 }
@@ -822,11 +824,11 @@ onBeforeUnmount(stopTimer)
 .task {
   display: flex;
   flex-direction: column;
-  gap: var(--xh-space-1);
-  padding: 10px var(--xh-space-3);
-  border: 1px solid var(--xh-border);
-  border-radius: var(--xh-radius-md);
-  background: var(--xh-card);
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--xh-radius-sm);
+  background: transparent;
   text-align: left;
   font: inherit;
   cursor: pointer;
@@ -834,10 +836,9 @@ onBeforeUnmount(stopTimer)
   transition: border-color 0.15s;
 }
 .task:hover {
-  border-color: var(--xh-primary-border);
+  background: var(--xh-fill-strong);
 }
 .task.active {
-  border-color: var(--xh-primary);
   background: var(--xh-primary-soft);
 }
 .task:focus-visible {
@@ -918,8 +919,9 @@ onBeforeUnmount(stopTimer)
 .t-ops {
   display: flex;
   align-items: center;
-  gap: var(--xh-space-1);
-  padding-left: 12px;
+  gap: var(--xh-space-2);
+  padding-left: 16px;
+  margin-top: 2px;
 }
 .t-ops .el-button + .el-button {
   margin-left: 0;
