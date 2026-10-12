@@ -3,20 +3,21 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
 
 from app.core.crypto import get_vault
-from app.core.deps import AdminUser, CurrentUser, SessionDep
+from app.core.deps import AdminUser, CookieSyncUser, CurrentUser, SessionDep
 from app.core.events import Topics, bus
+from app.core.security import COOKIE_SYNC_SCOPE, create_access_token
 from app.domains.account import service
 from app.domains.account.models import AccountGrant, AccountSettings, RiskEvent, XyAccount
 from app.domains.account.store import DbSessionStore
 from app.domains.message.models import ReplyRule
 from app.domains.order.models import CardBinding
 from app.domains.system.audit import record_audit
-from app.domains.system.models import User
+from app.domains.system.models import Role, User
 from app.goofish.gateway import account_key
 from app.goofish.guard.guard import AccountState
 from app.runtime import get_runtime
@@ -70,6 +71,13 @@ class ImportIn(BaseModel):
     proxy: str | None = None
     verify: bool = True
     account_id: int | None = None
+
+
+class CookieSyncIn(BaseModel):
+    cookies: str = Field(max_length=100_000)
+
+
+COOKIE_SYNC_DAYS = 180
 
 
 class QrStartIn(BaseModel):
@@ -131,6 +139,43 @@ async def import_cookies(body: ImportIn, user: CurrentUser, session: SessionDep)
         asyncio.create_task(service.probe_account(acc.id))
     await session.refresh(acc)
     return to_out(acc)
+
+
+@router.post("/cookie-sync/token")
+async def cookie_sync_token(user: CurrentUser) -> dict[str, Any]:
+    """给浏览器扩展的自动续期令牌：只能调用 /accounts/cookie-sync，泄露也不能拿来登录管理台。"""
+    token = create_access_token(user.id, user.role, expires_minutes=COOKIE_SYNC_DAYS * 24 * 60, scope=COOKIE_SYNC_SCOPE)
+    await record_audit(
+        "account.cookie_sync_token", user_id=user.id, actor_type="human", detail={"days": COOKIE_SYNC_DAYS}
+    )
+    return {"token": token, "expires_in_days": COOKIE_SYNC_DAYS}
+
+
+@router.post("/cookie-sync")
+async def cookie_sync(body: CookieSyncIn, user: CookieSyncUser, session: SessionDep) -> dict[str, Any]:
+    """浏览器扩展定期调用：账号「需要重新登录」时，用浏览器里同一个闲鱼号的登录态恢复。
+    账号正常时什么都不做：不让浏览器和系统抢同一个会话。"""
+    cookies = service.parse_cookie_input(body.cookies)
+    unb = cookies.get("unb")
+    if not unb or not service.is_logged_in(cookies):
+        return {"result": "browser_logged_out"}
+    acc = (await session.execute(select(XyAccount).where(XyAccount.unb == unb))).scalar_one_or_none()
+    if acc is None or (acc.owner_id != user.id and user.role != Role.ADMIN):
+        return {"result": "not_found"}
+    if acc.status != AccountState.NEED_LOGIN:
+        return {"result": "healthy", "account_id": acc.id}
+    await service.upsert_account(session, user, cookies)
+    ok = await service.probe_account(acc.id)
+    await record_audit(
+        "account.cookie_sync",
+        user_id=user.id,
+        actor_type="rule",
+        account_id=acc.id,
+        target_type="account",
+        target_id=str(acc.id),
+        detail={"ok": ok},
+    )
+    return {"result": "renewed" if ok else "invalid", "account_id": acc.id}
 
 
 @router.post("/qr")

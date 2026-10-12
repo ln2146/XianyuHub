@@ -3,31 +3,44 @@
 <head>
 <meta charset="utf-8">
 <style>
-  :root { --fg:#1f2937; --muted:#6b7280; --bg:#fff; --border:#e5e7eb; --accent:#0ea5e9; --ok:#16a34a; --bad:#dc2626; }
+  :root { --fg:#1f2937; --muted:#6b7280; --bg:#fff; --border:#e5e7eb; --accent:#0ea5e9; --ok:#16a34a; --bad:#dc2626; --warn:#d97706; }
   @media (prefers-color-scheme: dark) { :root { --fg:#e5e7eb; --muted:#9ca3af; --bg:#111827; --border:#374151; } }
-  body { width: 320px; margin: 0; padding: 14px; font: 13px/1.5 -apple-system, "PingFang SC", sans-serif; color: var(--fg); background: var(--bg); }
+  body { width: 330px; margin: 0; padding: 14px; font: 13px/1.5 -apple-system, "PingFang SC", sans-serif; color: var(--fg); background: var(--bg); }
   h1 { font-size: 15px; margin: 0 0 8px; }
-  .status { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 10px; }
-  .ok { color: var(--ok); } .bad { color: var(--bad); }
-  label { display: block; color: var(--muted); margin: 8px 0 2px; }
-  input { width: 100%; box-sizing: border-box; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: transparent; color: var(--fg); }
+  h2 { font-size: 13px; margin: 14px 0 6px; }
+  .status { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; }
+  .ok { color: var(--ok); } .bad { color: var(--bad); } .warn { color: var(--warn); }
   button { width: 100%; margin-top: 8px; padding: 8px; border: 0; border-radius: 6px; background: var(--accent); color: #fff; cursor: pointer; font-size: 13px; }
   button.secondary { background: transparent; color: var(--fg); border: 1px solid var(--border); }
-  .hint { color: var(--muted); font-size: 12px; margin-top: 10px; }
+  button.link { width: auto; margin: 0; padding: 0 2px; background: none; color: var(--accent); }
+  .hint { color: var(--muted); font-size: 12px; margin: 4px 0 0; }
+  .target { display: flex; align-items: center; gap: 6px; padding: 6px 0; border-top: 1px solid var(--border); }
+  .target:first-child { border-top: 0; }
+  .target .info { flex: 1; min-width: 0; }
+  .target .origin { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #msg { margin-top: 8px; min-height: 18px; }
+  [hidden] { display: none !important; }
 </style>
 </head>
 <body>
   <h1>🐟 鱼塘管家 · 登录态助手</h1>
   <div class="status" id="status">检测中…</div>
-  <button id="copy" class="secondary">复制登录态（JSON）</button>
-  <label for="server">鱼塘管家地址</label>
-  <input id="server" placeholder="http://127.0.0.1:8080">
-  <label for="token">API 令牌（管理台 → 系统 → 生成令牌）</label>
-  <input id="token" type="password" placeholder="粘贴 API 令牌">
-  <button id="send">发送到鱼塘管家</button>
+  <p class="hint" id="login-hint" hidden>请先在这个浏览器打开 <a href="https://www.goofish.com" target="_blank">goofish.com</a> 并登录。</p>
+
+  <h2>一键导入</h2>
+  <p class="hint">在鱼塘管家「账号配置 → 导入 Cookie」里点「从当前浏览器一键获取」即可，不用复制粘贴。</p>
+  <div id="connect-box" hidden>
+    <button id="connect">在当前网址启用一键导入</button>
+    <p class="hint">鱼塘管家不是部署在本机时，在它的页面上点这个按钮授权一次。</p>
+  </div>
+
+  <h2>自动续期</h2>
+  <div id="targets"><p class="hint">还没有开启。导入账号时勾选「掉线时自动恢复」即可。</p></div>
+  <button id="sync" class="secondary" hidden>立即检查一次</button>
+
+  <button id="copy" class="secondary">复制登录态（手动粘贴用）</button>
   <div id="msg"></div>
-  <p class="hint">请先在本浏览器打开 goofish.com 并登录。登录态等同账号密码，只发送到你自己的服务器，切勿分享给他人。</p>
+  <p class="hint">登录态等同账号密码，只会发给你授权过的鱼塘管家地址，切勿分享给他人。</p>
   <script src="popup.js"></script>
 </body>
 </html>

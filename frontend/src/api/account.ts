@@ -84,6 +84,10 @@ export const importCookies = (body: {
   account_id?: number | null
 }) => http.post<Account>('/accounts/import', body).then((r) => r.data)
 
+/** 浏览器扩展自动续期用的专用令牌：只能同步登录态，不能登录管理台 */
+export const getCookieSyncToken = () =>
+  http.post<{ token: string; expires_in_days: number }>('/accounts/cookie-sync/token').then((r) => r.data)
+
 export const qrStart = (proxy?: string | null, accountId?: number | null) =>
   http.post<{ qr_id: string; qr_content: string }>('/accounts/qr', {
     proxy: proxy || null,

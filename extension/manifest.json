@@ -1,11 +1,19 @@
 {
   "manifest_version": 3,
   "name": "鱼塘管家 · 登录态助手",
-  "description": "导出闲鱼网页版登录态（Cookie），导入到自建的鱼塘管家。数据只发送到你自己配置的地址。",
-  "version": "0.1.0",
+  "description": "在鱼塘管家里一键获取闲鱼网页版登录态，账号掉线时自动恢复。数据只发送到你自己的鱼塘管家。",
+  "version": "0.2.0",
   "action": { "default_popup": "popup.html", "default_icon": "icon.png" },
   "icons": { "128": "icon.png" },
-  "permissions": ["cookies", "storage"],
-  "host_permissions": ["https://*.goofish.com/*"],
-  "optional_host_permissions": ["http://*/*", "https://*/*"]
+  "background": { "service_worker": "background.js" },
+  "permissions": ["cookies", "storage", "alarms", "scripting", "activeTab"],
+  "host_permissions": ["https://*.goofish.com/*", "http://localhost/*", "http://127.0.0.1/*"],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "content_scripts": [
+    {
+      "matches": ["http://localhost/*", "http://127.0.0.1/*"],
+      "js": ["bridge.js"],
+      "run_at": "document_start"
+    }
+  ]
 }

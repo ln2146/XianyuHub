@@ -9,7 +9,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
-from app.core.security import user_id_from_token
+from app.core.security import COOKIE_SYNC_SCOPE, user_id_from_token
 from app.domains.system.models import Role, User
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
@@ -33,6 +33,26 @@ async def get_current_user(
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
+
+
+async def get_cookie_sync_user(
+    session: SessionDep,
+    cred: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
+) -> User:
+    """浏览器扩展自动续期：只认 cookie_sync 专用令牌。"""
+    if cred is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "未登录", headers={"WWW-Authenticate": "Bearer"})
+    try:
+        user_id = user_id_from_token(cred.credentials, scope=COOKIE_SYNC_SCOPE)
+    except jwt.PyJWTError as e:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "同步令牌无效或已过期，请在管理台重新开启自动续期") from e
+    user = await session.get(User, user_id)
+    if user is None or not user.is_active:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "用户不存在或已停用")
+    return user
+
+
+CookieSyncUser = Annotated[User, Depends(get_cookie_sync_user)]
 
 
 def require_roles(*roles: Role) -> Callable:
