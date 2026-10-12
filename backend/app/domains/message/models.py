@@ -95,6 +95,8 @@ class KnowledgeDoc(IdMixin, TimestampMixin, Base):
 
     owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     account_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)  # 为空表示所有账号通用
+    # 闲鱼商品 ID：属于某件商品的资料（说明书、参数表等）只在买家咨询这件商品时参考；为空表示整个账号通用
+    item_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     name: Mapped[str] = mapped_column(String(200))
     content: Mapped[str] = mapped_column(Text, default="")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)

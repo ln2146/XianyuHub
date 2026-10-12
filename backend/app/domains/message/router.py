@@ -141,14 +141,21 @@ def generate_quick_replies(
         replies.append(QuickReplyItem(tag="当前标价", text=f"这件商品当前标价 {item.price:g} 元。"))
         if item.floor_price is not None and 0 <= item.floor_price < item.price:
             offer = round((item.price + item.floor_price) / 2, 2)
-            replies.append(QuickReplyItem(tag="折中诚意", text=f"这件商品可以 {offer:g} 元出，运费和发货时间另行确认。"))
+            replies.append(
+                QuickReplyItem(tag="折中诚意", text=f"这件商品可以 {offer:g} 元出，运费和发货时间另行确认。")
+            )
     if item and item.desc.strip():
         description = f"商品描述：{item.desc.strip()}"
         if len(description) <= MAX_MESSAGE_LENGTH:
             replies.append(QuickReplyItem(tag="商品说明", text=description))
         else:
             # 不截断事实描述，避免遗漏否定词或瑕疵说明；明确引导查看完整原文。
-            replies.append(QuickReplyItem(tag="查看完整说明", text="商品描述较长，请先查看商品页的完整描述。哪些信息需要进一步核验，可以告诉我。"))
+            replies.append(
+                QuickReplyItem(
+                    tag="查看完整说明",
+                    text="商品描述较长，请先查看商品页的完整描述。哪些信息需要进一步核验，可以告诉我。",
+                )
+            )
     replies.append(QuickReplyItem(tag="礼貌接待", text="在的，请问您想了解商品的哪些信息？"))
     replies.append(QuickReplyItem(tag="确认交易条件", text="运费和发货时间我确认后告诉您，请先不要急着付款。"))
 
@@ -499,6 +506,7 @@ async def ai_trial(body: TrialIn, user: CurrentUser, session: SessionDep) -> dic
 class DocOut(BaseModel):
     id: int
     account_id: int | None
+    item_id: str | None = None
     name: str
     chars: int
     preview: str
@@ -510,6 +518,7 @@ def _doc_out(d: KnowledgeDoc) -> DocOut:
     return DocOut(
         id=d.id,
         account_id=d.account_id,
+        item_id=d.item_id,
         name=d.name,
         chars=len(d.content or ""),
         preview=(d.content or "")[:120],
@@ -539,16 +548,32 @@ async def upload_doc(
     session: SessionDep,
     file: UploadFile = File(...),
     account_id: int | None = Form(default=None),
+    item_id: str | None = Form(default=None),
 ) -> DocOut:
-    """上传给 AI 参考的资料（txt / md / csv / pdf / docx，≤ 50MB），保存提取出的文字。"""
+    """上传给 AI 参考的资料（txt / md / csv / pdf / docx，≤ 50MB），保存提取出的文字。
+    带 item_id 时资料只属于该账号下的这件商品。"""
+    if item_id and account_id is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "商品资料需要指定账号")
     if account_id is not None:
         await get_account_for(session, user, account_id)
+    if item_id:
+        owned = await session.scalar(
+            select(MyItem.id).where(MyItem.account_id == account_id, MyItem.item_id == item_id)
+        )
+        if owned is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "商品不存在")
     try:
         data = await read_limited(file, MAX_FILE_BYTES, "文件超过 50MB，请拆分后再上传")
         text = await extract_text_async(file.filename or "", data)
     except (UnsupportedFile, TooLarge) as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
-    d = KnowledgeDoc(owner_id=user.id, account_id=account_id, name=(file.filename or "资料")[:200], content=text)
+    d = KnowledgeDoc(
+        owner_id=user.id,
+        account_id=account_id,
+        item_id=item_id or None,
+        name=(file.filename or "资料")[:200],
+        content=text,
+    )
     session.add(d)
     await session.commit()
     return _doc_out(d)
@@ -566,9 +591,11 @@ async def update_doc(doc_id: int, body: DocPatch, user: CurrentUser, session: Se
     if body.enabled is not None:
         d.enabled = body.enabled
     if body.all_accounts:
-        d.account_id = None
+        d.account_id, d.item_id = None, None  # 商品资料改成通用后不再只属于那件商品
     elif body.account_id is not None:
         await get_account_for(session, user, body.account_id)
+        if body.account_id != d.account_id:
+            d.item_id = None
         d.account_id = body.account_id
     await session.commit()
     return _doc_out(d)

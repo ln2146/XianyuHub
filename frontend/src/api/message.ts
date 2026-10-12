@@ -185,6 +185,8 @@ export interface KnowledgeDoc {
   id: number
   /** 为空表示所有账号通用 */
   account_id: number | null
+  /** 闲鱼商品 ID：只在买家咨询这件商品时参考；为空表示整个账号通用 */
+  item_id: string | null
   name: string
   chars: number
   preview: string
@@ -193,10 +195,11 @@ export interface KnowledgeDoc {
 }
 
 export const listKnowledgeDocs = () => http.get<KnowledgeDoc[]>('/messages/knowledge-docs').then((r) => r.data)
-export const uploadKnowledgeDoc = (file: File, account_id: number | null) => {
+export const uploadKnowledgeDoc = (file: File, account_id: number | null, item_id?: string) => {
   const fd = new FormData()
   fd.append('file', file)
   if (account_id !== null) fd.append('account_id', String(account_id))
+  if (item_id) fd.append('item_id', item_id)
   return http.post<KnowledgeDoc>('/messages/knowledge-docs', fd, { timeout: 120_000 }).then((r) => r.data)
 }
 export const updateKnowledgeDoc = (id: number, body: { enabled?: boolean; account_id?: number; all_accounts?: boolean }) =>

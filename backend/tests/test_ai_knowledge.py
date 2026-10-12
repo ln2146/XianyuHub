@@ -111,3 +111,39 @@ async def test_trial_uses_seller_instructions_and_uploaded_docs(admin_client, im
         set_llm(None)
     assert "【资料】" not in llm.prompts[-1]
     assert (await admin_client.delete(f"/api/v1/messages/knowledge-docs/{doc_id}")).status_code == 204
+
+
+async def test_item_docs_only_used_for_that_item(admin_client, im):  # noqa: F811
+    from app.core.db import session_factory
+    from app.domains.goods.models import MyItem
+
+    account_id, _ = im
+    async with session_factory()() as s:
+        s.add(MyItem(account_id=account_id, item_id="777001", title="松下吹风机 EH-NA9", price=300))
+        await s.commit()
+
+    upload = {"file": ("吹风机说明书.txt", "冷热交替档：长按 3 秒切换".encode(), "text/plain")}
+    # 商品资料必须指定账号，且商品要属于这个账号
+    assert (
+        await admin_client.post("/api/v1/messages/knowledge-docs", files=upload, data={"item_id": "777001"})
+    ).status_code == 400
+    missing = await admin_client.post(
+        "/api/v1/messages/knowledge-docs", files=upload, data={"account_id": str(account_id), "item_id": "999"}
+    )
+    assert missing.status_code == 404
+    r = await admin_client.post(
+        "/api/v1/messages/knowledge-docs", files=upload, data={"account_id": str(account_id), "item_id": "777001"}
+    )
+    assert r.status_code == 201 and r.json()["item_id"] == "777001"
+
+    llm = CaptureLLM()
+    set_llm(LLMGateway(provider=llm))
+    try:
+        body = {"account_id": account_id, "text": "冷热交替怎么开"}
+        await admin_client.post("/api/v1/messages/ai-trial", json={**body, "item_id": "777001"})
+        assert "长按 3 秒切换" in llm.prompts[-1]
+        # 咨询别的商品（或没有商品）时不带这件商品的资料，避免串款
+        await admin_client.post("/api/v1/messages/ai-trial", json=body)
+        assert "长按 3 秒切换" not in llm.prompts[-1]
+    finally:
+        set_llm(None)

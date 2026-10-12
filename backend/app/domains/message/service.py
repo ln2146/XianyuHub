@@ -496,13 +496,18 @@ async def plan_reply(conv_id: int, *, dry_run_text: str | None = None) -> dict[s
     return plan
 
 
-async def _load_docs(owner_id: int, account_id: int) -> list[tuple[str, str]]:
+async def _load_docs(owner_id: int, account_id: int, item_id: str | None = None) -> list[tuple[str, str]]:
+    """账号可用的资料：通用 + 本账号；商品专属资料只在咨询的正是这件商品时带上，避免串款。"""
+    item_cond = KnowledgeDoc.item_id.is_(None)
+    if item_id:
+        item_cond = or_(item_cond, KnowledgeDoc.item_id == item_id)
     async with session_factory()() as s:
         rows = await s.execute(
             select(KnowledgeDoc.name, KnowledgeDoc.content).where(
                 KnowledgeDoc.owner_id == owner_id,
                 KnowledgeDoc.enabled.is_(True),
                 or_(KnowledgeDoc.account_id.is_(None), KnowledgeDoc.account_id == account_id),
+                item_cond,
             )
         )
         return [(name, content) for name, content in rows]
@@ -542,7 +547,7 @@ async def _ai_plan(
         # 没有配置议价策略时，任何低于标价的报价都会被护栏拦截
         floor_price=(policy.floor_price if policy else (item.price if item else None)),
         instructions=settings.ai_instructions,
-        docs=select_from_docs(await _load_docs(owner_id, account_id), text),
+        docs=select_from_docs(await _load_docs(owner_id, account_id, item.item_id if item else None), text),
         ordered=ordered,
         banned_words=tuple(w.strip() for w in settings.ai_banned_words if w.strip()),
     )
