@@ -1,8 +1,23 @@
 <script setup lang="ts">
 import { computed, h, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Delete, Edit, Plus, Refresh, Upload } from '@element-plus/icons-vue'
+import {
+  Delete,
+  Edit,
+  Plus,
+  Refresh,
+  Upload,
+  Cellphone,
+  Key,
+  Check,
+  Connection,
+  CircleCheckFilled,
+  DocumentCopy,
+} from '@element-plus/icons-vue'
 import QRCode from 'qrcode'
+import { errorMessage } from '@/api/http'
+import BrowserLoginHelper from '@/components/BrowserLoginHelper.vue'
+import { turnOnAutoRenew } from '@/utils/loginHelper'
 import {
   addGrant,
   deleteAccount,
@@ -191,6 +206,7 @@ function stopQrPoll() {
 async function startQr() {
   stopQrPoll()
   qr.starting = true
+  qr.id = ''
   qr.status = ''
   qr.message = ''
   qr.verifyUrl = ''
@@ -201,6 +217,9 @@ async function startQr() {
     qr.image = await QRCode.toDataURL(r.qr_content, { width: 220, margin: 1 })
     qr.status = 'NEW'
     scheduleQrPoll()
+  } catch (err) {
+    qr.status = 'ERROR'
+    qr.message = errorMessage(err)
   } finally {
     qr.starting = false
   }
@@ -247,10 +266,35 @@ function closeQr() {
 }
 
 // ---------------------------------------------------------------- 导入 Cookie
-const cookie = reactive({ open: false, cookies: '', proxy: '', verify: true, saving: false })
+const cookie = reactive({
+  open: false,
+  cookies: '',
+  proxy: '',
+  verify: true,
+  saving: false,
+  fromBrowser: false,
+  autoRenew: true,
+})
 
 function openCookie() {
-  Object.assign(cookie, { open: true, cookies: '', proxy: '', verify: true })
+  Object.assign(cookie, { open: true, cookies: '', proxy: '', verify: true, fromBrowser: false })
+}
+
+// 用扩展取到的登录态导入成功后，按勾选开启自动续期（失败不影响导入结果）
+async function maybeAutoRenew(fromBrowser: boolean, wanted: boolean) {
+  if (!fromBrowser || !wanted) return
+  try {
+    await turnOnAutoRenew()
+    ElMessage.success('已开启自动续期：账号掉线时会用这个浏览器的登录态自动恢复')
+  } catch (e) {
+    ElMessage.warning(`账号已导入，但自动续期没有开启：${(e as Error).message}`)
+  }
+}
+
+function onBrowserCookies(cookies: string) {
+  cookie.cookies = cookies
+  cookie.fromBrowser = true
+  submitCookie()
 }
 
 async function submitCookie() {
@@ -263,6 +307,7 @@ async function submitCookie() {
     const acc = await importCookies({ cookies: cookie.cookies.trim(), proxy: cookie.proxy.trim() || null, verify: cookie.verify })
     ElMessage.success(`已导入账号 ${acc.nickname || acc.unb}`)
     cookie.open = false
+    await maybeAutoRenew(cookie.fromBrowser, cookie.autoRenew)
     await load()
   } catch {
     /* 拦截器已提示 */
@@ -289,6 +334,8 @@ const relogin = reactive({
   useExistingProxy: true,
   verify: true,
   submitting: false,
+  fromBrowser: false,
+  autoRenew: true,
 })
 let reloginTimer: number | undefined
 
@@ -307,6 +354,7 @@ function openReLogin(a: Account) {
   relogin.proxy = ''
   relogin.useExistingProxy = !!a.has_proxy
   relogin.verify = true
+  relogin.fromBrowser = false
   // 自动开始生成登录二维码
   startReLoginQr()
 }
@@ -328,9 +376,9 @@ async function startReLoginQr() {
     relogin.qrStatus = 'NEW'
     relogin.qrMessage = '请使用闲鱼 App 扫码登录'
     scheduleReLoginQrPoll(1500)
-  } catch {
+  } catch (err) {
     relogin.qrStatus = 'ERROR'
-    relogin.qrMessage = '生成二维码失败，请重试'
+    relogin.qrMessage = errorMessage(err)
   } finally {
     relogin.qrStarting = false
   }
@@ -354,9 +402,9 @@ async function pollReLoginQr() {
     }
     const nextDelay = res.status === 'SCANED' ? 1000 : 2000
     scheduleReLoginQrPoll(nextDelay)
-  } catch {
+  } catch (err) {
     relogin.qrStatus = 'ERROR'
-    relogin.qrMessage = '轮询状态失败'
+    relogin.qrMessage = errorMessage(err)
   }
 }
 
@@ -380,6 +428,12 @@ function closeReLogin() {
   relogin.qrStatus = ''
 }
 
+function onReLoginBrowserCookies(cookies: string) {
+  relogin.cookies = cookies
+  relogin.fromBrowser = true
+  submitReLoginCookie()
+}
+
 async function submitReLoginCookie() {
   const a = relogin.account
   if (!a) return
@@ -399,6 +453,7 @@ async function submitReLoginCookie() {
     })
     ElMessage.success(`账号「${acc.nickname || acc.unb}」登录态已恢复！`)
     closeReLogin()
+    await maybeAutoRenew(relogin.fromBrowser, relogin.autoRenew)
     await load()
   } catch {
     /* 拦截器已提示 */
@@ -705,6 +760,7 @@ onBeforeUnmount(() => {
               <el-input v-model="qr.proxy" placeholder="http://user:pass@host:port 或 socks5://…" />
             </el-form-item>
           </el-form>
+          <el-alert v-if="qr.status === 'ERROR'" :title="qr.message" type="error" :closable="false" class="mb" />
           <el-button type="primary" :loading="qr.starting" @click="startQr">生成二维码</el-button>
         </template>
         <template v-else>
@@ -725,9 +781,18 @@ onBeforeUnmount(() => {
 
     <!-- 导入 Cookie -->
     <el-dialog v-model="cookie.open" title="导入 Cookie" width="560px">
+      <div v-loading="cookie.saving && cookie.fromBrowser" class="mb">
+        <BrowserLoginHelper v-model:auto-renew="cookie.autoRenew" @got="onBrowserCookies" />
+      </div>
       <el-form label-position="top">
-        <el-form-item label="Cookie" required>
-          <el-input v-model="cookie.cookies" type="textarea" :rows="6" placeholder="粘贴 goofish.com Cookie 字符串或 JSON（需含 unb、cookie2、_m_h5_tk）" />
+        <el-form-item label="或者手动粘贴 Cookie">
+          <el-input
+            v-model="cookie.cookies"
+            type="textarea"
+            :rows="5"
+            placeholder="粘贴 goofish.com Cookie 字符串或 JSON（需含 unb、cookie2、_m_h5_tk）"
+            @input="cookie.fromBrowser = false"
+          />
         </el-form-item>
         <el-form-item label="代理（可选）">
           <el-input v-model="cookie.proxy" placeholder="http://user:pass@host:port" />
@@ -745,113 +810,257 @@ onBeforeUnmount(() => {
     <!-- 重新登录弹窗 -->
     <el-dialog
       v-model="relogin.open"
-      :title="`重新登录 · ${relogin.account?.nickname || relogin.account?.unb || ''}`"
+      class="relogin-modern-dialog"
       width="540px"
       destroy-on-close
       @closed="closeReLogin"
     >
+      <template #header>
+        <div class="relogin-dialog-header">
+          <div class="relogin-header-icon">
+            <el-icon><Refresh /></el-icon>
+          </div>
+          <div class="relogin-header-title-wrap">
+            <div class="relogin-header-title">重新授权登录</div>
+            <div class="relogin-header-subtitle">为已失效账号刷新凭证，恢复自动化同步与消息收发</div>
+          </div>
+        </div>
+      </template>
+
       <div class="relogin-dialog-content">
-        <!-- 账号上下文横幅 -->
-        <div class="relogin-account-banner">
-          <el-avatar :size="42" :src="relogin.account?.avatar || undefined">
-            {{ (relogin.account?.nickname || relogin.account?.unb || 'X').slice(0, 1) }}
-          </el-avatar>
-          <div class="relogin-acc-meta">
-            <div class="relogin-acc-name">
-              <span>{{ relogin.account?.nickname || relogin.account?.unb }}</span>
-              <el-tag size="small" type="info" effect="plain">ID: {{ relogin.account?.unb }}</el-tag>
-              <el-tag v-if="relogin.account?.has_proxy" size="small" type="success" effect="plain">已配代理</el-tag>
+        <!-- 账号身份卡片 -->
+        <div class="relogin-account-card">
+          <div class="acc-avatar-wrap">
+            <el-avatar
+              v-if="relogin.account?.avatar"
+              :size="46"
+              :src="relogin.account.avatar"
+              class="acc-avatar-img"
+            />
+            <div v-else class="acc-avatar-gradient">
+              <span>{{ (relogin.account?.nickname || relogin.account?.unb || '闲').slice(0, 1) }}</span>
             </div>
-            <div class="relogin-acc-desc muted small">
-              重新登录成功后将直接恢复该账号的全部业务配置、商品关联与自动化任务，无需重新创建。
+          </div>
+          <div class="acc-info-col">
+            <div class="acc-title-row">
+              <span class="acc-name">{{ relogin.account?.nickname || relogin.account?.unb }}</span>
+              <span class="acc-status-badge expired">
+                <span class="dot"></span>
+                <span>登录已失效</span>
+              </span>
+            </div>
+            <div class="acc-tags-row">
+              <span class="acc-id-chip">
+                <span class="chip-label">ID</span>
+                <span class="chip-val">{{ relogin.account?.unb }}</span>
+              </span>
+              <span v-if="relogin.account?.has_proxy" class="acc-proxy-chip">
+                <el-icon><Connection /></el-icon>
+                <span>已配专属代理</span>
+              </span>
             </div>
           </div>
         </div>
 
-        <el-tabs v-model="relogin.tab" class="relogin-tabs">
-          <!-- 扫码重新登录 -->
-          <el-tab-pane label="闲鱼 App 扫码" name="qr">
-            <div class="qr-box relogin-qr-box">
-              <template v-if="relogin.qrStarting && !relogin.qrImage">
-                <div class="qr-loading-box">
-                  <el-icon class="is-loading" :size="32"><Refresh /></el-icon>
-                  <div class="mt-s muted small">正在获取二维码...</div>
+        <div class="relogin-reassurance-note">
+          <el-icon class="note-icon"><CircleCheckFilled /></el-icon>
+          <span>重新授权成功后将自动恢复商品关联与自动回复，无需重新创建</span>
+        </div>
+
+        <!-- 选项卡切换 (Segmented Control) -->
+        <div class="relogin-segmented-nav">
+          <button
+            type="button"
+            class="seg-nav-item"
+            :class="{ active: relogin.tab === 'qr' }"
+            @click="relogin.tab = 'qr'"
+          >
+            <el-icon><Cellphone /></el-icon>
+            <span>闲鱼 App 扫码</span>
+            <span class="seg-badge-rec">极速推荐</span>
+          </button>
+          <button
+            type="button"
+            class="seg-nav-item"
+            :class="{ active: relogin.tab === 'cookie' }"
+            @click="relogin.tab = 'cookie'"
+          >
+            <el-icon><Key /></el-icon>
+            <span>导入新 Cookie</span>
+          </button>
+        </div>
+
+        <!-- Tab 1: 闲鱼 App 扫码 -->
+        <div v-if="relogin.tab === 'qr'" class="relogin-tab-content">
+          <div class="relogin-qr-container">
+            <template v-if="relogin.qrStarting && !relogin.qrImage">
+              <div class="qr-loading-box">
+                <el-icon class="is-loading" :size="36"><Refresh /></el-icon>
+                <div class="loading-text">正在生成闲鱼安全登录二维码...</div>
+              </div>
+            </template>
+            <template v-else>
+              <div class="qr-frame-box">
+                <div class="qr-img-wrapper" :class="{ dim: ['EXPIRED', 'CANCELED', 'ERROR'].includes(relogin.qrStatus) }">
+                  <img v-if="relogin.qrImage" :src="relogin.qrImage" alt="登录二维码" class="qr-core-img" />
                 </div>
-              </template>
-              <template v-else>
-                <div class="qr-img" :class="{ dim: ['EXPIRED', 'CANCELED', 'ERROR'].includes(relogin.qrStatus) }">
-                  <img v-if="relogin.qrImage" :src="relogin.qrImage" alt="登录二维码" />
-                </div>
-                <div class="qr-status" :class="relogin.qrStatus">
-                  {{ qrStatusText[relogin.qrStatus] || relogin.qrStatus }}
-                </div>
-                <div v-if="relogin.qrMessage && relogin.qrStatus !== 'NEW'" class="muted small mt-s">
-                  {{ relogin.qrMessage }}
-                </div>
-                <el-alert v-if="relogin.qrStatus === 'NEED_VERIFY'" type="warning" :closable="false" class="mt full">
-                  <div>闲鱼要求进行身份验证（人脸 / 短信），请在浏览器中打开链接完成验证：</div>
-                  <el-link v-if="relogin.qrVerifyUrl" :href="relogin.qrVerifyUrl" target="_blank" type="primary">打开验证页面</el-link>
-                  <div class="mt-s"><el-button size="small" type="primary" @click="pollReLoginQr">我已完成验证，继续检测</el-button></div>
-                </el-alert>
-                <div class="relogin-qr-actions mt">
-                  <el-button
-                    type="primary"
-                    :loading="relogin.qrStarting"
-                    @click="startReLoginQr"
-                  >
-                    {{ ['EXPIRED', 'CANCELED', 'ERROR'].includes(relogin.qrStatus) ? '刷新二维码' : '重新生成二维码' }}
+                <div v-if="['EXPIRED', 'CANCELED', 'ERROR'].includes(relogin.qrStatus)" class="qr-expired-overlay">
+                  <div class="overlay-text">{{ relogin.qrStatus === 'EXPIRED' ? '二维码已失效' : '扫码未完成' }}</div>
+                  <el-button type="primary" size="small" :loading="relogin.qrStarting" @click="startReLoginQr">
+                    点击刷新
                   </el-button>
                 </div>
-                <div v-if="relogin.account?.has_proxy" class="relogin-proxy-tip muted small mt-s">
-                  💡 系统将自动使用此账号绑定的专属代理进行扫码握手
-                </div>
-              </template>
-            </div>
-          </el-tab-pane>
-
-          <!-- 导入 Cookie -->
-          <el-tab-pane label="导入新 Cookie" name="cookie">
-            <el-form label-position="top" class="relogin-cookie-form">
-              <el-form-item label="最新 Cookie 字符串或 JSON" required>
-                <el-input
-                  v-model="relogin.cookies"
-                  type="textarea"
-                  :rows="5"
-                  placeholder="粘贴 goofish.com 最新的 Cookie 字符串或导出的 JSON（需含 unb、cookie2、_m_h5_tk）"
-                />
-              </el-form-item>
-
-              <el-form-item v-if="relogin.account?.has_proxy" label="代理设置">
-                <el-checkbox v-model="relogin.useExistingProxy">
-                  沿用该账号当前配置的专属代理（推荐）
-                </el-checkbox>
-                <el-input
-                  v-if="!relogin.useExistingProxy"
-                  v-model="relogin.proxy"
-                  class="mt-s"
-                  placeholder="留空表示直连，或填写 http://user:pass@host:port"
-                />
-              </el-form-item>
-              <el-form-item v-else label="代理（可选）">
-                <el-input v-model="relogin.proxy" placeholder="http://user:pass@host:port 或 socks5://…" />
-              </el-form-item>
-
-              <el-form-item>
-                <el-checkbox v-model="relogin.verify">更新前校验登录状态（推荐）</el-checkbox>
-              </el-form-item>
-
-              <div class="relogin-form-foot">
-                <el-button @click="closeReLogin">取消</el-button>
-                <el-button
-                  type="primary"
-                  :loading="relogin.submitting"
-                  @click="submitReLoginCookie"
-                >更新并重新登录</el-button>
               </div>
-            </el-form>
-          </el-tab-pane>
-        </el-tabs>
+
+              <div class="qr-status-pill" :class="relogin.qrStatus">
+                <span class="status-pulse-dot"></span>
+                <span>{{ qrStatusText[relogin.qrStatus] || relogin.qrStatus }}</span>
+              </div>
+
+              <div v-if="relogin.qrMessage && relogin.qrStatus !== 'NEW'" class="qr-sub-message">
+                {{ relogin.qrMessage }}
+              </div>
+
+              <el-alert v-if="relogin.qrStatus === 'NEED_VERIFY'" type="warning" :closable="false" class="qr-verify-alert">
+                <div class="verify-alert-content">
+                  <div>闲鱼要求身份验证（人脸 / 短信），请在浏览器中打开链接完成验证：</div>
+                  <div class="verify-action-row">
+                    <el-link v-if="relogin.qrVerifyUrl" :href="relogin.qrVerifyUrl" target="_blank" type="primary">
+                      打开验证页面 ↗
+                    </el-link>
+                    <el-button size="small" type="primary" @click="pollReLoginQr">已完成，继续检测</el-button>
+                  </div>
+                </div>
+              </el-alert>
+
+              <div v-if="!['EXPIRED', 'CANCELED', 'ERROR'].includes(relogin.qrStatus)" class="relogin-qr-actions">
+                <el-button
+                  size="default"
+                  :loading="relogin.qrStarting"
+                  @click="startReLoginQr"
+                >
+                  <el-icon><Refresh /></el-icon>
+                  <span>重新生成二维码</span>
+                </el-button>
+              </div>
+
+              <div v-if="relogin.account?.has_proxy" class="relogin-proxy-tip">
+                <el-icon><Connection /></el-icon>
+                <span>已自动使用此账号绑定的专属代理通道进行扫码握手</span>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- Tab 2: 导入新 Cookie -->
+        <div v-else class="relogin-tab-content">
+          <div v-loading="relogin.submitting && relogin.fromBrowser" class="helper-box-wrap">
+            <BrowserLoginHelper
+              v-model:auto-renew="relogin.autoRenew"
+              :expect-unb="relogin.account?.unb"
+              @got="onReLoginBrowserCookies"
+            />
+          </div>
+
+          <div class="manual-cookie-section">
+            <div class="section-divider-row">
+              <span class="divider-line"></span>
+              <span class="divider-title">
+                <el-icon><DocumentCopy /></el-icon>
+                <span>或者手动粘贴最新 Cookie</span>
+              </span>
+              <span class="divider-line"></span>
+            </div>
+
+            <div class="textarea-wrapper">
+              <el-input
+                v-model="relogin.cookies"
+                type="textarea"
+                :rows="3"
+                @input="relogin.fromBrowser = false"
+                placeholder="粘贴 goofish.com 最新的 Cookie 字符串或导出的 JSON（需含 unb、cookie2、_m_h5_tk）"
+                class="custom-cookie-textarea"
+              />
+            </div>
+
+            <!-- 代理设置 -->
+            <div v-if="relogin.account?.has_proxy" class="proxy-config-card">
+              <div class="proxy-config-header" @click="relogin.useExistingProxy = !relogin.useExistingProxy">
+                <div class="proxy-config-left">
+                  <el-icon class="proxy-icon"><Connection /></el-icon>
+                  <div class="proxy-config-text">
+                    <span class="proxy-title">沿用该账号原专属代理</span>
+                    <span class="proxy-desc">保持原网络环境，避免频繁触发异地安全校验</span>
+                  </div>
+                </div>
+                <el-switch
+                  v-model="relogin.useExistingProxy"
+                  inline-prompt
+                  active-text="是"
+                  inactive-text="否"
+                  @click.stop
+                />
+              </div>
+              <transition name="el-zoom-in-top">
+                <div v-if="!relogin.useExistingProxy" class="proxy-input-wrap">
+                  <el-input
+                    v-model="relogin.proxy"
+                    placeholder="留空表示直连，或填写 http://user:pass@host:port"
+                    clearable
+                  >
+                    <template #prefix><el-icon><Connection /></el-icon></template>
+                  </el-input>
+                </div>
+              </transition>
+            </div>
+
+            <div v-else class="proxy-optional-row">
+              <div class="proxy-opt-label">网络代理（可选）</div>
+              <el-input
+                v-model="relogin.proxy"
+                placeholder="http://user:pass@host:port 或 socks5://…"
+                clearable
+              >
+                <template #prefix><el-icon><Connection /></el-icon></template>
+              </el-input>
+            </div>
+
+            <!-- 校验开关 -->
+            <div class="verify-row">
+              <el-checkbox v-model="relogin.verify">
+                <span class="verify-label">更新前校验登录状态有效性</span>
+              </el-checkbox>
+              <span class="verify-rec-tag">推荐开启</span>
+            </div>
+          </div>
+        </div>
       </div>
+
+      <template #footer>
+        <div class="relogin-footer-actions">
+          <el-button class="footer-btn-cancel" @click="closeReLogin">取消</el-button>
+          <el-button
+            v-if="relogin.tab === 'cookie'"
+            type="primary"
+            class="footer-btn-submit"
+            :loading="relogin.submitting"
+            @click="submitReLoginCookie"
+          >
+            <el-icon v-if="!relogin.submitting"><Check /></el-icon>
+            <span>更新并恢复登录</span>
+          </el-button>
+          <el-button
+            v-else-if="['EXPIRED', 'CANCELED', 'ERROR'].includes(relogin.qrStatus)"
+            type="primary"
+            class="footer-btn-submit"
+            :loading="relogin.qrStarting"
+            @click="startReLoginQr"
+          >
+            <el-icon v-if="!relogin.qrStarting"><Refresh /></el-icon>
+            <span>刷新二维码</span>
+          </el-button>
+        </div>
+      </template>
     </el-dialog>
 
     <!-- 账号设置 -->
@@ -1191,63 +1400,547 @@ onBeforeUnmount(() => {
   font-weight: 600;
   cursor: pointer;
 }
-.relogin-dialog-content {
-  padding: 4px 0;
+/* 重新登录弹窗现代化样式 */
+:deep(.relogin-modern-dialog) {
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 20px 40px -12px rgba(15, 23, 42, 0.15), 0 0 0 1px rgba(15, 23, 42, 0.05);
 }
-.relogin-account-banner {
+
+:deep(.relogin-modern-dialog .el-dialog__header) {
+  margin-right: 0;
+  padding: 18px 24px 14px;
+  border-bottom: 1px solid var(--xh-border, #e2e8f0);
+}
+
+:deep(.relogin-modern-dialog .el-dialog__body) {
+  padding: 20px 24px 16px;
+}
+
+:deep(.relogin-modern-dialog .el-dialog__footer) {
+  padding: 14px 24px 18px;
+  border-top: 1px solid var(--xh-border, #e2e8f0);
+  background: var(--xh-fill, #f8fafc);
+}
+
+.relogin-dialog-header {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px 16px;
-  background: var(--xh-bg-elevated);
-  border: 1px solid var(--xh-border);
-  border-radius: 8px;
-  margin-bottom: 16px;
 }
-.relogin-acc-meta {
+
+.relogin-header-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(30, 158, 106, 0.12) 0%, rgba(16, 185, 129, 0.06) 100%);
+  color: var(--xh-primary, #1e9e6a);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.relogin-header-title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.relogin-header-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--xh-text, #0f172a);
+  line-height: 1.3;
+}
+
+.relogin-header-subtitle {
+  font-size: 12px;
+  color: var(--xh-muted, #64748b);
+  line-height: 1.4;
+}
+
+.relogin-dialog-content {
+  padding: 0;
+}
+
+/* 账号卡片 */
+.relogin-account-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, rgba(248, 250, 252, 0.95) 0%, rgba(241, 245, 249, 0.7) 100%);
+  border: 1px solid var(--xh-border, #e2e8f0);
+  border-radius: 12px;
+}
+
+.acc-avatar-wrap {
+  flex-shrink: 0;
+}
+
+.acc-avatar-gradient {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #f59e0b 0%, #ea580c 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  font-size: 17px;
+  font-weight: 700;
+  box-shadow: 0 3px 10px rgba(245, 158, 11, 0.25);
+}
+
+.acc-avatar-img {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.acc-info-col {
   flex: 1;
   min-width: 0;
 }
-.relogin-acc-name {
+
+.acc-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 5px;
+}
+
+.acc-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--xh-text, #0f172a);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.acc-status-badge.expired {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #dc2626;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  padding: 2px 8px;
+  border-radius: 99px;
+  flex-shrink: 0;
+}
+
+.acc-status-badge .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ef4444;
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2);
+  animation: pulseDot 2s infinite;
+}
+
+.acc-tags-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 14px;
+}
+
+.acc-id-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  background: #ffffff;
+  border: 1px solid var(--xh-border, #e2e8f0);
+  border-radius: 6px;
+  padding: 1px 7px;
+  color: #475569;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.acc-id-chip .chip-label {
+  color: #94a3b8;
   font-weight: 600;
-  margin-bottom: 2px;
+  font-size: 10px;
 }
-.relogin-acc-desc {
-  line-height: 1.4;
+
+.acc-proxy-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  border-radius: 6px;
+  padding: 1px 7px;
+  color: #059669;
+  font-weight: 500;
 }
-.relogin-tabs :deep(.el-tabs__header) {
-  margin-bottom: 16px;
+
+.relogin-reassurance-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--xh-muted, #64748b);
+  margin-top: 10px;
+  padding: 0 4px;
 }
-.relogin-qr-box {
-  min-height: 300px;
+
+.relogin-reassurance-note .note-icon {
+  color: #10b981;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+/* 分段选项卡切换 */
+.relogin-segmented-nav {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  background: var(--xh-fill-strong, #f1f5f9);
+  padding: 4px;
+  border-radius: 12px;
+  margin: 16px 0 14px;
+}
+
+.seg-nav-item {
+  border: none;
+  background: transparent;
+  height: 38px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--xh-text-2, #64748b);
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.seg-nav-item:hover {
+  color: var(--xh-text, #0f172a);
+}
+
+.seg-nav-item.active {
+  background: #ffffff;
+  color: var(--xh-text, #0f172a);
+  font-weight: 600;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.seg-badge-rec {
+  background: #dcfce7;
+  color: #166534;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 99px;
+}
+
+/* Tab 1 扫码内容 */
+.relogin-qr-container {
+  min-height: 280px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 8px 0;
+  padding: 10px 0 4px;
 }
-.qr-loading-box {
+
+.qr-frame-box {
+  position: relative;
+  padding: 10px;
+  background: #ffffff;
+  border: 1px solid var(--xh-border, #e2e8f0);
+  border-radius: 14px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.05);
+  margin-bottom: 14px;
+}
+
+.qr-img-wrapper {
+  transition: filter 0.2s ease;
+}
+
+.qr-img-wrapper.dim {
+  filter: blur(2px) grayscale(60%);
+  opacity: 0.5;
+}
+
+.qr-core-img {
+  width: 190px;
+  height: 190px;
+  display: block;
+  border-radius: 8px;
+}
+
+.qr-expired-overlay {
+  position: absolute;
+  inset: 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(4px);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 200px;
+  gap: 10px;
 }
+
+.qr-expired-overlay .overlay-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: #ef4444;
+}
+
+.qr-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 14px;
+  border-radius: 99px;
+  font-size: 13px;
+  font-weight: 500;
+  background: var(--xh-fill, #f1f5f9);
+  color: var(--xh-text, #1e293b);
+  border: 1px solid var(--xh-border, #e2e8f0);
+}
+
+.qr-status-pill .status-pulse-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+  animation: pulseDot 2s infinite;
+}
+
+.qr-status-pill.EXPIRED .status-pulse-dot,
+.qr-status-pill.CANCELED .status-pulse-dot,
+.qr-status-pill.ERROR .status-pulse-dot {
+  background: #ef4444;
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2);
+  animation: none;
+}
+
+.qr-status-pill.NEED_VERIFY .status-pulse-dot {
+  background: #f59e0b;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2);
+}
+
+.qr-sub-message {
+  font-size: 12px;
+  color: var(--xh-muted, #64748b);
+  margin-top: 6px;
+}
+
+.qr-verify-alert {
+  margin-top: 12px;
+  width: 100%;
+}
+
+.verify-alert-content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.verify-action-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
+}
+
 .relogin-qr-actions {
   display: flex;
   gap: 8px;
+  margin-top: 14px;
 }
+
 .relogin-proxy-tip {
-  color: var(--xh-text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--xh-muted, #64748b);
+  margin-top: 10px;
 }
-.relogin-form-foot {
+
+/* Tab 2 Cookie 内容 */
+.manual-cookie-section {
   display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.section-divider-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 14px 0 2px;
+}
+
+.divider-line {
+  flex: 1;
+  height: 1px;
+  background: var(--xh-border, #e2e8f0);
+}
+
+.divider-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--xh-muted, #64748b);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.custom-cookie-textarea :deep(.el-textarea__inner) {
+  border-radius: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  background: var(--xh-fill, #f8fafc);
+  border-color: var(--xh-border, #e2e8f0);
+  transition: all 0.2s ease;
+}
+
+.custom-cookie-textarea :deep(.el-textarea__inner:focus) {
+  background: #ffffff;
+  border-color: var(--xh-primary, #1e9e6a);
+  box-shadow: 0 0 0 3px rgba(30, 158, 106, 0.12);
+}
+
+.proxy-config-card {
+  background: var(--xh-fill, #f8fafc);
+  border: 1px solid var(--xh-border, #e2e8f0);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.proxy-config-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+}
+
+.proxy-config-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.proxy-icon {
+  font-size: 18px;
+  color: var(--xh-primary, #1e9e6a);
+}
+
+.proxy-config-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.proxy-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--xh-text, #1e293b);
+}
+
+.proxy-desc {
+  font-size: 11px;
+  color: var(--xh-muted, #64748b);
+}
+
+.proxy-input-wrap {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--xh-border, #e2e8f0);
+}
+
+.proxy-optional-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.proxy-opt-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--xh-text-2, #475569);
+}
+
+.verify-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 2px;
+}
+
+.verify-label {
+  font-size: 13px;
+  color: var(--xh-text, #334155);
+}
+
+.verify-rec-tag {
+  font-size: 11px;
+  color: var(--xh-primary, #1e9e6a);
+  font-weight: 500;
+  background: var(--xh-primary-soft, #e8f5f0);
+  padding: 1px 8px;
+  border-radius: 99px;
+}
+
+/* 底部操作按钮 */
+.relogin-footer-actions {
+  display: flex;
+  align-items: center;
   justify-content: flex-end;
-  gap: 8px;
-  margin-top: 16px;
+  gap: 10px;
+  width: 100%;
+}
+
+.footer-btn-cancel {
+  border-radius: 8px;
+  padding: 8px 18px;
+}
+
+.footer-btn-submit {
+  border-radius: 8px;
+  padding: 8px 20px;
+  font-weight: 500;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+  border: none !important;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+  transition: all 0.2s ease;
+}
+
+.footer-btn-submit:hover {
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+  transform: translateY(-1px);
+}
+
+@keyframes pulseDot {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 5px rgba(16, 185, 129, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+  }
 }
 </style>
