@@ -17,6 +17,7 @@ import {
   Picture,
   Plus,
   Refresh,
+  RefreshRight,
   Setting,
   WarningFilled,
 } from '@element-plus/icons-vue'
@@ -57,7 +58,20 @@ const tierForm = reactive({
   vision: '',
   fast: '',
 })
+const savedTiers = reactive({
+  chat: '',
+  vision: '',
+  fast: '',
+})
 const tierSaving = ref(false)
+
+const hasUnsavedTierChanges = computed(() => {
+  return (
+    tierForm.chat !== savedTiers.chat ||
+    tierForm.vision !== savedTiers.vision ||
+    tierForm.fast !== savedTiers.fast
+  )
+})
 
 const tierLabels: Record<string, string> = {
   vision: '看图发品与质检',
@@ -108,6 +122,16 @@ function getProviderMeta(name: string) {
   }
 }
 
+const defaultChatModelName = computed(() => {
+  return status.value?.gateway.models.chat || '未配置'
+})
+const defaultVisionModelName = computed(() => {
+  return status.value?.gateway.models.vision || '未配置'
+})
+const defaultFastModelName = computed(() => {
+  return status.value?.gateway.models.fast || '未配置'
+})
+
 const activeChatModel = computed(() => {
   if (tierForm.chat) {
     const parts = tierForm.chat.split(':')
@@ -132,19 +156,66 @@ const activeFastModel = computed(() => {
   return status.value?.gateway.models.fast || '未配置'
 })
 
+function isCustomTier(tierKey: 'chat' | 'vision' | 'fast'): boolean {
+  return !!tierForm[tierKey] || !!status.value?.tiers?.[tierKey]?.provider_id
+}
+
 function getScenarioProviderName(tierKey: 'chat' | 'vision' | 'fast'): string {
   const formVal = tierForm[tierKey]
   if (formVal) {
     const pid = Number(formVal.split(':')[0])
     const p = providers.value.find((x) => x.id === pid)
-    if (p) return p.name
+    if (p) return `${p.name} · 自定义`
   }
   if (status.value?.tiers?.[tierKey]?.provider_id) {
     const pid = status.value.tiers[tierKey].provider_id
     const p = providers.value.find((x) => x.id === pid)
-    if (p) return p.name
+    if (p) return `${p.name} · 自定义`
   }
-  return status.value?.gateway.provider || status.value?.active_source || '系统主用'
+  const activeP =
+    enabledProviders.value.find((p) => p.name === status.value?.gateway.provider || p.name === status.value?.active_source) ||
+    enabledProviders.value[0]
+  if (activeP) {
+    return `${activeP.name} · 默认继承`
+  }
+  if (status.value?.active_source) return `${status.value.active_source} · 默认继承`
+  return '系统主用 · 默认'
+}
+
+function getModelBadge(
+  m: ModelOption,
+  g: ProviderGroup,
+  tier: 'chat' | 'vision' | 'fast',
+): { text: string; type: 'success' | 'warning' | 'info' | 'primary' } | null {
+  const p = providers.value.find((prov) => prov.id === g.id)
+  const name = m.label.toLowerCase()
+
+  // 1. 对应场景核心推荐标识
+  if (tier === 'chat' && p?.model_chat === m.label) {
+    return { text: '对话推荐', type: 'success' }
+  }
+  if (tier === 'vision' && (p?.model_vision === m.label || m.isVision)) {
+    return { text: '识图推荐', type: 'warning' }
+  }
+  if (tier === 'fast' && p?.model_fast === m.label) {
+    return { text: '快筛推荐', type: 'info' }
+  }
+
+  // 2. 根据模型命名特性的通用能力标识
+  if (m.isVision || /vl|vision|4v|image/i.test(name)) {
+    return { text: '多模态', type: 'warning' }
+  }
+  if (/flash|fast|mini|turbo|speed|lite|instant/i.test(name)) {
+    return { text: '极速', type: 'info' }
+  }
+  if (/reasoner|thinking|r1|deepseek-r1/i.test(name)) {
+    return { text: '深度思考', type: 'primary' }
+  }
+  if (/max|pro|ultra|plus|opus|large/i.test(name)) {
+    return { text: '旗舰', type: 'success' }
+  }
+
+  return null
 }
 
 function isPresetConnected(presetName: string): boolean {
@@ -259,6 +330,10 @@ async function load() {
       } else {
         tierForm.fast = ''
       }
+
+      savedTiers.chat = tierForm.chat
+      savedTiers.vision = tierForm.vision
+      savedTiers.fast = tierForm.fast
     }
   } finally {
     loading.value = false
@@ -279,6 +354,9 @@ async function saveTiers() {
       vision: parse(tierForm.vision),
       fast: parse(tierForm.fast),
     })
+    savedTiers.chat = tierForm.chat
+    savedTiers.vision = tierForm.vision
+    savedTiers.fast = tierForm.fast
     ElMessage.success('场景模型配置已保存并生效')
     await load()
   } catch (e) {
@@ -660,9 +738,10 @@ async function remove(p: LlmProvider) {
               type="primary"
               :icon="Check"
               :loading="tierSaving"
+              :class="{ 'save-btn-unsaved': hasUnsavedTierChanges }"
               @click="saveTiers"
             >
-              保存模型配置
+              {{ hasUnsavedTierChanges ? '保存模型配置 (有未生效修改)' : '保存模型配置' }}
             </el-button>
           </div>
         </div>
@@ -672,156 +751,275 @@ async function remove(p: LlmProvider) {
       <div class="scenario-grid">
         <!-- 1. 智能客服问答 -->
         <div class="scenario-card chat-scenario">
-          <div class="scenario-header">
-            <div class="scenario-icon-title">
-              <div class="scenario-icon-box chat">
-                <el-icon><ChatDotRound /></el-icon>
+          <div class="scenario-card-inner">
+            <div class="scenario-header">
+              <div class="scenario-icon-title">
+                <div class="scenario-icon-box chat">
+                  <el-icon><ChatDotRound /></el-icon>
+                </div>
+                <div class="scenario-meta">
+                  <span class="scenario-name">智能客服问答</span>
+                  <span class="scenario-slug">BUYER CHAT AGENT</span>
+                </div>
               </div>
-              <div class="scenario-meta">
-                <span class="scenario-name">智能客服问答</span>
-                <span class="scenario-slug">BUYER CHAT AGENT</span>
-              </div>
+              <el-tag size="small" type="success" effect="light" round class="scenario-badge">对话主力 · Chat</el-tag>
             </div>
-            <el-tag size="small" type="success" effect="light" round>对话主力 · Chat</el-tag>
-          </div>
 
-          <p class="scenario-desc">买家消息实时智能回复、多轮议价谈判与防封打招呼策略</p>
+            <p class="scenario-desc">买家消息实时智能回复、多轮议价谈判与防封打招呼策略</p>
 
-          <div class="active-model-strip">
-            <span class="pulse-dot green"></span>
-            <span class="strip-label">生效模型：</span>
-            <span class="strip-val mono">{{ activeChatModel }}</span>
-            <span class="strip-source">{{ getScenarioProviderName('chat') }}</span>
-          </div>
+            <div class="active-model-strip">
+              <div class="strip-left">
+                <span class="pulse-dot green"></span>
+                <span class="strip-label">当前生效：</span>
+                <span class="strip-val mono" :title="activeChatModel">{{ activeChatModel }}</span>
+              </div>
+              <span class="strip-source" :class="{ 'is-custom': isCustomTier('chat') }">
+                {{ getScenarioProviderName('chat') }}
+              </span>
+            </div>
 
-          <div class="scenario-select-wrap">
-            <label class="select-label">指定模型（可选，默认继承当前服务商）：</label>
-            <el-select
-              v-model="tierForm.chat"
-              :placeholder="`默认继承主服务商（${status?.gateway.models.chat || '未配置'}）`"
-              clearable
-              class="full-width"
-              :disabled="!auth.isAdmin"
-            >
-              <el-option-group v-for="g in providerModelGroups" :key="g.id" :label="g.name">
+            <div class="scenario-select-wrap">
+              <div class="select-label-row">
+                <label class="select-label">指定场景模型：</label>
+                <span v-if="!tierForm.chat" class="inherit-status-tag">继承主服务商</span>
+                <span v-else class="override-status-tag">自定义指定</span>
+              </div>
+              <el-select
+                v-model="tierForm.chat"
+                :placeholder="`默认继承主服务商（${defaultChatModelName}）`"
+                clearable
+                filterable
+                class="full-width scenario-select"
+                popper-class="scenario-model-popper"
+                :disabled="!auth.isAdmin"
+              >
+                <!-- 显式默认继承选项 -->
                 <el-option
-                  v-for="m in g.models"
-                  :key="m.value"
-                  :value="m.value"
-                  :label="`${g.name} · ${m.label}`"
+                  value=""
+                  :label="`默认继承主服务商（${defaultChatModelName}）`"
                 >
-                  <div class="model-opt-item">
-                    <span class="mono">{{ m.label }}</span>
-                    <span class="opt-prov-tag">{{ g.name }}</span>
+                  <div class="model-opt-item inherit-row">
+                    <div class="model-opt-left">
+                      <el-icon class="inherit-icon"><RefreshRight /></el-icon>
+                      <span class="inherit-title">默认继承主服务商</span>
+                      <span class="inherit-desc mono">({{ defaultChatModelName }})</span>
+                    </div>
+                    <span class="model-opt-badge badge-inherit">系统默认</span>
                   </div>
                 </el-option>
-              </el-option-group>
-            </el-select>
+
+                <!-- 按服务商分组展示 -->
+                <el-option-group
+                  v-for="g in providerModelGroups"
+                  :key="g.id"
+                  :label="`${g.name} (${g.models.length} 个模型)`"
+                >
+                  <el-option
+                    v-for="m in g.models"
+                    :key="m.value"
+                    :value="m.value"
+                    :label="`${g.name} · ${m.label}`"
+                  >
+                    <div class="model-opt-item">
+                      <div class="model-opt-left">
+                        <span class="model-bullet" :class="{ 'bullet-active': tierForm.chat === m.value }"></span>
+                        <span class="model-name mono" :title="m.label">{{ m.label }}</span>
+                      </div>
+                      <span
+                        v-if="getModelBadge(m, g, 'chat')"
+                        class="model-opt-badge"
+                        :class="`badge-${getModelBadge(m, g, 'chat')!.type}`"
+                      >
+                        {{ getModelBadge(m, g, 'chat')!.text }}
+                      </span>
+                    </div>
+                  </el-option>
+                </el-option-group>
+              </el-select>
+            </div>
           </div>
         </div>
 
         <!-- 2. 看图发品与质检 -->
         <div class="scenario-card vision-scenario">
-          <div class="scenario-header">
-            <div class="scenario-icon-title">
-              <div class="scenario-icon-box vision">
-                <el-icon><Picture /></el-icon>
+          <div class="scenario-card-inner">
+            <div class="scenario-header">
+              <div class="scenario-icon-title">
+                <div class="scenario-icon-box vision">
+                  <el-icon><Picture /></el-icon>
+                </div>
+                <div class="scenario-meta">
+                  <span class="scenario-name">看图发品与质检</span>
+                  <span class="scenario-slug">MULTIMODAL VISION</span>
+                </div>
               </div>
-              <div class="scenario-meta">
-                <span class="scenario-name">看图发品与质检</span>
-                <span class="scenario-slug">MULTIMODAL VISION</span>
-              </div>
+              <el-tag size="small" type="warning" effect="light" round class="scenario-badge">多模态视觉 · Vision</el-tag>
             </div>
-            <el-tag size="small" type="warning" effect="light" round>多模态视觉 · Vision</el-tag>
-          </div>
 
-          <p class="scenario-desc">以图搜款、看图自动提炼规格瑕疵文案与成色评估</p>
+            <p class="scenario-desc">以图搜款、看图自动提炼规格瑕疵文案与成色评估</p>
 
-          <div class="active-model-strip">
-            <span class="pulse-dot orange"></span>
-            <span class="strip-label">生效模型：</span>
-            <span class="strip-val mono">{{ activeVisionModel }}</span>
-            <span class="strip-source">{{ getScenarioProviderName('vision') }}</span>
-          </div>
+            <div class="active-model-strip">
+              <div class="strip-left">
+                <span class="pulse-dot orange"></span>
+                <span class="strip-label">当前生效：</span>
+                <span class="strip-val mono" :title="activeVisionModel">{{ activeVisionModel }}</span>
+              </div>
+              <span class="strip-source" :class="{ 'is-custom': isCustomTier('vision') }">
+                {{ getScenarioProviderName('vision') }}
+              </span>
+            </div>
 
-          <div class="scenario-select-wrap">
-            <label class="select-label">指定视觉模型（识图必填）：</label>
-            <el-select
-              v-model="tierForm.vision"
-              :placeholder="`默认继承主服务商（${status?.gateway.models.vision || '未配置'}）`"
-              clearable
-              class="full-width"
-              :disabled="!auth.isAdmin"
-            >
-              <el-option-group v-for="g in visionGroups" :key="g.id" :label="g.name">
+            <div class="scenario-select-wrap">
+              <div class="select-label-row">
+                <label class="select-label">指定视觉模型（识图专用）：</label>
+                <span v-if="!tierForm.vision" class="inherit-status-tag">继承主服务商</span>
+                <span v-else class="override-status-tag">自定义指定</span>
+              </div>
+              <el-select
+                v-model="tierForm.vision"
+                :placeholder="`默认继承主服务商（${defaultVisionModelName}）`"
+                clearable
+                filterable
+                class="full-width scenario-select"
+                popper-class="scenario-model-popper"
+                :disabled="!auth.isAdmin"
+              >
                 <el-option
-                  v-for="m in g.models"
-                  :key="m.value"
-                  :value="m.value"
-                  :label="`${g.name} · ${m.label}`"
+                  value=""
+                  :label="`默认继承主服务商（${defaultVisionModelName}）`"
                 >
-                  <div class="model-opt-item">
-                    <span class="mono">{{ m.label }}</span>
-                    <el-tag size="small" type="warning" effect="light">视觉支持</el-tag>
+                  <div class="model-opt-item inherit-row">
+                    <div class="model-opt-left">
+                      <el-icon class="inherit-icon"><RefreshRight /></el-icon>
+                      <span class="inherit-title">默认继承主服务商</span>
+                      <span class="inherit-desc mono">({{ defaultVisionModelName }})</span>
+                    </div>
+                    <span class="model-opt-badge badge-inherit">系统默认</span>
                   </div>
                 </el-option>
-              </el-option-group>
-            </el-select>
-          </div>
 
-          <div v-if="!hasConnectedVisionModel" class="vision-warn-tip">
-            <el-icon><WarningFilled /></el-icon>
-            <span>提示：DeepSeek 官方暂不提供识图，建议接入阿里百炼、OpenAI 或智谱</span>
+                <el-option-group
+                  v-for="g in visionGroups"
+                  :key="g.id"
+                  :label="`${g.name} (${g.models.length} 个模型)`"
+                >
+                  <el-option
+                    v-for="m in g.models"
+                    :key="m.value"
+                    :value="m.value"
+                    :label="`${g.name} · ${m.label}`"
+                  >
+                    <div class="model-opt-item">
+                      <div class="model-opt-left">
+                        <span class="model-bullet" :class="{ 'bullet-active': tierForm.vision === m.value }"></span>
+                        <span class="model-name mono" :title="m.label">{{ m.label }}</span>
+                      </div>
+                      <span
+                        v-if="getModelBadge(m, g, 'vision')"
+                        class="model-opt-badge"
+                        :class="`badge-${getModelBadge(m, g, 'vision')!.type}`"
+                      >
+                        {{ getModelBadge(m, g, 'vision')!.text }}
+                      </span>
+                    </div>
+                  </el-option>
+                </el-option-group>
+              </el-select>
+            </div>
+
+            <div v-if="!hasConnectedVisionModel" class="vision-warn-tip">
+              <el-icon><WarningFilled /></el-icon>
+              <span>提示：DeepSeek 官方暂不提供识图，建议接入阿里百炼、OpenAI 或智谱</span>
+            </div>
           </div>
         </div>
 
         <!-- 3. 意图分类与快筛 -->
         <div class="scenario-card fast-scenario">
-          <div class="scenario-header">
-            <div class="scenario-icon-title">
-              <div class="scenario-icon-box fast">
-                <el-icon><Lightning /></el-icon>
+          <div class="scenario-card-inner">
+            <div class="scenario-header">
+              <div class="scenario-icon-title">
+                <div class="scenario-icon-box fast">
+                  <el-icon><Lightning /></el-icon>
+                </div>
+                <div class="scenario-meta">
+                  <span class="scenario-name">意图分类与快筛</span>
+                  <span class="scenario-slug">ULTRA-FAST ROUTING</span>
+                </div>
               </div>
-              <div class="scenario-meta">
-                <span class="scenario-name">意图分类与快筛</span>
-                <span class="scenario-slug">ULTRA-FAST ROUTING</span>
-              </div>
+              <el-tag size="small" type="info" effect="light" round class="scenario-badge">毫秒极速 · Fast</el-tag>
             </div>
-            <el-tag size="small" type="info" effect="light" round>毫秒极速 · Fast</el-tag>
-          </div>
 
-          <p class="scenario-desc">买家意图毫秒级分流与转人工规则过滤，低延迟极低成本</p>
+            <p class="scenario-desc">买家意图毫秒级分流与转人工规则过滤，低延迟极低成本</p>
 
-          <div class="active-model-strip">
-            <span class="pulse-dot blue"></span>
-            <span class="strip-label">生效模型：</span>
-            <span class="strip-val mono">{{ activeFastModel }}</span>
-            <span class="strip-source">{{ getScenarioProviderName('fast') }}</span>
-          </div>
+            <div class="active-model-strip">
+              <div class="strip-left">
+                <span class="pulse-dot blue"></span>
+                <span class="strip-label">当前生效：</span>
+                <span class="strip-val mono" :title="activeFastModel">{{ activeFastModel }}</span>
+              </div>
+              <span class="strip-source" :class="{ 'is-custom': isCustomTier('fast') }">
+                {{ getScenarioProviderName('fast') }}
+              </span>
+            </div>
 
-          <div class="scenario-select-wrap">
-            <label class="select-label">指定快筛模型（追求极低延迟与成本）：</label>
-            <el-select
-              v-model="tierForm.fast"
-              :placeholder="`默认继承主服务商（${status?.gateway.models.fast || '未配置'}）`"
-              clearable
-              class="full-width"
-              :disabled="!auth.isAdmin"
-            >
-              <el-option-group v-for="g in providerModelGroups" :key="g.id" :label="g.name">
+            <div class="scenario-select-wrap">
+              <div class="select-label-row">
+                <label class="select-label">指定快筛模型（极速低延迟）：</label>
+                <span v-if="!tierForm.fast" class="inherit-status-tag">继承主服务商</span>
+                <span v-else class="override-status-tag">自定义指定</span>
+              </div>
+              <el-select
+                v-model="tierForm.fast"
+                :placeholder="`默认继承主服务商（${defaultFastModelName}）`"
+                clearable
+                filterable
+                class="full-width scenario-select"
+                popper-class="scenario-model-popper"
+                :disabled="!auth.isAdmin"
+              >
                 <el-option
-                  v-for="m in g.models"
-                  :key="m.value"
-                  :value="m.value"
-                  :label="`${g.name} · ${m.label}`"
+                  value=""
+                  :label="`默认继承主服务商（${defaultFastModelName}）`"
                 >
-                  <div class="model-opt-item">
-                    <span class="mono">{{ m.label }}</span>
-                    <span class="opt-prov-tag">{{ g.name }}</span>
+                  <div class="model-opt-item inherit-row">
+                    <div class="model-opt-left">
+                      <el-icon class="inherit-icon"><RefreshRight /></el-icon>
+                      <span class="inherit-title">默认继承主服务商</span>
+                      <span class="inherit-desc mono">({{ defaultFastModelName }})</span>
+                    </div>
+                    <span class="model-opt-badge badge-inherit">系统默认</span>
                   </div>
                 </el-option>
-              </el-option-group>
-            </el-select>
+
+                <el-option-group
+                  v-for="g in providerModelGroups"
+                  :key="g.id"
+                  :label="`${g.name} (${g.models.length} 个模型)`"
+                >
+                  <el-option
+                    v-for="m in g.models"
+                    :key="m.value"
+                    :value="m.value"
+                    :label="`${g.name} · ${m.label}`"
+                  >
+                    <div class="model-opt-item">
+                      <div class="model-opt-left">
+                        <span class="model-bullet" :class="{ 'bullet-active': tierForm.fast === m.value }"></span>
+                        <span class="model-name mono" :title="m.label">{{ m.label }}</span>
+                      </div>
+                      <span
+                        v-if="getModelBadge(m, g, 'fast')"
+                        class="model-opt-badge"
+                        :class="`badge-${getModelBadge(m, g, 'fast')!.type}`"
+                      >
+                        {{ getModelBadge(m, g, 'fast')!.text }}
+                      </span>
+                    </div>
+                  </el-option>
+                </el-option-group>
+              </el-select>
+            </div>
           </div>
         </div>
       </div>
@@ -1344,14 +1542,12 @@ async function remove(p: LlmProvider) {
   background: var(--xh-card);
   border: 1px solid var(--xh-border);
   border-radius: var(--xh-radius-lg);
-  padding: 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  padding: 18px 20px;
   box-shadow: var(--xh-shadow-sm);
   transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s ease, border-color 0.2s ease;
   position: relative;
   overflow: hidden;
+  height: 100%;
 }
 
 .scenario-card:hover {
@@ -1371,6 +1567,13 @@ async function remove(p: LlmProvider) {
   border-top: 3px solid #6366f1;
 }
 
+.scenario-card-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+}
+
 .scenario-header {
   display: flex;
   align-items: center;
@@ -1384,13 +1587,13 @@ async function remove(p: LlmProvider) {
 }
 
 .scenario-icon-box {
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   border-radius: var(--xh-radius-md);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 18px;
+  font-size: 19px;
   flex-shrink: 0;
 }
 
@@ -1440,17 +1643,27 @@ async function remove(p: LlmProvider) {
 .active-model-strip {
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
+  gap: 8px;
   background: var(--xh-fill);
   border: 1px solid var(--xh-border);
-  border-radius: var(--xh-radius-sm);
-  padding: 6px 10px;
+  border-radius: var(--xh-radius-md);
+  padding: 7px 12px;
   font-size: var(--xh-fs-xs);
+}
+
+.strip-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .strip-label {
   color: var(--xh-muted);
   flex-shrink: 0;
+  font-size: 12px;
 }
 
 .strip-val {
@@ -1459,17 +1672,25 @@ async function remove(p: LlmProvider) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 13px;
 }
 
 .strip-source {
-  margin-left: auto;
   font-size: 11px;
   color: var(--xh-muted);
   background: var(--xh-card);
   border: 1px solid var(--xh-border);
-  padding: 1px 6px;
+  padding: 1px 7px;
   border-radius: 4px;
   white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.strip-source.is-custom {
+  color: var(--xh-primary);
+  background: var(--xh-primary-soft);
+  border-color: rgba(16, 185, 129, 0.3);
+  font-weight: 500;
 }
 
 .scenario-select-wrap {
@@ -1479,10 +1700,33 @@ async function remove(p: LlmProvider) {
   margin-top: auto;
 }
 
+.select-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
 .select-label {
   font-size: var(--xh-fs-xs);
   font-weight: 500;
   color: var(--xh-text-2);
+}
+
+.inherit-status-tag {
+  font-size: 11px;
+  color: var(--xh-muted);
+  background: var(--xh-fill-strong);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.override-status-tag {
+  font-size: 11px;
+  color: var(--xh-primary);
+  background: var(--xh-primary-soft);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-weight: 500;
 }
 
 .vision-warn-tip {
@@ -1498,19 +1742,17 @@ async function remove(p: LlmProvider) {
   line-height: 1.3;
 }
 
-.model-opt-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  width: 100%;
+.save-btn-unsaved {
+  animation: pulse-save 2s infinite ease-in-out;
 }
 
-.opt-prov-tag {
-  font-size: 11px;
-  color: var(--xh-muted);
-  background: var(--xh-fill-strong);
-  padding: 1px 6px;
-  border-radius: 4px;
+@keyframes pulse-save {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.25);
+  }
 }
 
 /* ================= 4. 网关统计指标条 ================= */
@@ -2209,5 +2451,156 @@ async function remove(p: LlmProvider) {
   padding: var(--xh-space-8) var(--xh-space-4);
   display: flex;
   justify-content: center;
+}
+</style>
+
+<style>
+/* ================= 场景模型下拉菜单浮层样式 (Teleported to body) ================= */
+.scenario-model-popper {
+  border-radius: 10px !important;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12), 0 4px 12px rgba(15, 23, 42, 0.06) !important;
+  border: 1px solid var(--xh-border, #e2e8f0) !important;
+  min-width: 320px !important;
+}
+
+.scenario-model-popper .el-select-dropdown__list {
+  padding: 6px !important;
+}
+
+.scenario-model-popper .el-select-group__title {
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  color: var(--xh-muted, #64748b) !important;
+  padding: 8px 12px 4px !important;
+  border-top: 1px dashed var(--xh-border, #e2e8f0);
+  margin-top: 4px;
+}
+
+.scenario-model-popper .el-select-group:first-child .el-select-group__title {
+  border-top: none;
+  margin-top: 0;
+}
+
+.scenario-model-popper .el-select-dropdown__item {
+  height: 36px !important;
+  line-height: 36px !important;
+  padding: 0 10px !important;
+  border-radius: 6px !important;
+  margin: 1px 0 !important;
+}
+
+.scenario-model-popper .el-select-dropdown__item.hover,
+.scenario-model-popper .el-select-dropdown__item:hover {
+  background-color: var(--xh-fill-strong, #f1f5f9) !important;
+}
+
+.scenario-model-popper .el-select-dropdown__item.selected {
+  background-color: var(--xh-primary-soft, rgba(16, 185, 129, 0.1)) !important;
+  color: var(--xh-primary, #10b981) !important;
+  font-weight: 600 !important;
+}
+
+.scenario-model-popper .model-opt-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  gap: 10px;
+}
+
+.scenario-model-popper .model-opt-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.scenario-model-popper .model-bullet {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--xh-border, #cbd5e1);
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+
+.scenario-model-popper .model-bullet.bullet-active {
+  background: var(--xh-primary, #10b981);
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.25);
+}
+
+.scenario-model-popper .model-name {
+  font-size: 13px;
+  color: var(--xh-text, #1e293b);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scenario-model-popper .inherit-row {
+  color: var(--xh-text, #1e293b);
+}
+
+.scenario-model-popper .inherit-icon {
+  font-size: 14px;
+  color: var(--xh-primary, #10b981);
+  flex-shrink: 0;
+}
+
+.scenario-model-popper .inherit-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--xh-text, #1e293b);
+}
+
+.scenario-model-popper .inherit-desc {
+  font-size: 12px;
+  color: var(--xh-muted, #64748b);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scenario-model-popper .model-opt-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
+  line-height: 18px;
+}
+
+.scenario-model-popper .model-opt-badge.badge-success {
+  background: rgba(16, 185, 129, 0.1);
+  color: #059669;
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.scenario-model-popper .model-opt-badge.badge-warning {
+  background: rgba(245, 158, 11, 0.1);
+  color: #d97706;
+  border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+.scenario-model-popper .model-opt-badge.badge-info {
+  background: rgba(99, 102, 241, 0.08);
+  color: #6366f1;
+  border: 1px solid rgba(99, 102, 241, 0.2);
+}
+
+.scenario-model-popper .model-opt-badge.badge-primary {
+  background: rgba(59, 130, 246, 0.08);
+  color: #2563eb;
+  border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+.scenario-model-popper .model-opt-badge.badge-inherit {
+  background: var(--xh-fill-strong, #f1f5f9);
+  color: var(--xh-muted, #64748b);
+  border: 1px solid var(--xh-border, #e2e8f0);
 }
 </style>
