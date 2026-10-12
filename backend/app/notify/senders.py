@@ -14,6 +14,8 @@ from typing import Any
 import httpx
 from pydantic import BaseModel
 
+from app.core.netguard import check_host, check_url
+
 
 class Notification(BaseModel):
     event: str
@@ -205,3 +207,22 @@ def validate_config(channel_type: str, cfg: dict) -> None:
     missing = [k for k in SENDERS[channel_type][1] if not cfg.get(k)]
     if missing:
         raise ValueError(f"缺少配置项：{', '.join(missing)}")
+
+
+# 地址由用户填写的配置项：发送前要过出站地址校验（防 SSRF）
+URL_FIELDS: dict[str, dict[str, str]] = {
+    "wecom": {"webhook_url": ""},
+    "feishu": {"webhook_url": ""},
+    "dingtalk": {"webhook_url": ""},
+    "telegram": {"api_base": "https://api.telegram.org"},
+    "bark": {"server_url": ""},
+    "ntfy": {"server_url": "https://ntfy.sh"},
+    "webhook": {"url": ""},
+}
+
+
+async def check_targets(channel_type: str, cfg: dict, *, allow_private: bool) -> None:
+    for key, default in URL_FIELDS.get(channel_type, {}).items():
+        await check_url(cfg.get(key) or default, allow_private=allow_private)
+    if channel_type == "email":
+        await check_host(cfg.get("host", ""), allow_private=allow_private)

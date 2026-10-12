@@ -9,6 +9,7 @@ from app.domains.goods.models import MyItem
 from app.domains.order import service as order_service
 from app.domains.order.models import CardItem, Order, OrderState
 from app.goofish.dto import SystemNotice
+from app.notify import service as notify_service
 from tests.test_messages import BUYER, FakeIm, chat, im, receive  # noqa: F401
 
 DETAIL_PAID = {
@@ -562,6 +563,7 @@ async def test_physical_order_waits_for_seller_with_address_and_reminder(admin_c
     hook.calls.reset()
     assert await order_service.remind_unshipped() == 1
     assert await order_service.remind_unshipped() == 0
+    await notify_service.drain()
     assert any("超过 24 小时未发货" in c.request.content.decode() for c in hook.calls)
 
 

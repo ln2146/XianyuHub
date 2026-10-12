@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.core.crypto import get_vault
 from app.core.deps import CurrentUser, SessionDep
+from app.core.netguard import UnsafeTargetError, check_url
 from app.core.pagination import set_total
 from app.core.uploads import UploadId
 from app.domains.account.service import accessible_account_ids, get_account_for
@@ -26,6 +27,7 @@ from app.domains.order.models import (
     OrderState,
 )
 from app.domains.system.audit import record_audit
+from app.domains.system.models import Role, User
 from app.goofish.errors import GoofishError
 from app.intelligence.llm import LLMError, LLMUnavailable, get_llm
 from app.runtime import get_runtime
@@ -321,8 +323,8 @@ async def list_pools(user: CurrentUser, session: SessionDep) -> list[PoolOut]:
 async def create_pool(body: PoolIn, user: CurrentUser, session: SessionDep) -> PoolOut:
     if body.kind == "text" and not body.text and not body.images:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "「固定内容」需要填写发货内容或添加图片")
-    if body.kind == "api" and not str(body.api_config.get("url", "")).startswith(("http://", "https://")):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "「接口取货」需要填写有效的 url")
+    if body.kind == "api":
+        await _check_api_url(body.api_config, user)
     pool = CardPool(
         owner_id=user.id,
         name=body.name,
@@ -338,6 +340,13 @@ async def create_pool(body: PoolIn, user: CurrentUser, session: SessionDep) -> P
     return await _pool_out(session, pool)
 
 
+async def _check_api_url(api_config: dict[str, Any], user: User) -> None:
+    try:
+        await check_url(str(api_config.get("url", "")), allow_private=user.role == Role.ADMIN)
+    except UnsafeTargetError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"「接口取货」的 url 无效：{e}") from e
+
+
 @router.put("/cards/pools/{pool_id}", response_model=PoolOut)
 async def update_pool(pool_id: int, body: PoolIn, user: CurrentUser, session: SessionDep) -> PoolOut:
     pool = await _own_pool(session, user, pool_id)
@@ -347,6 +356,8 @@ async def update_pool(pool_id: int, body: PoolIn, user: CurrentUser, session: Se
     if body.text:
         pool.text_enc = get_vault().encrypt(body.text)
     if body.api_config:
+        if pool.kind == "api":
+            await _check_api_url(body.api_config, user)
         headers = body.api_config.get("headers")
         pool.api_config = {
             **body.api_config,

@@ -5,8 +5,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app.core.deps import CurrentUser, SessionDep
+from app.domains.system.models import Role
 from app.notify.models import NotificationChannel
-from app.notify.senders import OPTIONAL_FIELDS, SENDERS, Notification, validate_config
+from app.notify.senders import OPTIONAL_FIELDS, SENDERS, Notification, check_targets, validate_config
 from app.notify.service import NotifyEvents, decode_config, encode_config, send_to_channel
 
 router = APIRouter(prefix="/notify", tags=["notify"])
@@ -87,6 +88,7 @@ async def list_channels(user: CurrentUser, session: SessionDep) -> list[ChannelO
 async def create_channel(body: ChannelIn, user: CurrentUser, session: SessionDep) -> ChannelOut:
     try:
         validate_config(body.type, body.config)
+        await check_targets(body.type, body.config, allow_private=user.role == Role.ADMIN)
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
     ch = NotificationChannel(
@@ -113,6 +115,7 @@ async def update_channel(channel_id: int, body: ChannelUpdate, user: CurrentUser
                 merged[k] = v
         try:
             validate_config(ch.type, merged)
+            await check_targets(ch.type, merged, allow_private=user.role == Role.ADMIN)
         except ValueError as e:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
         ch.config_enc = encode_config(merged)

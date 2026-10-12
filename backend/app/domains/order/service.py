@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.crypto import get_vault
 from app.core.db import session_factory
 from app.core.events import Topics, bus
+from app.core.netguard import UnsafeTargetError, check_url, owner_may_use_private
 from app.core.realtime import hub
 from app.domains.account.models import XyAccount
 from app.domains.goods.models import MyItem
@@ -434,7 +435,8 @@ async def allocate(s: AsyncSession, pool: CardPool, order: Order) -> tuple[str, 
                 return get_vault().decrypt(card.content_enc) or "", card.id
         raise DeliveryError("卡密分配冲突，请重试")
     if pool.kind == "api":
-        return await call_delivery_api(pool.api_config, order), None
+        allow_private = await owner_may_use_private(pool.owner_id)
+        return await call_delivery_api(pool.api_config, order, allow_private=allow_private), None
     raise DeliveryError(f"未知的发货方式 {pool.kind}")
 
 
@@ -462,10 +464,12 @@ def _render(template: str, order: Order, content: str = "") -> str:
     return out
 
 
-async def call_delivery_api(cfg: dict[str, Any], order: Order) -> str:
+async def call_delivery_api(cfg: dict[str, Any], order: Order, *, allow_private: bool = False) -> str:
     url = cfg.get("url", "")
-    if not url.startswith(("http://", "https://")):
-        raise DeliveryError("API 取货地址无效")
+    try:
+        await check_url(url, allow_private=allow_private)
+    except UnsafeTargetError as e:
+        raise DeliveryError(f"API 取货地址无效：{e}") from e
     method = cfg.get("method", "POST").upper()
     body = json.loads(_render(json.dumps(cfg.get("body") or {}, ensure_ascii=False), order) or "{}")
     async with httpx.AsyncClient(timeout=float(cfg.get("timeout", 15))) as http:

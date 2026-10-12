@@ -224,3 +224,43 @@ async def test_scheduled_draft_is_not_published_without_creator_access(admin_cli
         await goods_service.publish_draft(draft_id)
     async with session_factory()() as s:
         assert (await s.get(PublishDraftRecord, draft_id)).status == DraftStatus.FAILED
+
+
+async def test_netguard_blocks_metadata_and_member_private_targets():
+    from app.core.netguard import UnsafeTargetError, check_url
+
+    await check_url("https://8.8.8.8/x")
+    await check_url("http://192.168.1.10:8080/hook", allow_private=True)  # 管理员可以指向局域网服务
+    await check_url("http://nas.local/hook", allow_private=True)
+    for url in (
+        "http://127.0.0.1/",
+        "http://10.0.0.5/",
+        "http://[::1]/",
+        "http://[::ffff:192.168.0.1]/",
+        "http://0.0.0.0/",
+    ):
+        with pytest.raises(UnsafeTargetError):
+            await check_url(url)
+    for url in ("http://169.254.169.254/latest/meta-data/", "http://[fe80::1]/", "ftp://example.com/"):
+        with pytest.raises(UnsafeTargetError):
+            await check_url(url, allow_private=True)  # 元数据地址和非 http 协议管理员也不行
+
+
+async def test_member_cannot_point_outbound_requests_at_internal_network(admin_client):
+    from app.domains.order.service import DeliveryError, call_delivery_api
+
+    h = await _member_headers(admin_client)
+    hook = {"name": "h", "type": "webhook", "config": {"url": "http://127.0.0.1:8000/api/v1/users"}}
+    r = await admin_client.post("/api/v1/notify/channels", json=hook, headers=h)
+    assert r.status_code == 400 and "内网" in r.json()["detail"]
+    probe = (await admin_client.post("/api/v1/notify/test", json=hook, headers=h)).json()
+    assert probe["ok"] is False and "内网" in probe["error"]
+    pool = {"name": "p", "kind": "api", "api_config": {"url": "http://10.0.0.8/secret"}}
+    assert (await admin_client.post("/api/v1/cards/pools", json=pool, headers=h)).status_code == 400
+    # 管理员可以用局域网地址，但云主机元数据地址谁都不行
+    assert (await admin_client.post("/api/v1/cards/pools", json=pool)).status_code == 201
+    meta = {**pool, "api_config": {"url": "http://169.254.169.254/latest/meta-data/"}}
+    assert (await admin_client.post("/api/v1/cards/pools", json=meta)).status_code == 400
+    # 发货时再校验一次（地址可能是旧数据，或域名解析结果已变化）
+    with pytest.raises(DeliveryError, match="内网"):
+        await call_delivery_api({"url": "http://127.0.0.1/x"}, None)

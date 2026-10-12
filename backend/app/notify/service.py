@@ -10,9 +10,10 @@ from sqlalchemy import select
 
 from app.core.crypto import get_vault
 from app.core.db import session_factory
+from app.core.netguard import owner_may_use_private
 from app.domains.system.models import Role, User
 from app.notify.models import NotificationChannel
-from app.notify.senders import SENDERS, Notification, SendError
+from app.notify.senders import SENDERS, Notification, SendError, check_targets
 
 # 临时故障（网络抖动 / 服务端 5xx / 429）重试一次
 RETRY_DELAY_SECONDS = 2.0
@@ -61,10 +62,12 @@ def encode_config(cfg: dict) -> str:
 
 async def send_to_channel(channel: NotificationChannel, n: Notification, http: httpx.AsyncClient | None = None) -> None:
     sender, _ = SENDERS[channel.type]
+    cfg = decode_config(channel)
+    await check_targets(channel.type, cfg, allow_private=await owner_may_use_private(channel.owner_id))
     own = http is None
     http = http or httpx.AsyncClient(timeout=15)
     try:
-        await sender(http, decode_config(channel), n)
+        await sender(http, cfg, n)
     finally:
         if own:
             await http.aclose()
