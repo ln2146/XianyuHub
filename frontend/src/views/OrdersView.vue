@@ -25,7 +25,7 @@ import StatusTag from '@/components/StatusTag.vue'
 import ListPager from '@/components/ListPager.vue'
 import { useAccountsStore } from '@/stores/accounts'
 import { useMobile } from '@/composables/useMobile'
-import { NEEDS_ACTION_STATUSES, fmtMoney, fmtTime, itemUrl, orderStatusMap } from '@/utils/format'
+import { NEEDS_ACTION_STATUSES, fmtMoney, fmtRelative, fmtTime, itemUrl, orderStatusMap } from '@/utils/format'
 
 // 买家分析：发货前看看这个买家靠不靠谱
 const buyerRisk = reactive({ open: false, order: null as Order | null })
@@ -459,80 +459,82 @@ async function openDetail(o: Order) {
             </div>
           </template>
 
-          <el-table-column label="订单信息" min-width="210">
+          <el-table-column label="订单编号" min-width="180">
             <template #default="{ row }">
               <div class="order-id-row">
                 <el-link type="primary" class="font-semibold mono" @click="openDetail(row as Order)">
                   {{ row.order_id }}
                 </el-link>
               </div>
-              <div class="muted smaller mt-xs acc-meta-row">
-                <span :class="{ 'text-danger': isAccountExpired(row.account_id) }">{{ accounts.nameOf(row.account_id) }}</span>
+              <div class="acc-meta-row">
+                <span class="acc-name-chip" :class="{ 'text-danger': isAccountExpired(row.account_id) }">
+                  {{ accounts.nameOf(row.account_id) }}
+                </span>
                 <el-tag
                   v-if="isAccountExpired(row.account_id)"
                   size="small"
                   type="danger"
-                  effect="light"
                   class="acc-expired-tag pointer"
                   @click.stop="goToRelogin(row.account_id)"
                 >
-                  需重新登录 ↗
+                  需重新登录
                 </el-tag>
-                <span class="dot-sep">·</span>
-                <span>{{ fmtTime(row.created_at) }}</span>
               </div>
             </template>
           </el-table-column>
 
-          <el-table-column label="交易商品" min-width="220">
+          <el-table-column label="商品" min-width="220">
             <template #default="{ row }">
               <div class="ellipsis font-semibold" :title="row.item_title">{{ row.item_title || row.item_id || '-' }}</div>
-              <div v-if="row.spec_value" class="muted smaller">
-                <el-tag size="small" type="info" effect="plain" class="mt-xs">
-                  {{ row.spec_name || '规格' }}: {{ row.spec_value }}
-                </el-tag>
+              <div v-if="row.spec_value" class="spec-row">
+                <span class="spec-chip">{{ row.spec_name || '规格' }}: {{ row.spec_value }}</span>
               </div>
             </template>
           </el-table-column>
 
-          <el-table-column label="买家" min-width="120">
+          <el-table-column label="买家" min-width="110">
             <template #default="{ row }">
               <div class="buyer-cell">
                 <div class="buyer-avatar">{{ (row.buyer_nick || row.buyer_id || '买')[0] }}</div>
-                <div class="buyer-nick ellipsis">{{ row.buyer_nick || row.buyer_id || '-' }}</div>
+                <div class="buyer-nick ellipsis" :title="row.buyer_nick || row.buyer_id || '-'">
+                  {{ row.buyer_nick || row.buyer_id || '-' }}
+                </div>
               </div>
             </template>
           </el-table-column>
 
-          <el-table-column label="实付金额" width="130">
+          <el-table-column label="实付金额" width="120">
             <template #default="{ row }">
               <div class="price-wrap">
                 <span class="price-val">{{ fmtMoney(row.amount) }}</span>
                 <span v-if="row.quantity > 1" class="muted smaller"> ×{{ row.quantity }}</span>
               </div>
-              <el-tag v-if="row.is_bargain" size="small" effect="plain" type="warning" class="mt-xs">
-                议价成交
+              <el-tag v-if="row.is_bargain" size="small" type="warning" class="mt-xs">
+                议价
               </el-tag>
             </template>
           </el-table-column>
 
-          <el-table-column label="订单状态" width="140">
+          <el-table-column label="状态" width="130">
             <template #default="{ row }">
-              <el-tag v-if="row.self_ship" size="small" type="warning" effect="light">待你发货</el-tag>
-              <StatusTag v-else :value="row.status" :map="orderStatusMap" />
-              <el-tooltip v-if="row.fail_reason" :content="row.fail_reason">
-                <div class="smaller err ellipsis mt-xs fail-reason-row">
-                  <el-icon><WarningFilled /></el-icon>
-                  <span>{{ row.fail_reason }}</span>
-                </div>
-              </el-tooltip>
+              <div class="status-cell-wrap">
+                <el-tag v-if="row.self_ship" size="small" type="warning">待你发货</el-tag>
+                <StatusTag v-else :value="row.status" :map="orderStatusMap" />
+                <el-tooltip v-if="row.fail_reason" :content="row.fail_reason" placement="top">
+                  <el-icon class="status-fail-icon"><WarningFilled /></el-icon>
+                </el-tooltip>
+              </div>
             </template>
           </el-table-column>
 
-          <el-table-column label="付款 / 发货时间" width="160">
+          <el-table-column label="时间" width="130">
             <template #default="{ row }">
-              <div class="smaller" title="平台付款通知时间，经订单状态核实；没有确切时间时不推算"><span class="muted">付:</span> {{ row.actual_paid_at ? fmtTime(row.actual_paid_at) : '时间未知' }}</div>
-              <div class="smaller mt-xs"><span class="muted">发:</span> {{ fmtTime(row.delivered_at) || '-' }}</div>
+              <el-tooltip
+                :content="`下单：${fmtTime(row.created_at, true)}${row.actual_paid_at ? ` · 付款：${fmtTime(row.actual_paid_at, true)}` : ''}${row.delivered_at ? ` · 发货：${fmtTime(row.delivered_at, true)}` : ''}`"
+                placement="top"
+              >
+                <span class="order-time-text mono">{{ fmtRelative(row.actual_paid_at || row.created_at) || '-' }}</span>
+              </el-tooltip>
             </template>
           </el-table-column>
 
@@ -950,10 +952,35 @@ async function openDetail(o: Order) {
 .err {
   color: var(--xh-danger);
 }
-.fail-reason-row {
+.acc-name-chip {
+  font-size: 11.5px;
+  color: var(--xh-muted);
+}
+.spec-row {
+  margin-top: 2px;
+}
+.spec-chip {
+  font-size: 11.5px;
+  background: var(--xh-fill);
+  color: var(--xh-text-2);
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid var(--xh-border);
+}
+.status-cell-wrap {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 5px;
+}
+.status-fail-icon {
+  color: var(--xh-danger);
+  font-size: 14px;
+  cursor: help;
+}
+.order-time-text {
+  font-size: 12px;
+  color: var(--xh-muted);
+  cursor: default;
 }
 .orders-empty-box {
   padding: 40px 0;
