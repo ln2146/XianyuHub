@@ -308,6 +308,72 @@ async def test_stuck_delivering_order_goes_manual(admin_client, im):  # noqa: F8
     assert order["status"] == "manual" and "中断" in order["fail_reason"]
 
 
+async def _notice(account_id, order_id, notice):
+    await order_service.on_order_event({"account_id": account_id, "order_id": order_id, "notice": notice})
+
+
+@respx.mock
+async def test_order_closed_before_send_stops_delivery_and_frees_card(admin_client, im, monkeypatch):  # noqa: F811
+    # 发货延迟期间订单被关闭：不能再把卡密发出去，卡密退回库存
+    account_id, fake = im
+    await setup_delivery(admin_client, account_id, cards="C1")
+    mock_trade()
+    await receive(account_id, chat("在吗"))
+    real_status = order_service._order_status
+
+    async def closed_meanwhile(order_pk):
+        await _notice(account_id, "4400107", SystemNotice.CLOSED)
+        return await real_status(order_pk)
+
+    monkeypatch.setattr(order_service, "_order_status", closed_meanwhile)
+    await paid(account_id, "4400107")
+    order = (await admin_client.get("/api/v1/orders")).json()[0]
+    assert order["status"] == "closed" and fake.sent == []
+    assert await _stock(admin_client) == {"available": 1, "locked": 0, "used": 0}
+
+
+@respx.mock
+async def test_refund_after_send_keeps_card_and_does_not_confirm(admin_client, im):  # noqa: F811
+    # 卡密已发出、确认发货前买家申请退款：不再确认发货，卡密保持占用，状态不被「已发货」覆盖
+    account_id, fake = im
+    await setup_delivery(admin_client, account_id, cards="C1\nC2", mode="send_then_confirm")
+    consign = mock_trade()
+    await receive(account_id, chat("在吗"))
+    real_send = fake.send_text
+
+    async def send_then_refund(*args):
+        await real_send(*args)
+        await _notice(account_id, "4400108", SystemNotice.REFUND)
+
+    fake.send_text = send_then_refund
+    await paid(account_id, "4400108")
+    order = (await admin_client.get("/api/v1/orders")).json()[0]
+    assert order["status"] == "refunding" and len(fake.sent) == 1 and not consign.called
+    assert await _stock(admin_client) == {"available": 1, "locked": 1, "used": 0}
+    # 退款完成 / 关闭也不会把已发出的卡密退回库存
+    await _notice(account_id, "4400108", SystemNotice.CLOSED)
+    assert (await _stock(admin_client))["available"] == 1
+
+
+@respx.mock
+async def test_refund_during_last_step_is_not_overwritten(admin_client, im):  # noqa: F811
+    account_id, fake = im
+    await setup_delivery(admin_client, account_id, cards="C1", mode="send_only")
+    mock_trade()
+    await receive(account_id, chat("在吗"))
+    real_send = fake.send_text
+
+    async def send_then_refund(*args):
+        await real_send(*args)
+        await _notice(account_id, "4400109", SystemNotice.REFUND)
+
+    fake.send_text = send_then_refund
+    await paid(account_id, "4400109")
+    order = (await admin_client.get("/api/v1/orders")).json()[0]
+    assert order["status"] == "refunding"
+    assert await _stock(admin_client) == {"available": 0, "locked": 0, "used": 1}
+
+
 @respx.mock
 async def test_buyer_limit_holds_under_concurrent_payments(admin_client, im):  # noqa: F811
     import asyncio

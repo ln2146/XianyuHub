@@ -53,6 +53,14 @@ class DeliveryError(Exception):
     pass
 
 
+class DeliveryInterrupted(Exception):
+    """发货过程中订单被关闭 / 退款 / 人工接管：停止后续步骤。"""
+
+    def __init__(self, status: str) -> None:
+        super().__init__(status)
+        self.status = status
+
+
 def fingerprint(content: str) -> str:
     return hashlib.sha256(content.strip().encode("utf-8")).hexdigest()
 
@@ -83,7 +91,7 @@ async def transition(s: AsyncSession, order: Order, to: str, *, reason: str | No
             .where(CardItem.order_pk == order.id, CardItem.status == "locked")
             .values(status="used", used_at=now)
         )
-    elif to in (OrderState.CLOSED, OrderState.REFUNDED):
+    elif to in (OrderState.CLOSED, OrderState.REFUNDED) and not await _card_may_be_out(s, order):
         # 订单关闭 / 退款 / 取消：若有未完成发货的锁定卡密，自动释放回库存
         await s.execute(
             update(CardItem)
@@ -99,6 +107,16 @@ async def transition(s: AsyncSession, order: Order, to: str, *, reason: str | No
     order.status = to
     _spawn_push({"id": order.id, "order_id": order.order_id, "status": to}, order.account_id)
     return True
+
+
+async def _card_may_be_out(s: AsyncSession, order: Order) -> bool:
+    """卡密可能已经发给买家：正在发货中（由发货流程自己决定是否退回），或之前已有发出记录。"""
+    if order.status == OrderState.DELIVERING:
+        return True
+    sent = await s.execute(
+        select(DeliveryRecord.id).where(DeliveryRecord.order_pk == order.id, DeliveryRecord.message_sent.is_(True))
+    )
+    return sent.first() is not None
 
 
 def _spawn_push(data: dict[str, Any], account_id: int) -> None:
@@ -613,7 +631,13 @@ async def _deliver(order_pk: int, *, force: bool, user_id: int | None) -> bool:
     try:
         for step in steps:
             current = step
+            # 等待延迟 / 上一步期间订单可能被关闭或退款：每一步前都重新确认还在「发货中」
+            status = await _order_status(order_pk)
+            if status != OrderState.DELIVERING:
+                raise DeliveryInterrupted(status)
             await step()
+    except DeliveryInterrupted as e:
+        return await _interrupted(order_pk, record, e.status)
     except Exception as e:  # noqa: BLE001  任何异常都要落到失败处理，订单不能卡在「发货中」
         if current is send_message and not record.message_sent and _maybe_sent(e):
             # 发出去了但没等到回执：可能已经送达，不退回卡密、不自动重试（否则会再发一张）
@@ -630,19 +654,47 @@ async def _deliver(order_pk: int, *, force: bool, user_id: int | None) -> bool:
 
     async with session_factory()() as s:
         order = await s.get(Order, order_pk)
-        await transition(s, order, OrderState.DELIVERED)
-        order.delivered_at = datetime.now(UTC)
-        order.fail_reason = None
-        order.next_retry_at = None
+        # 只从「发货中」迁移：期间转成退款中 / 已关闭的订单不能被「已发货」覆盖
+        delivered = order.status == OrderState.DELIVERING and await transition(s, order, OrderState.DELIVERED)
+        final_status = order.status
+        if delivered:
+            order.delivered_at = datetime.now(UTC)
+            order.fail_reason = None
+            order.next_retry_at = None
+        card_ok = True
         if record.card_item_id:
-            await s.execute(
-                update(CardItem)
-                .where(CardItem.id == record.card_item_id)
-                .values(status="used", used_at=datetime.now(UTC))
-            )
-        record.success = True
+            card_ok = (
+                await s.execute(
+                    update(CardItem)
+                    .where(
+                        CardItem.id == record.card_item_id,
+                        CardItem.order_pk == order_pk,
+                        CardItem.status.in_(("locked", "used")),
+                    )
+                    .values(status="used", used_at=datetime.now(UTC))
+                )
+            ).rowcount == 1
+        record.success = delivered
+        if not delivered:
+            record.error = f"发货内容已发出，但订单在发货过程中变为「{final_status}」"
         s.add(record)
         await s.commit()
+    if not card_ok:
+        logger.error("订单 {} 发出的卡密 {} 已不归本单所有，可能重复发放", order_id, record.card_item_id)
+        await _notify_owner(
+            account_id,
+            NotifyEvents.DELIVERY_FAILED,
+            f"⚠️ 订单 {order_id} 的卡密可能重复发放",
+            "发货内容已经发给买家，但这张卡密已被释放或分配给其他订单，请核对后处理。",
+        )
+    if not delivered:
+        await _notify_owner(
+            account_id,
+            NotifyEvents.DELIVERY_FAILED,
+            f"⚠️ 订单 {order_id} 发货期间状态有变",
+            f"发货内容已经发给买家，但订单在此期间变为「{final_status}」，没有标记为已发货，请人工核对。",
+        )
+        return False
     await record_audit(
         "order.deliver",
         user_id=user_id,
@@ -709,15 +761,48 @@ def _describe(e: BaseException) -> str:
     return str(e) or type(e).__name__
 
 
+async def _order_status(order_pk: int) -> str | None:
+    async with session_factory()() as s:
+        return (await s.execute(select(Order.status).where(Order.id == order_pk))).scalar_one_or_none()
+
+
+async def _release_card(s: AsyncSession, card_id: int, order_pk: int) -> None:
+    # 只释放仍由本单锁定的卡密：已用掉或已归其他订单的不能动
+    await s.execute(
+        update(CardItem)
+        .where(CardItem.id == card_id, CardItem.order_pk == order_pk, CardItem.status == "locked")
+        .values(status="available", order_pk=None)
+    )
+
+
+async def _interrupted(order_pk: int, record: DeliveryRecord, status: str | None) -> bool:
+    """发货途中订单不再是「发货中」：不再继续发，也不改订单状态。"""
+    async with session_factory()() as s:
+        if record.card_item_id and not record.message_sent:
+            await _release_card(s, record.card_item_id, order_pk)  # 买家还没收到：卡密退回库存
+        record.error = f"订单已变为「{status}」，停止发货"
+        s.add(record)
+        await s.commit()
+        order = await s.get(Order, order_pk)
+        account_id, order_id = order.account_id, order.order_id
+    logger.info("订单 {} 在发货过程中变为 {}，停止发货", order_id, status)
+    if record.message_sent:
+        await _notify_owner(
+            account_id,
+            NotifyEvents.DELIVERY_FAILED,
+            f"⚠️ 订单 {order_id} 发货期间状态有变",
+            f"发货内容已经发给买家，但订单随后变为「{status}」，没有继续确认发货，请人工核对。",
+        )
+    return False
+
+
 async def _fail(
     order_pk: int, error: str, record: DeliveryRecord, *, release_card: int | None, manual: bool = False
 ) -> bool:
     async with session_factory()() as s:
         order = await s.get(Order, order_pk)
         if release_card:
-            await s.execute(
-                update(CardItem).where(CardItem.id == release_card).values(status="available", order_pk=None)
-            )
+            await _release_card(s, release_card, order_pk)
         record.error = error[:500]
         s.add(record)
         await transition(s, order, OrderState.DELIVER_FAILED, reason=error[:500])
