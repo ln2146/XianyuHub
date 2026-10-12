@@ -36,7 +36,8 @@ import {
   type TaskOut,
   type UserMark,
 } from '@/api/buyer'
-import { notifyError } from '@/api/http'
+import { errorMessage, notifyError } from '@/api/http'
+import { buildQuickSearch } from '@/utils/quickSearch'
 import EChart from '@/components/EChart.vue'
 import ItemCard, { type CardItem, type CardMenuItem } from '@/components/ItemCard.vue'
 import ItemDrawer, { type DrawerItem } from '@/components/ItemDrawer.vue'
@@ -179,6 +180,7 @@ const dialog = reactive({
 })
 const quickKw = ref('')
 const quickLoading = ref(false)
+const quickError = ref('')
 
 function openCreate(preset: Partial<TaskIn> | null = null, nl = '') {
   Object.assign(dialog, { open: true, task: null, preset, nl })
@@ -187,61 +189,15 @@ function openEdit(t: TaskOut) {
   Object.assign(dialog, { open: true, task: t, preset: null, nl: '' })
 }
 
-/** 像一句完整需求（带价格、条件、语气词）而不是几个关键词 */
-function looksLikeSentence(text: string) {
-  if (text.length >= 20) return true
-  return text.length >= 8 && /[，。,；;！!？?]|想买|想要|求|预算|以内|以下|左右|不要|最好|电池|成色/.test(text)
-}
-
 async function quickCreate() {
   const text = quickKw.value.trim()
   if (!text) return openCreate()
   if (quickLoading.value) return
 
   quickLoading.value = true
+  quickError.value = ''
   try {
-    let taskData: TaskIn
-    if (looksLikeSentence(text)) {
-      try {
-        const d = await generateTask(text)
-        taskData = {
-          ...emptyTask(),
-          name: (d.name || text).slice(0, 32),
-          keywords: d.keywords?.length ? d.keywords.slice(0, 8) : [text.slice(0, 32)],
-          min_price: d.min_price ?? null,
-          max_price: d.max_price ?? null,
-          province: d.province ?? null,
-          city: d.city ?? null,
-          publish_days: d.publish_days ?? null,
-          personal_only: !!d.personal_only,
-          rules: {
-            ...emptyRules(),
-            include_all: d.rules?.include_all || [],
-            exclude: d.rules?.exclude || [],
-          },
-          criteria: d.criteria || '',
-          decision_mode: 'ai',
-          enabled: false,
-        }
-      } catch {
-        const keywords = text.split(/[,，、;；\s]+/).map((k) => k.trim()).filter(Boolean).slice(0, 8)
-        taskData = {
-          ...emptyTask(),
-          name: text.slice(0, 32),
-          keywords: keywords.length ? keywords : [text.slice(0, 32)],
-          criteria: text,
-          enabled: false,
-        }
-      }
-    } else {
-      const keywords = text.split(/[,，、;；]+/).map((k) => k.trim()).filter(Boolean).slice(0, 8)
-      taskData = {
-        ...emptyTask(),
-        name: (keywords[0] || text).slice(0, 32),
-        keywords: keywords.length ? keywords : [text.slice(0, 32)],
-        enabled: false,
-      }
-    }
+    const taskData = await buildQuickSearch(text, generateTask)
 
     const created = await createTask(taskData)
     quickKw.value = ''
@@ -250,6 +206,7 @@ async function quickCreate() {
     selectTask(created.id)
     await run(created)
   } catch (err) {
+    quickError.value = errorMessage(err)
     notifyError(err, '创建搜索任务失败')
   } finally {
     quickLoading.value = false
@@ -567,6 +524,11 @@ onBeforeUnmount(stopTimer)
         持续盯货
       </el-button>
     </div>
+
+    <el-alert v-if="quickError" type="error" show-icon :closable="false" :title="quickError">
+      本次未继续搜索，原需求已保留。请修改需求后重新点击「搜一次」，或手动填写搜索条件。
+      <el-button link type="primary" @click="openCreate({ name: quickKw.trim().slice(0, 32), criteria: quickKw.trim(), enabled: false })">手动填写条件</el-button>
+    </el-alert>
 
     <div class="layout">
       <!-- 左栏：我的搜索 -->
