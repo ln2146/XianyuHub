@@ -4,6 +4,7 @@ import io
 
 import httpx
 import jwt
+import pytest
 import respx
 
 from app.core.config import get_settings
@@ -181,3 +182,45 @@ def test_any_non_dev_app_env_counts_as_production():
         assert Settings(app_env=env).is_production, env
     for env in ("development", "dev", "Local", "test"):
         assert not Settings(app_env=env).is_production, env
+
+
+async def _two_accounts(admin_client):
+    """管理员名下账号 1，成员 kefu 名下账号 2；返回成员的请求头。"""
+    h = await _member_headers(admin_client)
+    async with session_factory()() as s:
+        s.add_all([XyAccount(owner_id=1, unb="1", device_id="d1"), XyAccount(owner_id=2, unb="2", device_id="d2")])
+        await s.commit()
+    return h
+
+
+async def test_member_cannot_move_draft_or_task_to_others_account(admin_client):
+    h = await _two_accounts(admin_client)
+    draft = {"account_id": 2, "title": "t", "desc": "d", "image_ids": ["x"], "price": 1}
+    created = await admin_client.post("/api/v1/goods/drafts", json=draft, headers=h)
+    assert created.status_code == 201
+    r = await admin_client.put(
+        f"/api/v1/goods/drafts/{created.json()['id']}", json={**draft, "account_id": 1}, headers=h
+    )
+    assert r.status_code == 404
+    task = {"name": "t", "keywords": ["a"], "account_id": 1}
+    assert (await admin_client.post("/api/v1/buyer/tasks", json=task, headers=h)).status_code == 404
+    own = await admin_client.post("/api/v1/buyer/tasks", json={**task, "account_id": 2}, headers=h)
+    assert own.status_code == 201
+    r = await admin_client.put(f"/api/v1/buyer/tasks/{own.json()['id']}", json=task, headers=h)
+    assert r.status_code == 404
+
+
+async def test_scheduled_draft_is_not_published_without_creator_access(admin_client):
+    from app.domains.goods import service as goods_service
+    from app.domains.goods.models import DraftStatus, PublishDraftRecord
+
+    await _two_accounts(admin_client)
+    async with session_factory()() as s:
+        d = PublishDraftRecord(account_id=1, title="t", desc="d", image_ids=["x"], price=1, created_by=2)
+        s.add(d)
+        await s.commit()
+        draft_id = d.id
+    with pytest.raises(ValueError, match="无权"):
+        await goods_service.publish_draft(draft_id)
+    async with session_factory()() as s:
+        assert (await s.get(PublishDraftRecord, draft_id)).status == DraftStatus.FAILED

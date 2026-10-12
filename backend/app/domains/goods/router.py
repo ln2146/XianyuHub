@@ -470,6 +470,8 @@ async def update_draft(draft_id: int, body: DraftIn, user: CurrentUser, session:
     if d is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "草稿不存在")
     await get_account_for(session, user, d.account_id)
+    if body.account_id != d.account_id:
+        await get_account_for(session, user, body.account_id)  # 换发布账号：新账号也必须有权限
     if d.status in (DraftStatus.PUBLISHING, DraftStatus.PUBLISHED):
         raise HTTPException(status.HTTP_409_CONFLICT, "已发布的草稿不能修改")
     for k, v in body.model_dump().items():

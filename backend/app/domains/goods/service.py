@@ -245,6 +245,11 @@ async def publish_draft(draft_id: int, user_id: int | None = None) -> str:
             raise ValueError("草稿不存在")
         if claimed.rowcount != 1:
             raise ValueError("草稿已发布或正在发布")
+        if not await _creator_can_use(s, d):
+            # 定时发布不经过接口鉴权：再确认一次创建者仍有该账号的权限（授权可能已被收回）
+            d.status, d.error = DraftStatus.FAILED, "草稿创建者已无权使用该闲鱼账号"
+            await s.commit()
+            raise ValueError(d.error)
         snapshot = {
             c: getattr(d, c)
             for c in (
@@ -346,6 +351,19 @@ async def publish_draft(draft_id: int, user_id: int | None = None) -> str:
     )
     await bus.publish(Topics.ITEM_PUBLISHED, {"account_id": account_id, "item_id": item_id})
     return item_id
+
+
+async def _creator_can_use(s, d: PublishDraftRecord) -> bool:  # noqa: ANN001
+    from app.domains.account.service import accessible_account_ids
+    from app.domains.system.models import User
+
+    if d.created_by is None:
+        return True
+    user = await s.get(User, d.created_by)
+    if user is None or not user.is_active:
+        return False
+    allowed = await accessible_account_ids(s, user)
+    return allowed is None or d.account_id in allowed
 
 
 async def publish_due_drafts() -> None:

@@ -629,6 +629,8 @@ async def update_rule(rule_id: int, body: RuleIn, user: CurrentUser, session: Se
     rule = await session.get(ReplyRule, rule_id)
     if rule is None or rule.owner_id != user.id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "规则不存在")
+    if body.account_id is not None and body.account_id != rule.account_id:
+        await get_account_for(session, user, body.account_id)
     for k, v in body.model_dump().items():
         setattr(rule, k, v)
     await session.commit()

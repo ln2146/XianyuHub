@@ -177,6 +177,8 @@ async def list_tasks(user: CurrentUser, session: SessionDep) -> list[TaskOut]:
 
 @router.post("/tasks", response_model=TaskOut, status_code=201)
 async def create_task(body: TaskIn, user: CurrentUser, session: SessionDep) -> TaskOut:
+    if body.account_id is not None:
+        await get_account_for(session, user, body.account_id)
     data = body.model_dump()
     data["rules"] = body.rules.model_dump()
     task = MonitorTask(owner_id=user.id, **data)
@@ -218,6 +220,8 @@ async def get_task(task_id: int, user: CurrentUser, session: SessionDep) -> Task
 @router.put("/tasks/{task_id}", response_model=TaskOut)
 async def update_task(task_id: int, body: TaskIn, user: CurrentUser, session: SessionDep) -> TaskOut:
     task = await _own_task(session, user, task_id)
+    if body.account_id is not None and body.account_id != task.account_id:
+        await get_account_for(session, user, body.account_id)
     for k, v in body.model_dump().items():
         setattr(task, k, v)
     task.rules = body.rules.model_dump()
