@@ -9,12 +9,14 @@ import {
   Delete,
   Document,
   Goods,
+  Lock,
   MagicStick,
   Plus,
   Refresh,
   Search,
   Tickets,
   Upload,
+  User,
   WarningFilled,
 } from '@element-plus/icons-vue'
 import {
@@ -31,11 +33,12 @@ import {
   type RuleOut,
 } from '@/api/message'
 import { updateAccount, type Account } from '@/api/account'
+import { listItems, updateItem, type MyItem } from '@/api/goods'
 import { useAccountsStore } from '@/stores/accounts'
 import { useMobile } from '@/composables/useMobile'
 import StatusTag from '@/components/StatusTag.vue'
 import ImageUploader from '@/components/ImageUploader.vue'
-import { accountStatusMap } from '@/utils/format'
+import { accountStatusMap, fmtMoney, goodsStatusMap } from '@/utils/format'
 
 const route = useRoute()
 const router = useRouter()
@@ -80,13 +83,6 @@ watch(
   { immediate: true },
 )
 
-function goToGoodsKnowledge() {
-  router.push({
-    path: '/goods/items',
-    query: selectedAccountId.value ? { account_id: String(selectedAccountId.value) } : {},
-  })
-}
-
 async function toggleAccountAutoReply(a: Account, val: boolean) {
   busyAccount[`ar-${a.id}`] = true
   try {
@@ -102,8 +98,8 @@ async function toggleAccountAutoReply(a: Account, val: boolean) {
 
 const aiModeOptions = [
   { label: '关闭', value: 'off' },
-  { label: '建议', value: 'suggest' },
-  { label: '自动发送', value: 'auto' },
+  { label: '建议模式', value: 'suggest' },
+  { label: '全自动回复', value: 'auto' },
 ]
 
 async function setAiMode(a: Account, mode: 'off' | 'suggest' | 'auto') {
@@ -116,8 +112,8 @@ async function setAiMode(a: Account, mode: 'off' | 'suggest' | 'auto') {
       mode === 'off'
         ? 'AI 回复已关闭，只按关键词规则回复'
         : mode === 'suggest'
-          ? 'AI 会在收件箱给出回复建议，由你确认后发送'
-          : 'AI 回复已开启：关键词没命中时由 AI 自动回复',
+          ? 'AI 建议模式已开启：将在收件箱给出回复建议，由你确认发送'
+          : 'AI 全自动回复已开启：关键词未命中时自动应答',
     )
   } catch {
     /* 拦截器已处理 */
@@ -353,20 +349,26 @@ watch(
 const instrDirty = computed(() => instructions.value !== (currentAccount.value?.settings.ai_instructions || ''))
 
 const promptChips = [
-  '学生党自用出闲置，周末发货',
-  '说话亲切自然，可以称呼“宝”，不机械生硬',
-  '统一发中通，偏远地区（新疆西藏）不包邮',
-  '电子资料拍下后自动发货，发出后不支持退换',
-  '支持验货宝，所见即所得',
-  '不接大刀，诚心要可小幅优惠',
+  { label: '统一发中通', text: '统一发中通快递，偏远地区（新疆/西藏等）不包邮' },
+  { label: '17点前当天发', text: '每天下午 17:00 前拍下当天发出，节假日除外' },
+  { label: '谢绝大刀', text: '商品均实拍底价，不接大刀，诚心要可小幅优惠' },
+  { label: '亲切叫“宝”', text: '说话亲切自然，可以适当称呼“宝”或“朋友”，不机械生硬' },
+  { label: '支持验货宝', text: '支持验货宝，所见即所得，非假货不退不换' },
+  { label: '自用转让', text: '个人自用闲置转让，非职业卖家，成色如实实拍' },
+  { label: '拍下自动发货', text: '电子卡券/资料拍下后系统自动发货，发出后不支持退换' },
+  { label: '二手不退换', text: '二手闲置物品不支持无理由退换货，拍前请确认好成色' },
 ]
 
-function appendPromptChip(chip: string) {
+function appendPromptChip(chip: { label: string; text: string }) {
   const current = instructions.value.trim()
+  if (current.includes(chip.text)) {
+    ElMessage.info(`人设中已包含「${chip.label}」`)
+    return
+  }
   if (!current) {
-    instructions.value = `· ${chip}`
+    instructions.value = `· ${chip.text}`
   } else {
-    instructions.value = `${current}\n· ${chip}`
+    instructions.value = `${current}\n· ${chip.text}`
   }
 }
 
@@ -424,7 +426,7 @@ async function saveGuard() {
 // 资料文件
 const docs = ref<KnowledgeDoc[]>([])
 const docsLoading = ref(false)
-const uploadScope = ref<'all' | 'account'>('all')
+const uploadScope = ref<'all' | 'account'>('account')
 const ACCEPT = '.txt,.md,.csv,.pdf,.docx'
 
 async function loadDocs() {
@@ -436,12 +438,77 @@ async function loadDocs() {
   }
 }
 
-const visibleDocs = computed(() =>
-  docs.value.filter((d) => d.account_id === null || d.account_id === selectedAccountId.value),
+// 店铺资料：所有账号通用 + 当前账号（不含某件商品专属的资料）
+const shopDocs = computed(() =>
+  docs.value.filter((d) => !d.item_id && (d.account_id === null || d.account_id === currentAccount.value?.id)),
 )
 
-async function upload(opts: UploadRequestOptions) {
-  const d = await uploadKnowledgeDoc(opts.file, uploadScope.value === 'account' ? (selectedAccountId.value ?? null) : null)
+async function uploadShop(opts: UploadRequestOptions) {
+  const accountId = uploadScope.value === 'account' ? (currentAccount.value?.id ?? null) : null
+  const d = await uploadKnowledgeDoc(opts.file, accountId)
+  docs.value.unshift(d)
+  ElMessage.success(`已解析「${d.name}」，共 ${d.chars.toLocaleString()} 字`)
+}
+
+// ---------------------------------------------------------------- 商品知识库（当前账号的商品）
+const accountItems = ref<MyItem[]>([])
+const itemsLoading = ref(false)
+const itemQuery = ref('')
+
+async function loadItems() {
+  const id = currentAccount.value?.id
+  if (!id) return
+  itemsLoading.value = true
+  try {
+    const list = await listItems({ account_id: id })
+    if (currentAccount.value?.id === id) accountItems.value = list
+  } catch {
+    /* 拦截器已提示 */
+  } finally {
+    itemsLoading.value = false
+  }
+}
+watch(() => currentAccount.value?.id, loadItems, { immediate: true })
+
+// 在售的排前面，其次已补充过的
+const filteredItems = computed(() => {
+  const q = itemQuery.value.trim().toLowerCase()
+  return accountItems.value
+    .filter((it) => !q || it.title.toLowerCase().includes(q))
+    .sort((a, b) => Number(b.status === 'on_sale') - Number(a.status === 'on_sale'))
+})
+
+function docsOfItem(it: MyItem) {
+  return docs.value.filter((d) => d.item_id === it.item_id && d.account_id === it.account_id)
+}
+const itemDocCount = (it: MyItem) => docsOfItem(it).length
+
+const kb = reactive({ open: false, item: null as MyItem | null, text: '', saving: false })
+const kbDocs = computed(() => (kb.item ? docsOfItem(kb.item) : []))
+const kbDirty = computed(() => !!kb.item && kb.text !== (kb.item.knowledge || ''))
+
+function openKb(it: MyItem) {
+  Object.assign(kb, { open: true, item: it, text: it.knowledge || '' })
+}
+
+async function saveKb() {
+  const it = kb.item
+  if (!it) return
+  kb.saving = true
+  try {
+    const updated = await updateItem(it.id, { knowledge: kb.text.trim() })
+    Object.assign(it, updated)
+    kb.text = it.knowledge || ''
+    ElMessage.success('已保存，AI 回答这件商品的咨询时会参考')
+  } finally {
+    kb.saving = false
+  }
+}
+
+async function uploadItemDoc(opts: UploadRequestOptions) {
+  const it = kb.item
+  if (!it) return
+  const d = await uploadKnowledgeDoc(opts.file, it.account_id, it.item_id)
   docs.value.unshift(d)
   ElMessage.success(`已解析「${d.name}」，共 ${d.chars.toLocaleString()} 字`)
 }
@@ -462,7 +529,7 @@ async function removeDoc(d: KnowledgeDoc) {
 
 // ---------------------------------------------------------------- 综合刷新
 async function refreshAll() {
-  await Promise.all([loadRules(), loadDocs(), accounts.load().catch(() => undefined)])
+  await Promise.all([loadRules(), loadDocs(), loadItems(), accounts.load().catch(() => undefined)])
   ElMessage.success('已刷新最新配置')
 }
 
@@ -486,9 +553,6 @@ onMounted(() => {
               <span>{{ currentAccount?.settings?.auto_reply ? '自动回复运行中' : '自动回复已暂停' }}</span>
             </div>
           </div>
-          <p class="page-subtitle">
-            毫秒级精准命中关键词 · 未命中由 AI 结合【宝贝专属知识】与【店铺人设】智能应答
-          </p>
         </div>
 
         <div class="header-right">
@@ -733,46 +797,63 @@ onMounted(() => {
           </template>
 
           <div class="tab-body">
-            <!-- AI 运行模式紧凑切换栏 -->
-            <div class="ai-mode-strip">
-              <div class="strip-left">
-                <span class="mode-strip-label">AI 回复模式：</span>
+            <!-- AI 回复模式控制条 -->
+            <div class="ai-mode-hero-card">
+              <div class="mode-hero-left">
+                <div class="mode-title-wrap">
+                  <span class="mode-hero-icon"><el-icon><MagicStick /></el-icon></span>
+                  <span class="mode-hero-title">AI 回复模式</span>
+                </div>
                 <el-segmented
                   :model-value="currentAccount?.settings?.ai_mode ?? 'off'"
                   :options="aiModeOptions"
                   size="default"
+                  class="ai-segmented-bar"
                   :disabled="!currentAccount || busyAccount[`ai-${currentAccount.id}`]"
                   @change="(v: string | number | boolean) => currentAccount && setAiMode(currentAccount, v as 'off' | 'suggest' | 'auto')"
                 />
               </div>
-              <div class="strip-right-desc">
+              <div class="mode-hero-status">
                 <template v-if="!currentAccount?.settings?.auto_reply && currentAccount?.settings?.ai_mode === 'auto'">
-                  <span class="desc-warning">
-                    <el-icon><WarningFilled /></el-icon> 总开关已关闭，全自动需开启总开关
-                  </span>
-                  <el-button link type="primary" size="small" @click="currentAccount && toggleAccountAutoReply(currentAccount, true)">开启总开关</el-button>
+                  <div class="status-chip warning">
+                    <el-icon><WarningFilled /></el-icon>
+                    <span>总开关已关闭，AI 不会自动发送</span>
+                    <el-button link type="primary" size="small" @click="currentAccount && toggleAccountAutoReply(currentAccount, true)">立即开启</el-button>
+                  </div>
                 </template>
                 <template v-else-if="currentAccount?.settings?.ai_mode === 'auto'">
-                  <span class="status-tag-lead text-success">全自动智能托管</span> · 关键词未命中时，AI 自动检索【对应宝贝专属知识】并结合【店铺人设】直接回复买家
+                  <div class="status-chip success">
+                    <span class="status-chip-dot success" />
+                    <span>全自动托管：未命中规则时，自动检索商品专属知识应答</span>
+                  </div>
                 </template>
                 <template v-else-if="currentAccount?.settings?.ai_mode === 'suggest'">
-                  <span class="status-tag-lead text-primary">人工把关模式</span> · 收到咨询后在收件箱生成建议回复卡片，由人工一键确认后再发送
+                  <div class="status-chip info">
+                    <span class="status-chip-dot info" />
+                    <span>建议模式：在消息收件箱内实时生成建议，由你确认发送</span>
+                  </div>
                 </template>
                 <template v-else>
-                  <span class="status-tag-lead text-muted">AI 回复已关闭</span> · 仅按精准规则回复，未命中的消息不调用 AI 大模型
+                  <div class="status-chip muted">
+                    <span class="status-chip-dot muted" />
+                    <span>已关闭 AI 回复：仅通过关键词规则精准应答</span>
+                  </div>
                 </template>
               </div>
             </div>
 
-            <!-- 左右分栏工作台 (左：人设发货；右：双核知识库) -->
-            <div class="ai-studio-grid">
-              <!-- 左侧 54%：店铺人设与全局回复习惯 -->
-              <div class="studio-col-left">
-                <div class="ai-column-panel persona-panel">
-                  <div class="panel-header">
-                    <div class="panel-title">
-                      <span class="title-text">店铺人设与发货习惯</span>
-                      <span class="title-desc">定义 AI 的身份、语气、快递与截单时间（关键词未命中时生效）</span>
+            <!-- 主工作台：左右双栏平衡布局 -->
+            <div class="ai-workbench">
+              <!-- 左栏：店铺人设与语言风格 -->
+              <div class="workbench-col-persona">
+                <div class="workbench-card persona-card">
+                  <div class="card-header">
+                    <div class="header-title-box">
+                      <span class="card-icon persona"><el-icon><User /></el-icon></span>
+                      <div class="title-meta">
+                        <h3 class="card-title">店铺人设与发货习惯</h3>
+                        <span class="card-counter">{{ instructions.length }} / {{ MAX_INSTRUCTIONS }}</span>
+                      </div>
                     </div>
                     <el-button
                       type="primary"
@@ -785,135 +866,172 @@ onMounted(() => {
                     </el-button>
                   </div>
 
-                  <!-- 快捷人设词签 -->
-                  <div class="prompt-chips-bar">
-                    <span class="chips-title">参考词：</span>
-                    <div class="chips-list">
-                      <span
-                        v-for="chip in promptChips"
-                        :key="chip"
-                        class="prompt-chip"
-                        @click="appendPromptChip(chip)"
-                      >
-                        + {{ chip }}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div class="textarea-wrap">
+                  <div class="persona-editor-box">
                     <el-input
                       v-model="instructions"
                       type="textarea"
-                      :rows="8"
+                      :rows="11"
                       :maxlength="MAX_INSTRUCTIONS"
-                      show-word-limit
-                      placeholder="用自然的语言告诉 AI 你的身份、店铺规矩和回复习惯，例如：&#10;· 我是个人自用转让，商品均实拍，谢绝恶意砍价&#10;· 回复亲切自然，可以适当称呼“宝”或“朋友”&#10;· 统一发中通快递，每天下午 5 点前拍下当天发出&#10;· 电子卡券拍下系统自动发货，发出后不支持退换"
+                      resize="none"
+                      class="persona-textarea"
+                      placeholder="用自然的语言设定 AI 的人设身份、发货安排及服务态度。&#10;&#10;例如：&#10;· 个人自用转让，商品均实拍，谢绝大刀&#10;· 语气亲切自然，可以适当称呼“宝”或“朋友”&#10;· 统一发中通快递，每天下午 17:00 前拍下当天发出&#10;· 电子卡券拍下系统自动发货，发出后不支持退换"
                     />
                   </div>
 
-                  <div class="panel-foot-notice">
-                    <el-icon><WarningFilled /></el-icon>
-                    <span>保障底线：商品专属底价与违规拦截始终最高优先，人设中写了也不会突破。</span>
+                  <div class="prompt-chips-section">
+                    <div class="chips-label">常用人设快捷词（点击快速追加）</div>
+                    <div class="chips-container">
+                      <button
+                        v-for="chip in promptChips"
+                        :key="chip.label"
+                        type="button"
+                        class="modern-chip"
+                        :title="chip.text"
+                        @click="appendPromptChip(chip)"
+                      >
+                        <span class="chip-plus">+</span>
+                        <span class="chip-text">{{ chip.label }}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="card-safe-guard">
+                    <el-icon class="guard-icon"><Lock /></el-icon>
+                    <span>底价保护与违规敏感词过滤享最高优先级，人设不会逾越安全底线。</span>
                   </div>
                 </div>
               </div>
 
-              <!-- 右侧 46%：双核知识库体系 -->
-              <div class="studio-col-right">
-                <!-- 卡片 1: 核心生效层 · 商品专属知识库 (针对具体宝贝) -->
-                <div class="arch-card item-kb-card">
-                  <div class="arch-card-header">
-                    <div class="arch-tag-row">
-                      <el-tag type="success" size="small" effect="dark" class="arch-badge">核心生效层</el-tag>
-                      <span class="arch-subtag">针对每个在售宝贝 · 自动精准命中</span>
+              <!-- 右栏：双支柱知识库体系（全店资料 + 宝贝专属一物一况） -->
+              <div class="workbench-col-knowledge">
+                <!-- 支柱 1: 全店通用资料库 -->
+                <div class="workbench-card docs-card">
+                  <div class="card-header">
+                    <div class="header-title-box">
+                      <span class="card-icon docs"><el-icon><Document /></el-icon></span>
+                      <div class="title-meta">
+                        <h3 class="card-title">全店通用资料库</h3>
+                        <span class="card-tag">{{ shopDocs.length }} 份</span>
+                      </div>
                     </div>
-                    <div class="arch-title">
-                      <el-icon class="arch-title-icon"><Goods /></el-icon>
-                      <span>商品专属知识库 (一物一况)</span>
-                    </div>
-                  </div>
-
-                  <div class="arch-body">
-                    <div class="arch-concept-box">
-                      <p class="concept-point">
-                        <strong>🎯 一物一况专属应答：</strong>成色划痕、电池健康度、是否在保、正品发票、随附配件等。
-                      </p>
-                      <p class="concept-point">
-                        <strong>🛡️ 独立底价保护：</strong>商品中心可为每个宝贝单独设底价，AI 绝不越界。
-                      </p>
-                    </div>
-
-                    <div class="arch-explain-text">
-                      买家咨询特定宝贝时，AI <b>自动优先检索该商品的专属知识</b>，彻底杜绝多宝贝串款幻觉。
+                    <div class="header-actions">
+                      <el-radio-group v-model="uploadScope" size="small" class="scope-radio-group">
+                        <el-radio-button value="account">本账号</el-radio-button>
+                        <el-radio-button value="all">全店通用</el-radio-button>
+                      </el-radio-group>
+                      <el-upload :show-file-list="false" :accept="ACCEPT" :http-request="uploadShop" multiple>
+                        <el-button size="small" :icon="Upload" class="doc-upload-btn">上传资料</el-button>
+                      </el-upload>
                     </div>
                   </div>
 
-                  <div class="arch-footer">
-                    <el-button type="primary" :icon="Goods" class="w-full" @click="goToGoodsKnowledge">
-                      前往【商品管理】维护宝贝专属知识
-                    </el-button>
-                    <div class="arch-footer-tip">
-                      在商品列表中点击任一商品的「知识库」即可补充最高 8000 字专属说明
+                  <div v-loading="docsLoading" class="docs-scroll-area">
+                    <div v-if="shopDocs.length" class="doc-cards-list">
+                      <div v-for="d in shopDocs" :key="d.id" class="doc-item-row" :class="{ disabled: !d.enabled }">
+                        <div class="doc-badge-icon">
+                          <el-icon><Document /></el-icon>
+                        </div>
+                        <div class="doc-meta-info">
+                          <div class="doc-filename ellipsis" :title="d.name">{{ d.name }}</div>
+                          <div class="doc-sub-pills">
+                            <span class="doc-char-pill">{{ d.chars.toLocaleString() }} 字</span>
+                            <span class="doc-scope-pill">{{ d.account_id === null ? '全店通用' : '本账号专属' }}</span>
+                          </div>
+                        </div>
+                        <div class="doc-actions">
+                          <el-switch
+                            :model-value="d.enabled"
+                            size="small"
+                            inline-prompt
+                            active-text="开"
+                            inactive-text="关"
+                            @change="(v: string | number | boolean) => toggleDoc(d, !!v)"
+                          />
+                          <el-button link :icon="Delete" class="doc-del-btn" aria-label="删除" @click="removeDoc(d)" />
+                        </div>
+                      </div>
+                    </div>
+                    <div v-else class="empty-docs-box">
+                      <el-icon class="empty-icon"><Document /></el-icon>
+                      <span class="empty-title">暂未上传通用资料</span>
+                      <span class="empty-hint">支持上传售后政策、常见问题或价目表（.txt / .md / .pdf / .docx）</span>
                     </div>
                   </div>
                 </div>
 
-                <!-- 卡片 2: 全局辅助层 · 全店通用补充说明书 -->
-                <div class="arch-card global-doc-card">
-                  <div class="arch-card-header">
-                    <div class="arch-tag-row">
-                      <el-tag type="info" size="small" effect="plain" class="arch-badge">全局补充层</el-tag>
-                      <span class="arch-subtag">全店/账号共享 · 兜底辅助 (可选)</span>
+                <!-- 支柱 2: 宝贝专属知识库（一物一况） -->
+                <div class="workbench-card item-kb-card">
+                  <div class="card-header">
+                    <div class="header-title-box">
+                      <span class="card-icon goods"><el-icon><Goods /></el-icon></span>
+                      <div class="title-meta">
+                        <h3 class="card-title">宝贝专属知识库</h3>
+                        <span class="card-tag">一物一况</span>
+                      </div>
                     </div>
-                    <div class="arch-title">
-                      <el-icon class="arch-title-icon"><Document /></el-icon>
-                      <span>全店通用补充说明书</span>
+                    <div class="header-actions">
+                      <el-input
+                        v-model="itemQuery"
+                        size="small"
+                        clearable
+                        :prefix-icon="Search"
+                        placeholder="搜索在售宝贝..."
+                        class="item-search-input"
+                      />
                     </div>
                   </div>
 
-                  <div class="arch-body">
-                    <div class="doc-upload-strip">
-                      <div class="scope-picker">
-                        <span class="scope-label">归属：</span>
-                        <el-radio-group v-model="uploadScope" size="small">
-                          <el-radio-button value="all">通用</el-radio-button>
-                          <el-radio-button value="account">当前</el-radio-button>
-                        </el-radio-group>
-                      </div>
-                      <el-upload :show-file-list="false" :accept="ACCEPT" :http-request="upload" multiple>
-                        <el-button size="small" type="primary" plain :icon="Upload">上传文档</el-button>
-                      </el-upload>
-                    </div>
-
-                    <div v-loading="docsLoading" class="docs-mini-list-wrap">
-                      <div v-if="!visibleDocs.length" class="empty-docs-compact">
-                        <el-icon class="empty-docs-icon"><Document /></el-icon>
-                        <div class="empty-text">暂无全局通用文档（非必须，宝贝知识通常已足够）</div>
-                      </div>
-
-                      <div v-else class="docs-mini-list">
-                        <div v-for="d in visibleDocs" :key="d.id" class="doc-card-compact" :class="{ disabled: !d.enabled }">
-                          <el-icon class="doc-file-icon"><Document /></el-icon>
-                          <div class="doc-details">
-                            <div class="doc-title-row">
-                              <span class="doc-name" :title="d.name">{{ d.name }}</span>
-                              <el-tag size="small" :type="d.account_id === null ? 'info' : 'primary'" effect="plain">
-                                {{ d.account_id === null ? '通用' : '当前' }}
-                              </el-tag>
-                            </div>
-                            <div class="doc-sub">{{ d.chars.toLocaleString() }} 字 · {{ d.preview || '已建立索引' }}</div>
-                          </div>
-
-                          <div class="doc-actions">
-                            <el-switch
-                              :model-value="d.enabled"
-                              size="small"
-                              @change="(v: string | number | boolean) => toggleDoc(d, !!v)"
-                            />
-                            <el-button link type="danger" :icon="Delete" @click="removeDoc(d)" />
+                  <div v-loading="itemsLoading" class="item-kb-scroll-area">
+                    <div v-if="filteredItems.length" class="item-kb-list">
+                      <div
+                        v-for="it in filteredItems"
+                        :key="it.id"
+                        class="item-kb-row"
+                        role="button"
+                        tabindex="0"
+                        @click="openKb(it)"
+                        @keyup.enter="openKb(it)"
+                      >
+                        <el-image class="item-kb-thumb" :src="it.image_url" fit="cover" referrerpolicy="no-referrer" lazy>
+                          <template #error>
+                            <span class="thumb-fallback"><el-icon><Goods /></el-icon></span>
+                          </template>
+                        </el-image>
+                        <div class="item-kb-info">
+                          <div class="item-kb-title ellipsis" :title="it.title">{{ it.title }}</div>
+                          <div class="item-kb-meta">
+                            <span class="item-price">{{ fmtMoney(it.price) }}</span>
+                            <span v-if="it.status !== 'on_sale'" class="item-status-tag">
+                              {{ goodsStatusMap[it.status]?.label || it.status }}
+                            </span>
                           </div>
                         </div>
+                        <div class="item-kb-badges">
+                          <span v-if="it.knowledge" class="status-badge has-kb">已设说明 · {{ it.knowledge.length }}字</span>
+                          <span v-if="itemDocCount(it)" class="status-badge has-doc">{{ itemDocCount(it) }} 份资料</span>
+                          <span v-if="!it.knowledge && !itemDocCount(it)" class="status-badge empty">未补充</span>
+                        </div>
+                        <el-button size="small" type="primary" plain class="item-edit-btn" @click.stop="openKb(it)">
+                          配置知识
+                        </el-button>
                       </div>
+                    </div>
+                    <div v-else-if="!itemsLoading" class="empty-items-box">
+                      <template v-if="itemQuery">
+                        <span class="empty-title">未找到与“{{ itemQuery }}”相关的宝贝</span>
+                      </template>
+                      <template v-else>
+                        <el-icon class="empty-icon"><Goods /></el-icon>
+                        <span class="empty-title">当前账号尚未同步商品</span>
+                        <el-button
+                          link
+                          type="primary"
+                          size="small"
+                          @click="router.push({ path: '/goods/items', query: currentAccount ? { account_id: String(currentAccount.id) } : {} })"
+                        >
+                          前往商品管理同步商品
+                        </el-button>
+                      </template>
                     </div>
                   </div>
                 </div>
@@ -1090,6 +1208,81 @@ onMounted(() => {
         <el-button type="primary" :loading="edit.saving" @click="saveRule">保存规则</el-button>
       </template>
     </el-dialog>
+
+    <!-- 单件商品的知识库抽屉 -->
+    <el-drawer v-model="kb.open" :size="isMobile ? '100%' : '560px'" title="宝贝专属知识（一物一况）" class="kb-drawer">
+      <template v-if="kb.item">
+        <div class="drawer-goods-hero">
+          <el-image class="drawer-goods-thumb" :src="kb.item.image_url" fit="cover" referrerpolicy="no-referrer">
+            <template #error><span class="thumb-fallback"><el-icon><Goods /></el-icon></span></template>
+          </el-image>
+          <div class="drawer-goods-details">
+            <div class="drawer-goods-title" :title="kb.item.title">{{ kb.item.title }}</div>
+            <div class="drawer-goods-meta">
+              <span class="drawer-price">{{ fmtMoney(kb.item.price) }}</span>
+              <span class="drawer-status-pill">{{ goodsStatusMap[kb.item.status]?.label || kb.item.status }}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="drawer-section">
+          <div class="drawer-section-head">
+            <div class="section-title-wrap">
+              <span class="section-title">成色与专属说明</span>
+              <span class="section-sub">成色细节、划痕瑕疵、电池健康度、随附配件等</span>
+            </div>
+            <span class="section-counter">{{ (kb.text || '').length }} / 8000</span>
+          </div>
+          <el-input
+            v-model="kb.text"
+            type="textarea"
+            :rows="9"
+            maxlength="8000"
+            resize="none"
+            class="drawer-textarea"
+            placeholder="填写这件宝贝的专属细节。例如：&#10;· 成色 95 新，屏幕无划痕，边框右上角有一处轻微磕碰实拍可见&#10;· 电池健康度 88%，全原无拆修，功能均正常&#10;· 带原装包装盒与充电线，无发票&#10;买家咨询时，AI 优先精准引用此处，杜绝胡编乱造。"
+          />
+        </div>
+
+        <div class="drawer-section">
+          <div class="drawer-section-head">
+            <div class="section-title-wrap">
+              <span class="section-title">专属资料附件</span>
+              <span class="section-sub">验机单、发票收据或官方说明书</span>
+            </div>
+            <el-upload :show-file-list="false" :accept="ACCEPT" :http-request="uploadItemDoc" multiple>
+              <el-button size="small" :icon="Upload">上传文档</el-button>
+            </el-upload>
+          </div>
+          <div class="drawer-doc-list">
+            <div v-for="d in kbDocs" :key="d.id" class="doc-item-row" :class="{ disabled: !d.enabled }">
+              <div class="doc-badge-icon">
+                <el-icon><Document /></el-icon>
+              </div>
+              <div class="doc-meta-info">
+                <div class="doc-filename ellipsis" :title="d.name">{{ d.name }}</div>
+                <div class="doc-sub-pills">
+                  <span class="doc-char-pill">{{ d.chars.toLocaleString() }} 字</span>
+                </div>
+              </div>
+              <div class="doc-actions">
+                <el-switch :model-value="d.enabled" size="small" @change="(v: string | number | boolean) => toggleDoc(d, !!v)" />
+                <el-button link :icon="Delete" class="doc-del-btn" aria-label="删除" @click="removeDoc(d)" />
+              </div>
+            </div>
+            <div v-if="!kbDocs.length" class="empty-drawer-docs">
+              支持 txt、md、csv、pdf、docx 文档，AI 将自动分析提取知识
+            </div>
+          </div>
+        </div>
+      </template>
+      <template #footer>
+        <div class="drawer-footer-row">
+          <el-button @click="kb.open = false">关闭</el-button>
+          <el-button type="primary" :loading="kb.saving" :disabled="!kbDirty" @click="saveKb">保存专属知识</el-button>
+        </div>
+      </template>
+    </el-drawer>
   </div>
 </template>
 
@@ -1168,11 +1361,6 @@ onMounted(() => {
   box-shadow: 0 0 0 3px rgba(30, 158, 106, 0.2);
 }
 
-.page-subtitle {
-  margin: 0;
-  font-size: 12px;
-  color: var(--xh-muted);
-}
 
 .header-right {
   display: flex;
@@ -1391,9 +1579,6 @@ onMounted(() => {
   flex-wrap: wrap;
 }
 
-.status-tag-lead {
-  font-weight: 600;
-}
 
 /* 工具条 */
 .table-toolbar {
@@ -1608,253 +1793,415 @@ onMounted(() => {
   margin-top: auto;
 }
 
-/* AI 左右分栏工作台 */
-.ai-studio-grid {
-  display: grid;
-  grid-template-columns: 54% 46%;
-  gap: 16px;
-  align-items: start;
-}
+/* ==========================================================================
+   AI 客服与知识库 (AI Customer Service & Dual Knowledge Studio)
+   ========================================================================== */
 
-@media (max-width: 992px) {
-  .ai-studio-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-.studio-col-left {
-  display: flex;
-  flex-direction: column;
-}
-
-.studio-col-right {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-/* 知识库卡片 */
-.arch-card {
-  background: #ffffff;
-  border: 1px solid var(--xh-border);
-  border-radius: var(--xh-radius-md);
-  padding: 14px 16px;
-  display: flex;
-  flex-direction: column;
-  transition: all 0.2s ease;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
-}
-
-.item-kb-card {
-  border-color: #bbf7d0;
-  background: linear-gradient(180deg, #f0fdf4 0%, #ffffff 65px);
-}
-
-.item-kb-card:hover {
-  box-shadow: 0 4px 12px rgba(22, 163, 74, 0.08);
-  border-color: #86efac;
-}
-
-.global-doc-card {
-  background: #ffffff;
-}
-
-.arch-card-header {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-bottom: 10px;
-  border-bottom: 1px solid var(--xh-border);
-  padding-bottom: 8px;
-}
-
-.arch-tag-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.arch-badge {
-  font-weight: 600;
-}
-
-.arch-subtag {
-  font-size: 11px;
-  color: var(--xh-muted);
-}
-
-.arch-title {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--xh-text);
-}
-
-.arch-title-icon {
-  font-size: 16px;
-  color: var(--xh-primary);
-}
-
-.global-doc-card .arch-title-icon {
-  color: #3b82f6;
-}
-
-.arch-body {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.arch-concept-box {
-  background: rgba(255, 255, 255, 0.9);
-  border: 1px dashed #86efac;
-  border-radius: var(--xh-radius-sm);
-  padding: 8px 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.concept-point {
-  margin: 0;
-  font-size: var(--xh-fs-xs);
-  color: var(--xh-text-2);
-  line-height: 1.45;
-}
-
-.concept-point strong {
-  color: var(--xh-text);
-}
-
-.arch-explain-text {
-  font-size: 11px;
-  color: var(--xh-muted);
-  line-height: 1.45;
-}
-
-.arch-footer {
-  margin-top: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.arch-footer-tip {
-  font-size: 11px;
-  color: var(--xh-muted);
-  text-align: center;
-}
-
-/* 全店文档卡片内容 */
-.doc-upload-strip {
+/* 顶部模式控制卡片 */
+.ai-mode-hero-card {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 16px;
+  padding: 12px 18px;
+  background: var(--xh-card);
+  border: 1px solid var(--xh-border);
+  border-radius: var(--xh-radius-md);
+  box-shadow: var(--xh-shadow-1);
+  margin-bottom: 16px;
   flex-wrap: wrap;
 }
 
-.scope-picker {
+.mode-hero-left {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 14px;
+  flex-wrap: wrap;
 }
 
-.scope-label {
-  font-size: 11px;
-  color: var(--xh-muted);
-}
-
-.docs-mini-list-wrap {
-  flex: 1;
-  min-height: 90px;
-  display: flex;
-  flex-direction: column;
-}
-
-.empty-docs-compact {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 14px 10px;
-  background: #f8fafc;
-  border: 1px dashed var(--xh-border);
-  border-radius: var(--xh-radius-sm);
-  color: var(--xh-muted);
-  text-align: center;
-  gap: 4px;
-}
-
-.empty-docs-icon {
-  font-size: 20px;
-  color: var(--xh-border-strong);
-}
-
-.empty-text {
-  font-size: 11px;
-}
-
-.docs-mini-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-height: 140px;
-  overflow-y: auto;
-}
-
-.doc-card-compact {
+.mode-title-wrap {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 8px;
-  background: #f8fafc;
-  border: 1px solid var(--xh-border);
-  border-radius: 6px;
-  transition: all 0.15s ease;
 }
 
-.doc-card-compact.disabled {
-  opacity: 0.6;
-}
-
-.doc-file-icon {
-  font-size: 16px;
+.mode-hero-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--xh-radius-sm);
+  background: var(--xh-primary-soft);
   color: var(--xh-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+}
+
+.mode-hero-title {
+  font-size: var(--xh-fs-sm);
+  font-weight: 700;
+  color: var(--xh-text);
+  letter-spacing: -0.01em;
+}
+
+.ai-segmented-bar :deep(.el-segmented__item) {
+  font-size: var(--xh-fs-sm);
+  font-weight: 500;
+  padding: 4px 14px;
+}
+
+.ai-segmented-bar :deep(.el-segmented__item.is-selected) {
+  font-weight: 600;
+  color: var(--xh-primary-dark-2);
+}
+
+.mode-hero-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: var(--xh-radius-pill);
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid transparent;
+}
+
+.status-chip.warning {
+  background: #fffbeb;
+  color: #b45309;
+  border-color: #fef3c7;
+}
+
+.status-chip.success {
+  background: #f0fdf4;
+  color: #15803d;
+  border-color: #bbf7d0;
+}
+
+.status-chip.info {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-color: #bfdbfe;
+}
+
+.status-chip.muted {
+  background: #f8fafc;
+  color: #64748b;
+  border-color: #e2e8f0;
+}
+
+.status-chip-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.status-chip-dot.success {
+  background: #16a34a;
+  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.2);
+}
+
+.status-chip-dot.info {
+  background: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.status-chip-dot.muted {
+  background: #94a3b8;
+}
+
+/* 核心工作台两栏布局 */
+.ai-workbench {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: 16px;
+  align-items: stretch;
+}
+
+.workbench-col-persona {
+  display: flex;
+  flex-direction: column;
+}
+
+.workbench-col-knowledge {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* 工作台统一卡片规范 */
+.workbench-card {
+  background: var(--xh-card);
+  border: 1px solid var(--xh-border);
+  border-radius: var(--xh-radius-md);
+  padding: 16px 18px;
+  box-shadow: var(--xh-shadow-1);
+  display: flex;
+  flex-direction: column;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.workbench-card:hover {
+  border-color: var(--xh-border-strong);
+}
+
+.persona-card {
+  height: 100%;
+}
+
+.workbench-card .card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.header-title-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.card-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--xh-radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
   flex-shrink: 0;
 }
 
-.doc-details {
+.card-icon.persona {
+  background: #ecfdf5;
+  color: #059669;
+}
+
+.card-icon.docs {
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.card-icon.goods {
+  background: #f5f3ff;
+  color: #7c3aed;
+}
+
+.title-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.card-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--xh-text);
+  letter-spacing: -0.01em;
+}
+
+.card-counter,
+.card-tag {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: var(--xh-radius-pill);
+  background: #f1f5f9;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.scope-radio-group :deep(.el-radio-button__inner) {
+  padding: 4px 10px;
+  font-size: 11px;
+}
+
+.item-search-input {
+  width: 170px;
+}
+
+/* 店铺人设编辑器 */
+.persona-editor-box {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 12px;
+}
+
+.persona-textarea :deep(.el-textarea__inner) {
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.65;
+  padding: 12px 14px;
+  background: #fafbfc;
+  border: 1px solid var(--xh-border);
+  border-radius: var(--xh-radius-sm);
+  color: var(--xh-text);
+  transition: all 0.2s ease;
+}
+
+.persona-textarea :deep(.el-textarea__inner):focus {
+  background: #ffffff;
+  border-color: var(--xh-primary);
+  box-shadow: 0 0 0 3px rgba(30, 158, 106, 0.12);
+}
+
+/* 常用人设快捷词栏 */
+.prompt-chips-section {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px dashed var(--xh-border);
+  margin-bottom: 12px;
+}
+
+.chips-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--xh-muted);
+  margin-bottom: 8px;
+}
+
+.chips-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.modern-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: var(--xh-radius-pill);
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  color: var(--xh-text-2);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.modern-chip:hover {
+  background: var(--xh-primary-soft);
+  border-color: var(--xh-primary-border);
+  color: var(--xh-primary);
+  transform: translateY(-1px);
+}
+
+.modern-chip:active {
+  transform: translateY(0);
+}
+
+.chip-plus {
+  font-size: 11px;
+  font-weight: 700;
+  opacity: 0.6;
+}
+
+.card-safe-guard {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #64748b;
+  background: #f8fafc;
+  padding: 6px 10px;
+  border-radius: var(--xh-radius-sm);
+  border: 1px solid #f1f5f9;
+}
+
+.guard-icon {
+  color: #059669;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+/* 通用资料与宝贝知识列表滚动区 */
+.docs-scroll-area {
+  min-height: 120px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.doc-cards-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.doc-item-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: var(--xh-radius-sm);
+  background: #f8fafc;
+  border: 1px solid #f1f5f9;
+  transition: all 0.15s ease;
+}
+
+.doc-item-row:hover {
+  background: #f1f5f9;
+  border-color: #e2e8f0;
+}
+
+.doc-item-row.disabled {
+  opacity: 0.55;
+}
+
+.doc-badge-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: #eff6ff;
+  color: #3b82f6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  flex-shrink: 0;
+}
+
+.doc-meta-info {
   flex: 1;
   min-width: 0;
 }
 
-.doc-title-row {
+.doc-filename {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--xh-text);
+}
+
+.doc-sub-pills {
   display: flex;
   align-items: center;
   gap: 6px;
-}
-
-.doc-name {
-  font-size: var(--xh-fs-xs);
-  font-weight: 500;
-  color: var(--xh-text);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.doc-sub {
+  margin-top: 2px;
   font-size: 11px;
   color: var(--xh-muted);
-  margin-top: 1px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+.doc-char-pill,
+.doc-scope-pill {
+  display: inline-block;
 }
 
 .doc-actions {
@@ -1862,6 +2209,310 @@ onMounted(() => {
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
+}
+
+.doc-del-btn {
+  color: var(--xh-muted);
+}
+
+.doc-del-btn:hover {
+  color: var(--xh-danger);
+}
+
+.empty-docs-box,
+.empty-items-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--xh-muted);
+  gap: 4px;
+}
+
+.empty-docs-box .empty-icon,
+.empty-items-box .empty-icon {
+  font-size: 26px;
+  color: #cbd5e1;
+  margin-bottom: 2px;
+}
+
+.empty-docs-box .empty-title,
+.empty-items-box .empty-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--xh-text-2);
+}
+
+.empty-docs-box .empty-hint {
+  font-size: 11px;
+  color: var(--xh-muted);
+}
+
+/* 宝贝专属知识列表 */
+.item-kb-scroll-area {
+  min-height: 160px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.item-kb-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.item-kb-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--xh-radius-sm);
+  border: 1px solid transparent;
+  transition: all 0.15s ease;
+  cursor: pointer;
+}
+
+.item-kb-row:hover {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+}
+
+.item-kb-thumb {
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  background: #f1f5f9;
+  border: 1px solid var(--xh-border);
+  flex-shrink: 0;
+}
+
+.thumb-fallback {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #94a3b8;
+  font-size: 18px;
+}
+
+.item-kb-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.item-kb-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--xh-text);
+  line-height: 1.4;
+}
+
+.item-kb-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.item-price {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--xh-price);
+}
+
+.item-status-tag {
+  font-size: 10px;
+  color: var(--xh-muted);
+  background: #f1f5f9;
+  padding: 0 4px;
+  border-radius: 2px;
+}
+
+.item-kb-badges {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.status-badge {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 1px 7px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.status-badge.has-kb {
+  background: #dcfce7;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+}
+
+.status-badge.has-doc {
+  background: #dbeafe;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+
+.status-badge.empty {
+  background: #f1f5f9;
+  color: #94a3b8;
+}
+
+.item-edit-btn {
+  flex-shrink: 0;
+  font-size: 11px;
+}
+
+/* 抽屉样式 */
+.drawer-goods-hero {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: #f8fafc;
+  border: 1px solid var(--xh-border);
+  border-radius: var(--xh-radius-sm);
+  margin-bottom: 16px;
+}
+
+.drawer-goods-thumb {
+  width: 56px;
+  height: 56px;
+  border-radius: 6px;
+  background: #f1f5f9;
+  border: 1px solid var(--xh-border);
+  flex-shrink: 0;
+}
+
+.drawer-goods-details {
+  flex: 1;
+  min-width: 0;
+}
+
+.drawer-goods-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--xh-text);
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-bottom: 4px;
+}
+
+.drawer-goods-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.drawer-price {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--xh-price);
+}
+
+.drawer-status-pill {
+  font-size: 11px;
+  color: var(--xh-muted);
+}
+
+.drawer-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.drawer-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.section-title-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.section-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--xh-text);
+}
+
+.section-sub {
+  font-size: 11px;
+  color: var(--xh-muted);
+}
+
+.section-counter {
+  font-size: 11px;
+  color: var(--xh-muted);
+}
+
+.drawer-textarea :deep(.el-textarea__inner) {
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.6;
+  padding: 10px 12px;
+  background: #fafbfc;
+  border: 1px solid var(--xh-border);
+  border-radius: var(--xh-radius-sm);
+}
+
+.drawer-textarea :deep(.el-textarea__inner):focus {
+  background: #ffffff;
+  border-color: var(--xh-primary);
+  box-shadow: 0 0 0 3px rgba(30, 158, 106, 0.12);
+}
+
+.drawer-doc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 48px;
+}
+
+.empty-drawer-docs {
+  padding: 14px;
+  text-align: center;
+  color: var(--xh-muted);
+  font-size: 11px;
+  background: #f8fafc;
+  border: 1px dashed var(--xh-border);
+  border-radius: var(--xh-radius-sm);
+}
+
+.drawer-footer-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+@media (max-width: 1080px) {
+  .ai-workbench {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .ai-mode-hero-card {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .item-kb-badges {
+    display: none;
+  }
 }
 
 /* 人设面板与通用面板卡片 */
@@ -1899,59 +2550,7 @@ onMounted(() => {
   color: var(--xh-muted);
 }
 
-.prompt-chips-bar {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  margin-bottom: 8px;
-}
 
-.chips-title {
-  font-size: 11px;
-  color: var(--xh-muted);
-  flex-shrink: 0;
-  margin-top: 2px;
-}
-
-.chips-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.prompt-chip {
-  font-size: 11px;
-  background: #f8fafc;
-  border: 1px solid var(--xh-border);
-  padding: 2px 7px;
-  border-radius: 4px;
-  cursor: pointer;
-  color: var(--xh-text-2);
-  transition: all 0.15s ease;
-}
-
-.prompt-chip:hover {
-  border-color: var(--xh-primary);
-  color: var(--xh-primary);
-  background: var(--xh-primary-soft);
-}
-
-.textarea-wrap {
-  flex: 1;
-}
-
-.panel-foot-notice {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 10px;
-  font-size: 11px;
-  color: var(--xh-warning-text);
-  background: #fffbeb;
-  padding: 6px 10px;
-  border-radius: 4px;
-  border: 1px solid #fef3c7;
-}
 
 /* 议价与安全底线 Tab */
 .guard-studio-grid {
