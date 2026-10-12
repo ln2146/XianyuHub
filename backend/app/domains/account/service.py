@@ -6,7 +6,7 @@ import math
 import secrets
 import time
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from urllib.parse import unquote
 
 from fastapi import HTTPException, status
@@ -14,6 +14,7 @@ from loguru import logger
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.crypto import get_vault
 from app.core.db import session_factory
 from app.core.events import Topics, bus
@@ -24,7 +25,7 @@ from app.domains.system.audit import record_audit
 from app.domains.system.models import Role, User
 from app.goofish.errors import GoofishError, RiskBlockedError, SessionExpiredError
 from app.goofish.gateway import account_key
-from app.goofish.guard.guard import AccountState, Runtime
+from app.goofish.guard.guard import ANON, AccountState, Runtime
 from app.goofish.guard.policy import Action
 from app.goofish.protocol.cookies import is_logged_in, parse_cookie_str
 from app.goofish.protocol.login import QrLoginClient, QrSession, QrStatus, has_login_renew
@@ -150,6 +151,44 @@ async def load_guard_states() -> None:
                 rt.guard.load(account_key(acc.id), acc.status, cooldown, acc.strikes)
             except ValueError:
                 rt.guard.load(account_key(acc.id), AccountState.NEED_LOGIN)
+
+
+ANON_STRIKE_WINDOW = timedelta(hours=24)
+
+
+async def load_anon_guard_state() -> None:
+    """恢复匿名搜索通道的熔断状态。
+
+    账号的风控状态存在账号行上，匿名通道没有，只在内存里：服务一重启就清零，刚被闲鱼挡住（RGV587 挤爆）的
+    匿名通道会立刻再去撞，手动搜索也因为「匿名通道正常」而不会改用账号。这里按近 24 小时匿名熔断事件重建
+    次数与冷却截止时间，算法与 RiskGuard.trip 一致。
+    """
+    since = datetime.now(UTC) - ANON_STRIKE_WINDOW
+    async with session_factory()() as s:
+        times = list(
+            (
+                await s.execute(
+                    select(RiskEvent.created_at)
+                    .where(
+                        RiskEvent.guard_key == ANON,
+                        RiskEvent.state == AccountState.CIRCUIT_OPEN,
+                        RiskEvent.created_at >= since,
+                    )
+                    .order_by(RiskEvent.created_at)
+                )
+            ).scalars()
+        )
+    if not times:
+        return
+    st = get_settings()
+    strikes = len(times)
+    last = times[-1] if times[-1].tzinfo else times[-1].replace(tzinfo=UTC)
+    cooldown = min(st.guard_cooldown_base_seconds * 2 ** (strikes - 1), st.guard_cooldown_max_seconds)
+    until = last.timestamp() + cooldown
+    if until > time.time():
+        get_runtime().guard.load(ANON, AccountState.CIRCUIT_OPEN, until, strikes)
+    else:
+        get_runtime().guard.load(ANON, AccountState.ACTIVE, 0.0, strikes)
 
 
 # ---------------------------------------------------------------- 创建 / 导入

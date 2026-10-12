@@ -76,6 +76,7 @@ async def setup_runtime(transport=None) -> None:
     rt = get_runtime()
     rt.guard.on_state_change(account_service.on_guard_state_change)
     await account_service.load_guard_states()
+    await account_service.load_anon_guard_state()
     if role() in ("all", "worker"):
         bus.subscribe(Topics.ORDER_STATUS_CHANGED, order_service.on_order_event)
     await llm_service.apply_active_config()

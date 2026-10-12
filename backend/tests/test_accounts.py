@@ -263,3 +263,37 @@ async def test_relogin_auto_resolves_past_risk_events(admin_client):
     # 验证：系统总览接口中也同步显示 resolved 为 True
     dash = (await admin_client.get("/api/v1/dashboard")).json()
     assert all(r["resolved"] for r in dash["risk_events"])
+
+
+async def test_anonymous_circuit_survives_restart(admin_client):
+    """匿名通道的熔断只在内存里：重启后要按风控事件恢复，否则会立刻再去撞闲鱼，手动搜索也不会改用账号。"""
+    from datetime import UTC, datetime, timedelta
+
+    from app.domains.account.channel import anon_paused
+    from app.domains.account.service import load_anon_guard_state
+    from app.goofish.guard.guard import ANON
+
+    guard = get_runtime().gateway.guard
+    now = datetime.now(UTC)
+    async with session_factory()() as s:
+        # 两次匿名熔断：第 2 次后冷却 30 分钟 × 2 = 1 小时，10 分钟前触发 → 还在冷却
+        for ago in (timedelta(hours=3), timedelta(minutes=10)):
+            s.add(
+                RiskEvent(account_id=None, guard_key=ANON, state="circuit_open", reason="RGV587", created_at=now - ago)
+            )
+        await s.commit()
+
+    guard.load(ANON, AccountState.ACTIVE)  # 模拟重启后的初始状态
+    await load_anon_guard_state()
+    rt = guard.runtime(ANON)
+    assert rt.state == AccountState.CIRCUIT_OPEN and rt.strikes == 2 and anon_paused()
+    assert 40 * 60 < rt.cooldown_until - time.time() <= 50 * 60
+
+    # 冷却已过：恢复为可用，但保留次数，下一次被挡时冷却继续加长
+    async with session_factory()() as s:
+        for ev in (await s.execute(select(RiskEvent).where(RiskEvent.guard_key == ANON))).scalars():
+            ev.created_at = ev.created_at - timedelta(hours=2)
+        await s.commit()
+    guard.load(ANON, AccountState.ACTIVE)
+    await load_anon_guard_state()
+    assert guard.runtime(ANON).state == AccountState.ACTIVE and guard.runtime(ANON).strikes == 2 and not anon_paused()
