@@ -1,10 +1,14 @@
 <div align="center">
 
-<img src="frontend/public/icon.svg" width="88" alt="鱼塘管家" />
+<img src="docs/images/xianyuhub-cover.png" width="100%" alt="鱼塘管家 XianyuHub：淘好货，管好店。自部署的闲鱼买卖助手，提供选品雷达、AI 客服与虚拟商品自动发货。" />
 
 # 鱼塘管家 XianyuHub
 
-**自己部署的闲鱼助手：买家用它淘好货，卖家用它自动回复、自动发货。**
+**淘好货，管好店。**
+
+自部署的闲鱼买卖助手：买家盯货比价，卖家管理客服与虚拟商品发货。
+
+[**中文**](README.md) · [English](README_EN.md)
 
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
@@ -13,17 +17,25 @@
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
 ![Status](https://img.shields.io/badge/status-alpha-orange)
 
-[快速开始](#快速开始) · [功能一览](#功能一览) · [使用指南](docs/guide.md) · [部署与配置](docs/deployment.md) · [常见问题](#常见问题) · [交流群](#交流群)
-
-<img src="docs/images/dashboard.png" alt="鱼塘管家总览" width="900" />
+[项目简介](#项目简介) · [快速开始](#快速开始) · [功能一览](#功能一览) · [使用指南](docs/guide.md) · [部署与配置](docs/deployment.md) · [常见问题](#常见问题) · [交流群](#交流群)
 
 </div>
+
+## 项目简介
+
+**鱼塘管家 XianyuHub 是面向个人和小团队的闲鱼买卖管理工具，可部署在自己的电脑或 NAS 上。** 从买家侧的选品雷达、价格监控和商家分析，到卖家侧的 AI 客服、商品发布与虚拟商品自动发货，把多个账号的消息、商品和订单集中到同一个工作台。
+
+按需接入大模型和通知渠道，再为每个账号选择自动化模式。它是社区维护的非官方项目，自动操作默认关闭，由你决定何时开启。
+
+<p align="center">
+  <img src="docs/images/dashboard.png" alt="鱼塘管家总览工作台" width="900" />
+</p>
 
 ## 为什么用它
 
 闲鱼上买东西，要一遍遍刷新、比价、看卖家靠不靠谱；卖东西，要守着手机回“在吗”“最低多少”，买家付款后还得手动发卡密。
 
-鱼塘管家把这些事交给程序做，并且**跑在你自己的电脑或 NAS 上**：登录态、聊天记录和卡密都留在本地，加密保存，不经过任何第三方服务。
+鱼塘管家把这些事交给程序做，并且**跑在你自己的电脑或 NAS 上**。数据库保存在本地，Cookie、卡密和通知渠道配置等敏感字段加密存储；聊天记录、商品内容等业务数据并非全库加密。启用 AI 后，相关商品资料、图片及部分聊天上下文会发送给你配置的模型服务；启用通知后，通知内容会发送到你配置的渠道。闲鱼相关操作仍需与闲鱼平台通信。
 
 - **买家**：AI 帮你盯货、比价、看卖家，只推送值得看的商品
 - **卖家**：AI 客服守住底价回复买家，付款后自动发货，卖完还能自动重新上架
