@@ -17,33 +17,55 @@ A self-hosted Xianyu assistant for buyers tracking deals and sellers managing co
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
 ![Status](https://img.shields.io/badge/status-alpha-orange)
 
-[Overview](#overview) · [Quick start](#quick-start) · [Features](#features) · [User guide](docs/guide.md) · [Deployment](docs/deployment.md) · [FAQ](#faq) · [Community](#community)
+[Overview](#overview) · [Video](#video) · [Quick start](#quick-start) · [Features](#features) · [User guide](docs/guide.md) · [Deployment](docs/deployment.md) · [FAQ](#faq) · [Community](#community)
 
 </div>
 
 ## Overview
 
-**XianyuHub helps individuals and small teams manage buying and selling on Xianyu, running on their own computer or NAS.** It brings product discovery, price tracking and seller analysis together with AI customer replies, listing tools and automated delivery of virtual goods. Manage conversations, listings and orders across multiple accounts in one workspace.
+**XianyuHub is a self-hosted Xianyu assistant for individuals and small teams, running on your own computer or NAS.** Bring conversations, listings and orders from multiple accounts into one workspace, with less repetitive searching, replying and digital delivery.
 
-Connect your preferred model provider and notification channels, then choose automation modes for each account. This is a community-maintained, unofficial project. Automated actions are disabled by default; you decide when to enable them.
+- **For buyers**: schedule product searches, track prices and assess listings with product and seller analysis.
+- **For sellers**: manage conversations, use AI customer replies, publish listings and automatically deliver virtual goods.
+- **Automation on your terms**: choose off, suggested replies or fully automatic mode per account, and connect your preferred model provider and notification channels.
+
+This is an unofficial, community-maintained project. Automated actions are disabled by default. Physical-goods shipments still require entering tracking information in the Xianyu mobile app.
+
+## Video
+
+XianyuHub — Find great deals. Run your shop.
+
+https://github.com/user-attachments/assets/9ca97e36-2c26-4197-a4b3-8918a8c9f94f
+
+## Quick start
+
+Requires Docker 24+. A home network or NAS is recommended; data-center IP addresses are more likely to trigger Xianyu's risk controls.
+
+```bash
+git clone https://github.com/ln2146/XianyuHub.git
+cd XianyuHub/deploy
+cp .env.example .env    # Set the admin password and secrets; generation commands are in the file comments
+docker compose up -d --build
+```
+
+Open `http://127.0.0.1:8080`, sign in, then:
+
+1. **Accounts**: scan the QR code to sign in to your Xianyu account.
+2. **Notifications**: configure a channel such as ServerChan or PushPlus for WeChat alerts.
+3. **Models**: enter your model provider's API key. Without one, AI features use rule-based behavior.
+4. Enable product radar, automatic replies or delivery as needed. **All automation is disabled by default**; start with suggested replies while observing behavior.
+
+See [Deployment and configuration](docs/deployment.md) for local development, separate deployment and configuration details.
+
+## Features
+
+Automated actions start disabled, with rate limiting, risk circuit breakers and alerts through your configured channels. See the feature details and FAQ below.
 
 <p align="center">
   <img src="docs/images/dashboard.png" alt="XianyuHub overview dashboard" width="900" />
 </p>
 
-The screenshots and detailed guides currently use Chinese.
-
-## Why use it?
-
-Buying on Xianyu means repeatedly refreshing searches, comparing prices and evaluating sellers. Selling means answering the same questions and manually sending digital goods after payment.
-
-XianyuHub helps handle these tasks while **running on your own computer or NAS**. The database is stored locally. Sensitive fields such as cookies, digital codes and notification-channel credentials are encrypted; business data such as conversations and listing content is not encrypted across the entire database. When AI is enabled, relevant product information, images and portions of conversation context are sent to your configured model provider. Notifications are sent through the channels you configure. Xianyu operations still communicate with the Xianyu platform.
-
-- **For buyers**: monitor listings, compare prices and evaluate sellers with AI-assisted recommendations.
-- **For sellers**: reply within your pricing limits, deliver virtual goods after payment and optionally relist sold items.
-- **Control**: automated actions start disabled, with rate limiting, risk circuit breakers and alerts through your configured channels.
-
-## Features
+The video, screenshots and detailed guides currently use Chinese.
 
 ### Product radar: let useful listings come to you
 
@@ -99,27 +121,14 @@ QR-code login and session maintenance · Per-account proxies · Token-bucket rat
 Switchable model configurations, including DeepSeek, Qwen, Kimi, GLM, Claude and Ollama · Protocol self-checks · Multiple users and account permissions · Audit logs ·
 A read-only [MCP server](docs/guide.md#mcp-server只读) · A [browser extension](docs/guide.md#浏览器扩展).
 
-## Quick start
-
-Requires Docker 24+. A home network or NAS is recommended; data-center IP addresses are more likely to trigger Xianyu's risk controls.
-
-```bash
-git clone https://github.com/ln2146/XianyuHub.git
-cd XianyuHub/deploy
-cp .env.example .env    # Set the admin password and secrets; generation commands are in the file comments
-docker compose up -d --build
-```
-
-Open `http://127.0.0.1:8080`, sign in, then:
-
-1. **Accounts**: scan the QR code to sign in to your Xianyu account.
-2. **Notifications**: configure a channel such as ServerChan or PushPlus for WeChat alerts.
-3. **Models**: enter your model provider's API key. Without one, AI features use rule-based behavior.
-4. Enable product radar, automatic replies or delivery as needed. **All automation is disabled by default**; start with suggested replies while observing behavior.
-
-See [Deployment and configuration](docs/deployment.md) for local development, separate deployment and configuration details.
-
 ## FAQ
+
+<details>
+<summary><b>Where is data stored, and what is sent to external services?</b></summary>
+
+The database is stored locally. Sensitive fields such as cookies, digital codes and notification-channel credentials are encrypted; business data such as conversations and listing content is not encrypted across the entire database. When AI is enabled, relevant product information, images and portions of conversation context are sent to your configured model provider. Notifications are sent through the channels you configure. Xianyu operations still communicate with the Xianyu platform.
+
+</details>
 
 <details>
 <summary><b>Could my account be restricted or banned?</b></summary>
